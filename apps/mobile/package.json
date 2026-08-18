@@ -1,0 +1,9 @@
+{
+  "name": "@bolaocerto/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": { "start": "expo start", "android": "expo start --android", "ios": "expo start --ios", "lint": "tsc -p tsconfig.json --noEmit", "test": "node -e \"process.exit(0)\"" },
+  "dependencies": { "expo": "^53.0.0", "expo-secure-store": "^14.0.0", "expo-status-bar": "^2.0.0", "react": "^19.0.0", "react-native": "^0.79.0" },
+  "devDependencies": { "typescript": "^5.8.3", "@types/react": "^19.0.0" }
+}

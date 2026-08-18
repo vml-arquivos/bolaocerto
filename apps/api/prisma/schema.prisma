@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PapelUsuario {
+  cotista
+  afiliado
+  admin
+  operacao
+}
+enum StatusKyc {
+  nao_iniciado
+  pendente
+  aprovado
+  reprovado
+}
+enum TipoOrganizador {
+  admin
+  afiliado
+}
+enum ModeloOperacional {
+  mandato
+  loterica_parceira
+}
+enum StatusBolao {
+  rascunho
+  aberto
+  fechado
+  registrado
+  apurado
+  cancelado
+}
+enum StatusCota {
+  reservada
+  paga
+  registrada
+  apurada
+  premiada
+  cancelada
+  estornada
+}
+enum MetodoPagamento {
+  pix
+  cartao
+  boleto
+}
+enum StatusPagamento {
+  pendente
+  confirmado
+  falhou
+  estornado
+}
+enum StatusComissao {
+  pendente
+  paga
+  cancelada
+}
+enum TipoGrupo {
+  oficial
+  afiliado
+}
+
+model Usuario {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome                  String        @db.VarChar(150)
+  cpf                   String        @unique @db.VarChar(11)
+  email                 String        @unique @db.VarChar(180)
+  telefone              String?       @db.VarChar(20)
+  dataNascimento        DateTime      @map("data_nascimento") @db.Date
+  senhaHash             String        @map("senha_hash")
+  papel                 PapelUsuario  @default(cotista)
+  statusKyc             StatusKyc     @default(nao_iniciado) @map("status_kyc")
+  chavePixRecebimento   String?       @map("chave_pix_recebimento") @db.VarChar(140)
+  criadoEm              DateTime      @default(now()) @map("criado_em")
+  atualizadoEm          DateTime      @updatedAt @map("atualizado_em")
+  kycDocumentos         KycDocumento[]
+  lotericasOperadas     LotericaParceira[] @relation("operador_loterica")
+  afiliado              Afiliado?
+  gruposCriados         Grupo[]       @relation("criador_grupo")
+  boloesCriados         Bolao[]       @relation("criador_bolao")
+  cotasCompradas        Cota[]        @relation("comprador_cota")
+  mandatos              Mandato[]
+  notificacoes          Notificacao[]
+  auditorias            AuditoriaEvento[]
+  documentosRevisados   KycDocumento[] @relation("revisor_kyc")
+  boloesEditados        Bolao[]       @relation("editor_bolao")
+  afiliadosAprovados    Afiliado[]    @relation("aprovador_afiliado")
+
+  @@map("usuarios")
+}
+
+model KycDocumento {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId     String      @map("usuario_id") @db.Uuid
+  tipoDocumento String      @map("tipo_documento") @db.VarChar(30)
+  arquivoUrl    String      @map("arquivo_url")
+  status        StatusKyc   @default(pendente)
+  revisadoPor   String?     @map("revisado_por") @db.Uuid
+  revisadoEm    DateTime?   @map("revisado_em")
+  criadoEm      DateTime    @default(now()) @map("criado_em")
+  usuario       Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  revisor       Usuario?    @relation("revisor_kyc", fields: [revisadoPor], references: [id])
+
+  @@map("kyc_documentos")
+}
+
+model LotericaParceira {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  razaoSocial           String    @map("razao_social") @db.VarChar(180)
+  cnpj                  String    @unique @db.VarChar(14)
+  codigoCaixa           String?   @map("codigo_caixa") @db.VarChar(30)
+  cidade                String    @db.VarChar(120)
+  uf                    String    @db.Char(2)
+  percentualRepasse     Decimal   @default(0) @map("percentual_repasse") @db.Decimal(5,2)
+  statusContrato        String    @default("ativo") @map("status_contrato") @db.VarChar(20)
+  usuarioOperacionalId  String?   @map("usuario_operacional_id") @db.Uuid
+  criadoEm              DateTime  @default(now()) @map("criado_em")
+  usuarioOperacional    Usuario?  @relation("operador_loterica", fields: [usuarioOperacionalId], references: [id])
+  boloes                Bolao[]
+
+  @@map("lotericas_parceiras")
+}
+
+model ConfigLoteria {
+  modalidade              String   @id @db.VarChar(30)
+  nomeExibicao            String   @map("nome_exibicao") @db.VarChar(60)
+  valorMinimoCota        Decimal  @map("valor_minimo_cota") @db.Decimal(10,2)
+  minCotasBolao          Int      @map("min_cotas_bolao")
+  maxCotasBolao          Int      @map("max_cotas_bolao")
+  taxaAdministracaoTetoPct Decimal @default(35) @map("taxa_administracao_teto_pct") @db.Decimal(5,2)
+  horarioCorteLocal      String   @map("horario_corte_local") @db.VarChar(8)
+  diasSemanaSorteio      Int[]    @map("dias_semana_sorteio")
+  concursos              Concurso[]
+
+  @@map("config_loteria")
+}
+
+model Concurso {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  modalidade            String        @db.VarChar(30)
+  numeroConcurso        Int           @map("numero_concurso")
+  dataSorteio           DateTime      @map("data_sorteio")
+  cutoffAt              DateTime      @map("cutoff_at")
+  valorEstimadoPremio  Decimal?      @map("valor_estimado_premio") @db.Decimal(14,2)
+  acumulado             Boolean       @default(false)
+  status                String        @default("aberto") @db.VarChar(20)
+  fonteSincronizacao    String?       @map("fonte_sincronizacao") @db.VarChar(20)
+  sincronizadoEm        DateTime      @default(now()) @map("sincronizado_em")
+  config                ConfigLoteria @relation(fields: [modalidade], references: [modalidade])
+  resultado             Resultado?
+  boloes                Bolao[]
+
+  @@unique([modalidade, numeroConcurso])
+  @@map("concursos")
+}
+
+model Resultado {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  concursoId        String   @unique @map("concurso_id") @db.Uuid
+  numerosSorteados  Int[]    @map("numeros_sorteados")
+  listaRateioPremio Json     @map("lista_rateio_premio")
+  apuradoEm         DateTime @default(now()) @map("apurado_em")
+  concurso          Concurso @relation(fields: [concursoId], references: [id], onDelete: Cascade)
+
+  @@map("resultados")
+}
+
+model Afiliado {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId             String          @unique @map("usuario_id") @db.Uuid
+  codigoAfiliado        String          @unique @map("codigo_afiliado") @db.VarChar(20)
+  statusAprovacao       String          @default("pendente") @map("status_aprovacao") @db.VarChar(20)
+  comissaoPadraoPct     Decimal         @default(10) @map("comissao_padrao_pct") @db.Decimal(5,2)
+  chavePixRepasse       String?         @map("chave_pix_repasse") @db.VarChar(140)
+  aprovadoPor           String?         @map("aprovado_por") @db.Uuid
+  aprovadoEm            DateTime?       @map("aprovado_em")
+  criadoEm              DateTime        @default(now()) @map("criado_em")
+  usuario               Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  aprovador             Usuario?       @relation("aprovador_afiliado", fields: [aprovadoPor], references: [id])
+  grupos               Grupo[]
+  cotasReferenciadas   Cota[]
+  comissoes            Comissao[]
+
+  @@map("afiliados")
+}
+
+model Grupo {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome          String        @db.VarChar(120)
+  slug          String        @unique @db.VarChar(140)
+  tipo          TipoGrupo
+  afiliadoId    String?       @map("afiliado_id") @db.Uuid
+  imagemCapaUrl String?       @map("imagem_capa_url")
+  descricao     String?
+  criadoPor     String?       @map("criado_por") @db.Uuid
+  criadoEm      DateTime      @default(now()) @map("criado_em")
+  afiliado      Afiliado?     @relation(fields: [afiliadoId], references: [id])
+  criador       Usuario?      @relation("criador_grupo", fields: [criadoPor], references: [id])
+  boloes        Bolao[]
+
+  @@map("grupos")
+}
+
+model Bolao {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  concursoId            String              @map("concurso_id") @db.Uuid
+  grupoId               String              @map("grupo_id") @db.Uuid
+  criadoPor             String              @map("criado_por") @db.Uuid
+  tipoOrganizador       TipoOrganizador     @map("tipo_organizador")
+  numerosApostados      Int[]               @map("numeros_apostados")
+  totalCotas            Int                 @map("total_cotas")
+  cotasVendidas         Int                 @default(0) @map("cotas_vendidas")
+  valorCota             Decimal             @map("valor_cota") @db.Decimal(10,2)
+  taxaAdministracaoPct  Decimal             @map("taxa_administracao_pct") @db.Decimal(5,2)
+  modeloOperacional     ModeloOperacional   @map("modelo_operacional")
+  lotericaParceiraId    String?             @map("loterica_parceira_id") @db.Uuid
+  status                StatusBolao         @default(aberto)
+  comprovanteUrl        String?             @map("comprovante_url")
+  registradoEm          DateTime?           @map("registrado_em")
+  teveGanhador          Boolean             @default(false) @map("teve_ganhador")
+  editadoPor            String?             @map("editado_por") @db.Uuid
+  editadoEm             DateTime?           @map("editado_em")
+  criadoEm              DateTime            @default(now()) @map("criado_em")
+  concurso              Concurso            @relation(fields: [concursoId], references: [id])
+  grupo                 Grupo               @relation(fields: [grupoId], references: [id])
+  criador               Usuario            @relation("criador_bolao", fields: [criadoPor], references: [id])
+  lotericaParceira      LotericaParceira?  @relation(fields: [lotericaParceiraId], references: [id])
+  editor                Usuario?           @relation("editor_bolao", fields: [editadoPor], references: [id])
+  cotas                 Cota[]
+
+  @@index([concursoId, status])
+  @@map("boloes")
+}
+
+model Cota {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bolaoId               String          @map("bolao_id") @db.Uuid
+  compradorId           String          @map("comprador_id") @db.Uuid
+  titularCpf            String          @map("titular_cpf") @db.VarChar(11)
+  titularNome           String          @map("titular_nome") @db.VarChar(150)
+  quantidade            Int             @default(1)
+  valorPago             Decimal?       @map("valor_pago") @db.Decimal(10,2)
+  status                StatusCota      @default(reservada)
+  reservadaEm          DateTime        @default(now()) @map("reservada_em")
+  expiraReservaEm      DateTime?       @map("expira_reserva_em")
+  comprovanteIndividualUrl String?      @map("comprovante_individual_url")
+  afiliadoReferenciaId  String?         @map("afiliado_referencia_id") @db.Uuid
+  faixaPremio           String?         @map("faixa_premio") @db.VarChar(60)
+  valorPremio           Decimal?        @map("valor_premio") @db.Decimal(14,2)
+  premioNotificadoEm    DateTime?       @map("premio_notificado_em")
+  criadoEm              DateTime        @default(now()) @map("criado_em")
+  bolao                 Bolao           @relation(fields: [bolaoId], references: [id])
+  comprador             Usuario         @relation("comprador_cota", fields: [compradorId], references: [id])
+  afiliadoReferencia    Afiliado?       @relation(fields: [afiliadoReferenciaId], references: [id])
+  mandato               Mandato?
+  pagamento             Pagamento?
+  comissao              Comissao?
+
+  @@index([bolaoId, status])
+  @@index([compradorId, status])
+  @@map("cotas")
+}
+
+model Mandato {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cotaId      String   @unique @map("cota_id") @db.Uuid
+  usuarioId   String   @map("usuario_id") @db.Uuid
+  textoHash   String   @map("texto_hash") @db.VarChar(64)
+  ipAceite    String   @map("ip_aceite") @db.VarChar(64)
+  userAgent   String?  @map("user_agent")
+  aceitoEm    DateTime @default(now()) @map("aceito_em")
+  cota        Cota     @relation(fields: [cotaId], references: [id])
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@map("mandatos")
+}
+
+model Pagamento {
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cotaId               String           @unique @map("cota_id") @db.Uuid
+  metodo               MetodoPagamento
+  valorBruto           Decimal          @map("valor_bruto") @db.Decimal(10,2)
+  valorTaxaAdmin       Decimal          @map("valor_taxa_admin") @db.Decimal(10,2)
+  valorComissaoAfiliado Decimal         @default(0) @map("valor_comissao_afiliado") @db.Decimal(10,2)
+  valorCustoBilhete    Decimal          @map("valor_custo_bilhete") @db.Decimal(10,2)
+  status               StatusPagamento  @default(pendente)
+  pspProvedor          String           @map("psp_provedor") @db.VarChar(30)
+  pspTransactionId     String?         @map("psp_transaction_id") @db.VarChar(100)
+  qrCodePix            String?         @map("qr_code_pix")
+  confirmadoEm         DateTime?        @map("confirmado_em")
+  criadoEm             DateTime         @default(now()) @map("criado_em")
+  cota                 Cota             @relation(fields: [cotaId], references: [id])
+
+  @@unique([pspProvedor, pspTransactionId])
+  @@map("pagamentos")
+}
+
+model Comissao {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  afiliadoId  String         @map("afiliado_id") @db.Uuid
+  cotaId      String         @unique @map("cota_id") @db.Uuid
+  valor       Decimal        @db.Decimal(10,2)
+  status      StatusComissao @default(pendente)
+  repassadoEm DateTime?      @map("repassado_em")
+  criadoEm    DateTime       @default(now()) @map("criado_em")
+  afiliado    Afiliado       @relation(fields: [afiliadoId], references: [id])
+  cota        Cota           @relation(fields: [cotaId], references: [id])
+
+  @@map("comissoes")
+}
+
+model Notificacao {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId  String   @map("usuario_id") @db.Uuid
+  canal      String   @db.VarChar(20)
+  tipo       String   @db.VarChar(40)
+  payload    Json
+  enviadoEm  DateTime? @map("enviado_em")
+  lidoEm     DateTime? @map("lido_em")
+  criadoEm   DateTime @default(now()) @map("criado_em")
+  usuario    Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("notificacoes")
+}
+
+model AuditoriaEvento {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entidade      String    @db.VarChar(40)
+  entidadeId    String    @map("entidade_id") @db.Uuid
+  evento        String    @db.VarChar(60)
+  atorId        String?   @map("ator_id") @db.Uuid
+  payloadAntes  Json?     @map("payload_antes")
+  payloadDepois Json?     @map("payload_depois")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+  ator          Usuario?  @relation(fields: [atorId], references: [id])
+
+  @@index([entidade, entidadeId])
+  @@map("auditoria_eventos")
+}

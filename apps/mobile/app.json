@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Bolaocerto",
+    "slug": "bolaocerto",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "bolaocerto",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "br.bolaocerto.app" },
+    "android": { "package": "br.bolaocerto.app" },
+    "plugins": ["expo-secure-store"]
+  }
+}
