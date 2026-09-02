@@ -36,6 +36,18 @@ const visualByModality: Record<string, LotteryVisual> = {
     key: 'diadesorte', name: 'Dia de Sorte', eyebrow: 'Um ritual leve', description: 'Organize sua participação com clareza e confiança.',
     art: '/brand/lottery/dia-de-sorte-hero.jpg', accent: '#8560cf', soft: '#efeaff', icon: 'DS',
   },
+  duplasena: {
+    key: 'duplasena', name: 'Dupla Sena', eyebrow: 'Duas chances no mesmo jogo', description: 'Um único bilhete, dois sorteios para torcer.',
+    art: '/brand/lottery/mega-sena-hero.jpg', accent: '#d5457a', soft: '#ffe9f1', icon: 'DU',
+  },
+  supersete: {
+    key: 'supersete', name: 'Super Sete', eyebrow: 'Simples e direto', description: 'Sete colunas, sete decisões rápidas de jogo.',
+    art: '/brand/lottery/quina-hero.jpg', accent: '#0f9d8a', soft: '#e2fbf5', icon: 'S7',
+  },
+  loteca: {
+    key: 'loteca', name: 'Loteca', eyebrow: 'Paixão pelo esporte', description: 'Aposte nos resultados da rodada com o grupo.',
+    art: '/brand/lottery/timemania-hero.jpg', accent: '#c2670f', soft: '#fff0df', icon: 'LT',
+  },
 };
 
 const fallbackVisual: LotteryVisual = {

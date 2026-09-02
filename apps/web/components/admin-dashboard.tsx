@@ -65,8 +65,9 @@ function statusLabel(status: unknown) {
 function statusClass(status: unknown) {
   const normalized = String(status ?? '').toLowerCase();
   if (['paga', 'pago', 'confirmado', 'aprovado', 'registrado', 'apurado', 'ativo'].includes(normalized)) return 'status-chip status-success';
-  if (['pendente', 'reservada', 'aberto', 'fechado', 'rascunho'].includes(normalized)) return 'status-chip status-warning';
+  if (['pendente', 'reservada', 'rascunho'].includes(normalized)) return 'status-chip status-warning';
   if (['falhou', 'cancelada', 'cancelado', 'reprovado', 'estornado', 'inativo'].includes(normalized)) return 'status-chip status-danger';
+  if (['aberto', 'fechado'].includes(normalized)) return 'status-chip status-info';
   return 'status-chip';
 }
 
@@ -293,7 +294,7 @@ function AdminDashboardContent() {
     return <DashboardView />;
   }
 
-  return <AdminShell><div className="admin-toolbar"><div className="admin-toolbar-search">{viewsWithTables.has(view) && <><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Buscar neste módulo…" aria-label="Buscar" /></>}</div><div className="admin-toolbar-filters">{viewsWithTables.has(view) && <><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">Todos os status</option><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="pendente">Pendente</option><option value="paga">Paga</option><option value="confirmado">Confirmado</option><option value="aprovado">Aprovado</option></select><button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button></>}</div></div>{toast && <div className={`admin-toast ${toast.type === 'error' ? 'admin-toast-error' : ''}`}>{toast.text}</div>}{loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando dados do centro de gestão…</p></div> : renderView()}</AdminShell>;
+  return <AdminShell>{viewsWithTables.has(view) && <div className="admin-toolbar"><div className="admin-toolbar-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Buscar neste módulo…" aria-label="Buscar" /></div><div className="admin-toolbar-filters"><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">Todos os status</option><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="pendente">Pendente</option><option value="paga">Paga</option><option value="confirmado">Confirmado</option><option value="aprovado">Aprovado</option></select><button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button></div></div>}{toast && <div className={`admin-toast ${toast.type === 'error' ? 'admin-toast-error' : ''}`}>{toast.text}</div>}{loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando dados do centro de gestão…</p></div> : renderView()}</AdminShell>;
 }
 
 function PoolWizard({ contests, groupId, onSuccess }: { contests: RecordValue[]; groupId: string | null; onSuccess: () => Promise<void> | void }) {

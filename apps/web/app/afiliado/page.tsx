@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function AffiliatePage() {
-  return <><SiteHeader /><main className="app-page"><div className="shell"><Suspense fallback={<div className="empty-state"><h3>Carregando área do afiliado…</h3></div>}><AffiliateDashboard /></Suspense></div></main><SiteFooter /></>;
+  return <><SiteHeader /><main className="app-page" id="main-content"><div className="shell"><Suspense fallback={<div className="empty-state"><h3>Carregando área do afiliado…</h3></div>}><AffiliateDashboard /></Suspense></div></main><SiteFooter /></>;
 }

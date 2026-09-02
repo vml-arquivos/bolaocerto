@@ -19,10 +19,17 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#2145d7',
-  colorScheme: 'light',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f3f5fb' },
+    { media: '(prefers-color-scheme: dark)', color: '#060c24' },
+  ],
+  colorScheme: 'dark light',
 };
 
+// Aplica o tema salvo (ou a preferência do sistema) antes da primeira pintura,
+// evitando o "flash" do tema incorreto. Roda de forma síncrona e bloqueante.
+const themeInitScript = `(function(){try{var s=localStorage.getItem('bl-theme');var t=s==='light'||s==='dark'?s:(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR"><body>{children}</body></html>;
+  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}</body></html>;
 }
