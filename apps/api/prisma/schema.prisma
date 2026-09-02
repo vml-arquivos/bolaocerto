@@ -65,6 +65,18 @@ enum TipoGrupo {
   afiliado
 }
 
+enum TipoConvite {
+  usuario
+  afiliado
+}
+
+enum StatusConvite {
+  ativo
+  usado
+  revogado
+  expirado
+}
+
 model Usuario {
   id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nome                  String        @db.VarChar(150)
@@ -92,6 +104,8 @@ model Usuario {
   documentosRevisados   KycDocumento[] @relation("revisor_kyc")
   boloesEditados        Bolao[]       @relation("editor_bolao")
   afiliadosAprovados    Afiliado[]    @relation("aprovador_afiliado")
+  convitesCriados       Convite[]    @relation("criador_convite")
+  convitesUsados        Convite[]    @relation("usuario_convite_usado")
   repassesCriados       RepasseLote[] @relation("criador_repasse")
   comissoesPagas        Comissao[]   @relation("pagador_comissao")
 
@@ -183,15 +197,41 @@ model Afiliado {
   chavePixRepasse       String?         @map("chave_pix_repasse") @db.VarChar(140)
   aprovadoPor           String?         @map("aprovado_por") @db.Uuid
   aprovadoEm            DateTime?       @map("aprovado_em")
+  parentAfiliadoId      String?         @map("parent_afiliado_id") @db.Uuid
   criadoEm              DateTime        @default(now()) @map("criado_em")
   usuario               Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   aprovador             Usuario?       @relation("aprovador_afiliado", fields: [aprovadoPor], references: [id])
+  parentAfiliado        Afiliado?      @relation("rede_afiliados", fields: [parentAfiliadoId], references: [id], onDelete: SetNull)
+  indicados             Afiliado[]     @relation("rede_afiliados")
   grupos               Grupo[]
+  convites             Convite[]      @relation("convites_afiliado")
   usuariosIndicados    Usuario[]      @relation("usuarios_indicados")
   cotasReferenciadas   Cota[]
   comissoes            Comissao[]
 
+  @@index([parentAfiliadoId])
   @@map("afiliados")
+}
+
+model Convite {
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo              String        @unique @db.VarChar(40)
+  tipo                TipoConvite
+  status              StatusConvite @default(ativo)
+  criadoPorUsuarioId  String        @map("criado_por_usuario_id") @db.Uuid
+  afiliadoOrigemId    String?       @map("afiliado_origem_id") @db.Uuid
+  usadoPorUsuarioId   String?       @map("usado_por_usuario_id") @db.Uuid
+  emailDestino        String?       @map("email_destino") @db.VarChar(180)
+  expiraEm            DateTime      @map("expira_em")
+  usadoEm             DateTime?     @map("usado_em")
+  criadoEm            DateTime      @default(now()) @map("criado_em")
+  criadoPorUsuario    Usuario       @relation("criador_convite", fields: [criadoPorUsuarioId], references: [id])
+  afiliadoOrigem      Afiliado?     @relation("convites_afiliado", fields: [afiliadoOrigemId], references: [id], onDelete: SetNull)
+  usadoPorUsuario     Usuario?      @relation("usuario_convite_usado", fields: [usadoPorUsuarioId], references: [id], onDelete: SetNull)
+
+  @@index([status, expiraEm])
+  @@index([afiliadoOrigemId])
+  @@map("convites")
 }
 
 model Grupo {
@@ -240,6 +280,7 @@ model Bolao {
   jogos                 JogoBolao[]
 
   @@index([concursoId, status])
+  @@index([criadoPor, status])
   @@map("boloes")
 }
 

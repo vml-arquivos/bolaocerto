@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AdminShell } from './admin-shell';
+import { AdminGroupForm, AffiliateNetworkTable, InviteManager, ManagedUserForm } from './admin-people-tools';
 
 type RecordValue = Record<string, any>;
 type PagePayload = { items?: RecordValue[]; pagination?: { page: number; pageSize: number; total: number; pages: number } };
@@ -36,7 +37,7 @@ const modalityLimits: Record<string, { max: number; min: number; pick: number }>
   loteca: { max: 14, min: 1, pick: 1 },
 };
 
-const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'participantes', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria']);
+const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'participantes', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'rede', 'convites']);
 
 function money(value: unknown) {
   const number = Number(value ?? 0);
@@ -115,6 +116,7 @@ function AdminDashboardContent() {
   const [payload, setPayload] = useState<PagePayload>({ items: [] });
   const [contests, setContests] = useState<RecordValue[]>([]);
   const [groupId, setGroupId] = useState<string | null>(null);
+  const [affiliateOptions, setAffiliateOptions] = useState<RecordValue[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
@@ -131,7 +133,7 @@ function AdminDashboardContent() {
       if (search) query.set('busca', search);
       if (statusFilter) query.set('status', statusFilter);
       if (view === 'visao-geral') query.set('periodo', period);
-      const endpointView = view === 'participantes' ? 'cotas' : view === 'pagamentos' ? 'recebimentos' : view === 'jogos' ? 'boloes' : view === 'comprovantes' ? 'operacao' : view;
+      const endpointView = view === 'participantes' ? 'cotas' : view === 'pagamentos' ? 'recebimentos' : view === 'jogos' ? 'boloes' : view === 'comprovantes' ? 'operacao' : view === 'rede' ? 'afiliados' : view;
       const endpoint = view === 'visao-geral' ? `/api/v1/admin/dashboard?${query.toString()}` : `/api/v1/admin/${endpointView}?${query.toString()}`;
       const result = await fetchAdmin(endpoint);
       if (view === 'visao-geral') setDashboard(result);
@@ -140,6 +142,10 @@ function AdminDashboardContent() {
         const [contestPayload, group] = await Promise.all([fetchAdmin('/api/v1/admin/concursos?page=1&pageSize=100'), fetch('/api/v1/grupos/bl-oficial').then((response) => response.ok ? response.json() : null)]);
         setContests(contestPayload.items ?? []);
         setGroupId(group?.id ?? null);
+      }
+      if (['afiliados', 'rede', 'convites', 'grupos'].includes(view)) {
+        const affiliatePayload = await fetchAdmin('/api/v1/admin/afiliados?page=1&pageSize=200');
+        setAffiliateOptions(affiliatePayload.items ?? []);
       }
     } catch (error) {
       setToast({ type: 'error', text: error instanceof Error ? error.message : 'Falha ao carregar o painel.' });
@@ -216,7 +222,19 @@ function AdminDashboardContent() {
   }
 
   function AffiliatesView() {
-    return <><SectionHeading eyebrow="Relacionamento" title="Afiliados" description="Aprovação, comissão padrão, atribuição e desempenho da rede." /><Panel title="Afiliados cadastrados"><Table minWidth={1080}><thead><tr><th>Afiliado</th><th>Código</th><th>Status</th><th>Cotas atribuídas</th><th>Comissão</th><th>Pendente</th><th>Pago</th><th>Ações</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.usuario?.nome}</strong><small>{item.usuario?.email}</small></td><td><code>{item.codigoAfiliado}</code></td><td><span className={statusClass(item.statusAprovacao)}>{statusLabel(item.statusAprovacao)}</span></td><td>{item.indicadores?.cotas ?? 0}</td><td>{item.comissaoPadraoPct}%</td><td>{money(item.indicadores?.pendente)}</td><td>{money(item.indicadores?.paga)}</td><td><div className="admin-row-actions">{item.statusAprovacao !== 'aprovado' && <button className="admin-button admin-button-small" onClick={() => execute(`/api/v1/admin/afiliados/${item.id}/aprovar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comissaoPadraoPct: Number(item.comissaoPadraoPct ?? 10) }) }, 'Afiliado aprovado e papel atualizado.')}>Aprovar</button>}<button className="admin-button admin-button-small admin-button-ghost" onClick={() => { const value = window.prompt('Nova comissão percentual:', String(item.comissaoPadraoPct ?? 10)); if (value !== null) void execute(`/api/v1/admin/afiliados/${item.id}/comissao`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comissaoPadraoPct: Number(value) }) }, 'Comissão atualizada.'); }}>Alterar %</button></div></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum afiliado" description="As solicitações e afiliados aprovados aparecerão nesta visão." />}</Panel></>;
+    return <><SectionHeading eyebrow="Relacionamento" title="Afiliados" description="Aprovação, comissão padrão, atribuição e desempenho da rede." /><div className="admin-management-grid"><ManagedUserForm mode="affiliate" affiliates={affiliateOptions as any} onDone={load} onNotice={(text) => setToast({ type: 'success', text })} /><InviteManager affiliates={affiliateOptions as any} onDone={load} onNotice={(text) => setToast({ type: 'success', text })} /></div><Panel title="Afiliados cadastrados"><Table minWidth={1240}><thead><tr><th>Afiliado</th><th>Código</th><th>Status</th><th>Pai</th><th>Diretos</th><th>Usuários</th><th>Grupos</th><th>Cotas</th><th>Comissão</th><th>Pendente</th><th>Pago</th><th>Ações</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.usuario?.nome}</strong><small>{item.usuario?.email}</small></td><td><code>{item.codigoAfiliado}</code></td><td><span className={statusClass(item.statusAprovacao)}>{statusLabel(item.statusAprovacao)}</span></td><td>{item.parentAfiliado?.usuario?.nome ?? 'Raiz'}</td><td>{item.indicadores?.indicados ?? 0}</td><td>{item.indicadores?.usuariosIndicados ?? 0}</td><td>{item.indicadores?.grupos ?? 0}</td><td>{item.indicadores?.cotas ?? 0}</td><td>{item.comissaoPadraoPct}%</td><td>{money(item.indicadores?.pendente)}</td><td>{money(item.indicadores?.paga)}</td><td><div className="admin-row-actions">{item.statusAprovacao !== 'aprovado' && <button className="admin-button admin-button-small" onClick={() => execute(`/api/v1/admin/afiliados/${item.id}/aprovar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comissaoPadraoPct: Number(item.comissaoPadraoPct ?? 10) }) }, 'Afiliado aprovado e papel atualizado.')}>Aprovar</button>}<button className="admin-button admin-button-small admin-button-ghost" onClick={() => { const value = window.prompt('Nova comissão percentual:', String(item.comissaoPadraoPct ?? 10)); if (value !== null) void execute(`/api/v1/admin/afiliados/${item.id}/comissao`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comissaoPadraoPct: Number(value) }) }, 'Comissão atualizada.'); }}>Alterar %</button></div></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum afiliado" description="Crie um afiliado ou gere um convite para iniciar a rede." />}</Panel></>;
+  }
+
+  function NetworkView() {
+    return <><SectionHeading eyebrow="Relacionamento" title="Rede de afiliados" description="Monte a hierarquia, altere o afiliado-pai e acompanhe os indicadores de cada nível." /><Panel title="Árvore operacional"><AffiliateNetworkTable affiliates={items as any} onDone={load} onNotice={(text) => setToast({ type: 'success', text })} /></Panel></>;
+  }
+
+  function InvitesView() {
+    return <><SectionHeading eyebrow="Aquisição" title="Convites" description="Gere links rastreáveis para usuários participantes e afiliados da rede." /><InviteManager affiliates={affiliateOptions as any} onDone={load} onNotice={(text) => setToast({ type: 'success', text })} /><Panel title="Convites emitidos"><Table minWidth={900}><thead><tr><th>Código</th><th>Tipo</th><th>Origem</th><th>Destino</th><th>Status</th><th>Expiração</th><th>Link</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><code>{item.codigo}</code></td><td>{item.tipo === 'afiliado' ? 'Afiliado' : 'Usuário'}</td><td>{item.afiliadoOrigem?.codigoAfiliado ?? 'Raiz'}</td><td>{item.emailDestino ?? 'Livre'}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{dateTime(item.expiraEm)}</td><td>{item.caminho ? <button className="admin-text-button" onClick={() => navigator.clipboard.writeText(`${window.location.origin}${item.caminho}`)}>Copiar link</button> : '—'}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum convite" description="Gere um link acima para iniciar aquisição rastreável." />}</Panel></>;
+  }
+
+  function GroupsView() {
+    return <><SectionHeading eyebrow="Estrutura" title="Grupos" description="Crie grupos oficiais ou vincule comunidades aos afiliados aprovados." /><Panel title="Novo grupo"><AdminGroupForm affiliates={affiliateOptions as any} onDone={load} onNotice={(text) => setToast({ type: 'success', text })} /></Panel><Panel title="Grupos cadastrados"><Table minWidth={850}><thead><tr><th>Grupo</th><th>Slug</th><th>Proprietário</th><th>Bolões</th><th>Criado em</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nome}</strong><small>{item.descricao ?? 'Sem descrição'}</small></td><td><code>/{item.slug}</code></td><td>{item.afiliado?.usuario?.nome ?? 'BL oficial'}</td><td>{item._count?.boloes ?? 0}</td><td>{dateOnly(item.criadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum grupo" description="Crie o primeiro grupo oficial ou de afiliado." />}</Panel></>;
   }
 
   function CommissionsView() {
@@ -229,7 +247,7 @@ function AdminDashboardContent() {
   }
 
   function UsersView() {
-    return <><SectionHeading eyebrow="Governança" title="Usuários" description="Contas, papéis, KYC e histórico de participação." /><Panel title="Contas cadastradas"><Table minWidth={1080}><thead><tr><th>Usuário</th><th>CPF</th><th>Papel</th><th>KYC</th><th>Cadastro</th><th>Participações</th><th>Ações</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nome}</strong><small>{item.email}</small></td><td>{item.cpf}</td><td><span className="status-chip">{item.papel}</span></td><td><span className={statusClass(item.statusKyc)}>{statusLabel(item.statusKyc)}</span></td><td>{dateOnly(item.criadoEm)}</td><td>{item._count?.cotasCompradas ?? 0}</td><td><select className="admin-inline-select" value={item.papel} onChange={(event) => execute(`/api/v1/admin/usuarios/${item.id}/papel`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ papel: event.target.value }) }, 'Papel do usuário atualizado.')}><option value="cotista">Cotista</option><option value="afiliado">Afiliado</option><option value="operacao">Operação</option><option value="admin">Admin</option></select></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum usuário" description="As contas cadastradas serão exibidas com paginação." />}</Panel></>;
+    return <><SectionHeading eyebrow="Governança" title="Usuários" description="Contas, papéis, KYC e histórico de participação." /><ManagedUserForm mode="user" onDone={load} onNotice={(text) => setToast({ type: 'success', text })} /><Panel title="Contas cadastradas"><Table minWidth={1120}><thead><tr><th>Usuário</th><th>CPF</th><th>Papel</th><th>Afiliado</th><th>KYC</th><th>Cadastro</th><th>Participações</th><th>Ações</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nome}</strong><small>{item.email}</small></td><td>{item.cpf}</td><td><span className="status-chip">{item.papel}</span></td><td>{item.afiliado?.codigoAfiliado ?? '—'}</td><td><span className={statusClass(item.statusKyc)}>{statusLabel(item.statusKyc)}</span></td><td>{dateOnly(item.criadoEm)}</td><td>{item._count?.cotasCompradas ?? 0}</td><td><select className="admin-inline-select" value={item.papel} onChange={(event) => execute(`/api/v1/admin/usuarios/${item.id}/papel`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ papel: event.target.value }) }, 'Papel do usuário atualizado.')}><option value="cotista">Cotista</option><option value="afiliado">Afiliado</option><option value="operacao">Operação</option><option value="admin">Admin</option></select></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum usuário" description="Use o cadastro interno acima ou o link de convite." />}</Panel></>;
   }
 
   function OperationView() {
@@ -259,6 +277,9 @@ function AdminDashboardContent() {
     if (view === 'participantes') return <ParticipantsView />;
     if (view === 'recebimentos' || view === 'pagamentos') return <PaymentsView />;
     if (view === 'afiliados') return <AffiliatesView />;
+    if (view === 'rede') return <NetworkView />;
+    if (view === 'convites') return <InvitesView />;
+    if (view === 'grupos') return <GroupsView />;
     if (view === 'comissoes') return <CommissionsView />;
     if (view === 'repasses') return <RemittancesView />;
     if (view === 'usuarios') return <UsersView />;

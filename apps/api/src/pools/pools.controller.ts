@@ -25,11 +25,25 @@ export class PoolsController {
     return this.pools.getPublicById(id);
   }
 
+  @Post('afiliados/me/boloes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  createAffiliatePool(@Body() dto: CreatePoolDto, @CurrentUser() user: AuthUser) {
+    return this.pools.create(dto, user);
+  }
+
   @Post('admin/boloes')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   create(@Body() dto: CreatePoolDto, @CurrentUser() user: AuthUser) {
     return this.pools.create(dto, user);
+  }
+
+  @Patch('afiliados/me/boloes/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  updateAffiliatePool(@Param('id') id: string, @Body() dto: UpdatePoolDto, @CurrentUser() user: AuthUser) {
+    return this.pools.update(id, dto, user);
   }
 
   @Patch('admin/boloes/:id')
@@ -39,11 +53,25 @@ export class PoolsController {
     return this.pools.update(id, dto, user);
   }
 
+  @Post('afiliados/me/boloes/:id/publicar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  publishAffiliatePool(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.publish(id, user);
+  }
+
   @Post('admin/boloes/:id/publicar')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   publish(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.pools.publish(id, user);
+  }
+
+  @Post('afiliados/me/boloes/:id/fechar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  closeAffiliatePool(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.close(id, user);
   }
 
   @Post('admin/boloes/:id/fechar')
@@ -53,11 +81,25 @@ export class PoolsController {
     return this.pools.close(id, user);
   }
 
+  @Post('afiliados/me/boloes/:id/duplicar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  duplicateAffiliatePool(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.duplicate(id, user);
+  }
+
   @Post('admin/boloes/:id/duplicar')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   duplicate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.pools.duplicate(id, user);
+  }
+
+  @Delete('afiliados/me/boloes/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  cancelAffiliatePool(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.cancel(id, user);
   }
 
   @Delete('admin/boloes/:id')

@@ -32,7 +32,9 @@ export class PoolsService {
   }
 
   async create(dto: CreatePoolDto, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores podem criar bolões.');
+    if (!['admin', 'afiliado'].includes(user.papel)) throw new ForbiddenException('Somente administradores e afiliados aprovados podem criar bolões.');
+    const affiliate = user.papel === 'afiliado' ? await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id } }) : null;
+    if (user.papel === 'afiliado' && (!affiliate || affiliate.statusAprovacao !== 'aprovado')) throw new ForbiddenException('O afiliado precisa estar aprovado para criar bolões.');
     const contest = await this.prisma.concurso.findUnique({ where: { id: dto.concursoId }, include: { config: true } });
     if (!contest) throw new NotFoundException('Concurso não encontrado.');
     if (contest.cutoffAt <= new Date()) throw new ConflictException('O concurso já passou do cutoff.');
@@ -43,8 +45,8 @@ export class PoolsService {
       const partner = await this.prisma.lotericaParceira.findFirst({ where: { id: dto.lotericaParceiraId, statusContrato: 'ativo' } });
       if (!partner) throw new NotFoundException('Lotérica parceira ativa não encontrada.');
     }
-    const group = await this.prisma.grupo.findUnique({ where: { id: dto.grupoId } });
-    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    const group = await this.prisma.grupo.findFirst({ where: { id: dto.grupoId, ...(affiliate ? { afiliadoId: affiliate.id } : {}) } });
+    if (!group) throw new NotFoundException(affiliate ? 'Grupo não encontrado na sua área de afiliado.' : 'Grupo não encontrado.');
 
     const games = this.normalizeGames(dto.jogos, dto.numerosApostados);
     const pool = await this.prisma.$transaction(async (tx) => {
@@ -53,7 +55,7 @@ export class PoolsService {
           concursoId: dto.concursoId,
           grupoId: dto.grupoId,
           criadoPor: user.id,
-          tipoOrganizador: 'admin',
+          tipoOrganizador: affiliate ? 'afiliado' : 'admin',
           numerosApostados: games[0]!.numeros,
           totalCotas: dto.totalCotas,
           valorCota: new Prisma.Decimal(dto.valorCota),
@@ -71,9 +73,9 @@ export class PoolsService {
   }
 
   async update(id: string, dto: UpdatePoolDto, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores podem editar bolões.');
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { cotas: true, jogos: { orderBy: { ordem: 'asc' } } } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    await this.assertCanManagePool(pool, user);
     const editableStatuses: StatusBolao[] = [StatusBolao.rascunho, StatusBolao.aberto];
     if (!editableStatuses.includes(pool.status)) throw new ConflictException('Bolão não pode mais ser editado neste estado.');
     const hasPaid = pool.cotas.some((share) => ([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status));
@@ -103,9 +105,9 @@ export class PoolsService {
   }
 
   async publish(id: string, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores podem publicar bolões.');
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: true } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    await this.assertCanManagePool(pool, user);
     if (pool.status !== StatusBolao.rascunho) throw new ConflictException('Somente bolões em rascunho podem ser publicados.');
     if (pool.concurso.cutoffAt <= new Date()) throw new ConflictException('O concurso já passou do cutoff.');
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -117,9 +119,9 @@ export class PoolsService {
   }
 
   async close(id: string, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores podem fechar bolões.');
     const pool = await this.prisma.bolao.findUnique({ where: { id } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    await this.assertCanManagePool(pool, user);
     if (pool.status !== StatusBolao.aberto) throw new ConflictException('Somente bolões abertos podem ser fechados.');
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.bolao.update({ where: { id }, data: { status: StatusBolao.fechado, editadoPor: user.id, editadoEm: new Date() } });
@@ -130,11 +132,11 @@ export class PoolsService {
   }
 
   async duplicate(id: string, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores podem duplicar bolões.');
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { jogos: { orderBy: { ordem: 'asc' } } } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    await this.assertCanManagePool(pool, user);
     const created = await this.prisma.$transaction(async (tx) => {
-      const copy = await tx.bolao.create({ data: { concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: 'admin', numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, status: StatusBolao.rascunho } });
+      const copy = await tx.bolao.create({ data: { concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, status: StatusBolao.rascunho } });
       if (pool.jogos.length) await tx.jogoBolao.createMany({ data: pool.jogos.map((game) => ({ bolaoId: copy.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custo, status: 'ativo' })) });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: copy.id, evento: 'bolao.duplicado', atorId: user.id, payloadDepois: { origemId: id, copiaId: copy.id } });
       return copy;
@@ -143,9 +145,9 @@ export class PoolsService {
   }
 
   async cancel(id: string, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores podem cancelar bolões.');
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { cotas: true } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    await this.assertCanManagePool(pool, user);
     if (pool.status === StatusBolao.registrado || pool.status === StatusBolao.apurado) throw new ConflictException('Bolão registrado não pode ser cancelado por esta operação.');
     const paid = pool.cotas.some((share) => share.status === StatusCota.paga);
     if (paid) throw new ConflictException('Existem cotas pagas; execute o fluxo de estorno do provedor antes de cancelar.');
@@ -155,6 +157,13 @@ export class PoolsService {
       return cancelled;
     });
     return { id: updated.id, status: updated.status };
+  }
+
+  private async assertCanManagePool(pool: { criadoPor: string }, user: AuthUser): Promise<void> {
+    if (user.papel === 'admin') return;
+    if (user.papel !== 'afiliado' || pool.criadoPor !== user.id) throw new ForbiddenException('Você só pode operar seus próprios bolões.');
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { statusAprovacao: true } });
+    if (!affiliate || affiliate.statusAprovacao !== 'aprovado') throw new ForbiddenException('O afiliado precisa estar aprovado para operar bolões.');
   }
 
   private normalizeGames(games: PoolGameDto[] | undefined, legacyNumbers: number[]): Array<{ ordem: number; numeros: number[]; quantidadeDezenas: number; custo?: number }> {

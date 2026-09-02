@@ -1,11 +1,16 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
-import { AuthUser } from '../auth/auth.utils';
+import { randomBytes } from 'crypto';
+import * as argon2 from 'argon2';
+import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import {
   AdminListQueryDto,
   ApproveAffiliateDto,
+  CreateGroupDto,
+  CreateInviteDto,
+  CreateManagedUserDto,
   CreateAffiliateDto,
   CreatePartnerLotteryDto,
   CreateRemittanceDto,
@@ -13,6 +18,7 @@ import {
   OperationReceiptDto,
   PayRemittanceDto,
   UpdateAffiliateCommissionDto,
+  UpdateAffiliateNetworkDto,
   UpdateSettingsDto,
   UpdateUserKycDto,
   UpdateUserRoleDto,
@@ -213,10 +219,10 @@ export class AdminService {
     const { page, pageSize, skip, take } = this.pagination(query);
     const where: Prisma.AfiliadoWhereInput = { ...(query.status ? { statusAprovacao: query.status } : {}), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
     const [items, total] = await Promise.all([
-      this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.afiliado.count({ where }),
     ]);
-    return { items: items.map((affiliate) => ({ ...affiliate, comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((affiliate) => ({ ...affiliate, comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async listCommissions(query: AdminListQueryDto = {}) {
@@ -267,23 +273,151 @@ export class AdminService {
     return { ...result, valorTotal: result.valorTotal.toFixed(2) };
   }
 
+  private makeCode(prefix: string): string {
+    return `${prefix}-${randomBytes(6).toString('hex').toUpperCase()}`;
+  }
+
+  private async requireApprovedAffiliate(user: AuthUser) {
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id } });
+    if (!affiliate || affiliate.statusAprovacao !== 'aprovado') throw new ForbiddenException('A área de afiliado exige um cadastro aprovado.');
+    return affiliate;
+  }
+
+  async createManagedUser(dto: CreateManagedUserDto, actor: AuthUser) {
+    const cpf = normalizeCpf(dto.cpf);
+    if (!isValidCpf(cpf)) throw new ConflictException('CPF inválido.');
+    const dataNascimento = new Date(dto.dataNascimento);
+    if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
+    assertAdult(dataNascimento);
+    const email = dto.email.trim().toLowerCase();
+    const papel = dto.papel ?? 'cotista';
+    const parent = dto.parentAfiliadoId ? await this.prisma.afiliado.findFirst({ where: { id: dto.parentAfiliadoId, statusAprovacao: 'aprovado' } }) : null;
+    if (dto.parentAfiliadoId && !parent) throw new NotFoundException('Afiliado-pai aprovado não encontrado.');
+    const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] }, select: { id: true } });
+    if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
+    const passwordHash = await argon2.hash(dto.senha, { type: argon2.argon2id });
+    const created = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.usuario.create({ data: { nome: dto.nome.trim(), cpf, email, telefone: dto.telefone?.trim() || undefined, dataNascimento, senhaHash: passwordHash, papel } });
+      const affiliate = papel === 'afiliado'
+        ? await tx.afiliado.create({ data: { usuarioId: user.id, codigoAfiliado: this.makeCode('BL'), statusAprovacao: 'aprovado', comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct ?? 10), parentAfiliadoId: parent?.id, aprovadoPor: actor.id, aprovadoEm: new Date() } })
+        : null;
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: user.id, evento: 'usuario.criado.admin', atorId: actor.id, payloadDepois: { id: user.id, email: user.email, papel: user.papel, afiliadoId: affiliate?.id ?? null, parentAfiliadoId: parent?.id ?? null } });
+      return { user, affiliate };
+    });
+    return { usuario: { id: created.user.id, nome: created.user.nome, cpf: this.maskCpf(created.user.cpf), email: created.user.email, papel: created.user.papel, criadoEm: created.user.criadoEm }, afiliado: created.affiliate ? { id: created.affiliate.id, codigoAfiliado: created.affiliate.codigoAfiliado, statusAprovacao: created.affiliate.statusAprovacao, parentAfiliadoId: created.affiliate.parentAfiliadoId } : null };
+  }
+
+  async createInvite(dto: CreateInviteDto, actor: AuthUser) {
+    const actorAffiliate = actor.papel === 'afiliado' ? await this.requireApprovedAffiliate(actor) : null;
+    const requestedOrigin = dto.afiliadoOrigemId ? await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoOrigemId, statusAprovacao: 'aprovado' } }) : null;
+    if (dto.afiliadoOrigemId && !requestedOrigin) throw new NotFoundException('Afiliado de origem não encontrado ou não aprovado.');
+    if (actorAffiliate && requestedOrigin && requestedOrigin.id !== actorAffiliate.id) throw new ForbiddenException('Um afiliado só pode gerar convites na própria rede.');
+    const origin = requestedOrigin ?? actorAffiliate;
+    const expiresAt = dto.expiraEm ? new Date(dto.expiraEm) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) throw new ConflictException('A validade do convite precisa estar no futuro.');
+    const invite = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, expiraEm: expiresAt } });
+      await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, expiraEm: created.expiraEm } });
+      return created;
+    });
+    return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` };
+  }
+
+  async listInvites(query: AdminListQueryDto = {}, actor: AuthUser) {
+    const { page, pageSize, skip, take } = this.pagination(query);
+    const where: Prisma.ConviteWhereInput = {
+      ...(actor.papel === 'afiliado' ? { afiliadoOrigemId: (await this.requireApprovedAffiliate(actor)).id } : {}),
+      ...(query.status ? { status: query.status as any } : {}),
+      ...(query.busca ? { OR: [{ codigo: { contains: query.busca, mode: 'insensitive' } }, { emailDestino: { contains: query.busca, mode: 'insensitive' } }] } : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.convite.findMany({ where, include: { afiliadoOrigem: { include: { usuario: { select: { nome: true, email: true } } } }, usadoPorUsuario: { select: { nome: true, email: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.convite.count({ where }),
+    ]);
+    return { items: items.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, emailDestino: invite.emailDestino, expiraEm: invite.expiraEm, usadoEm: invite.usadoEm, afiliadoOrigem: invite.afiliadoOrigem ? { id: invite.afiliadoOrigem.id, codigo: invite.afiliadoOrigem.codigoAfiliado, nome: invite.afiliadoOrigem.usuario.nome } : null, usadoPor: invite.usadoPorUsuario })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  async affiliateNetwork(actor: AuthUser) {
+    const root = await this.requireApprovedAffiliate(actor);
+    const nodes: Array<Record<string, unknown>> = [];
+    let frontier = [root.id];
+    for (let depth = 1; depth <= 10 && frontier.length; depth += 1) {
+      const children = await this.prisma.afiliado.findMany({ where: { parentAfiliadoId: { in: frontier } }, include: { usuario: { select: { id: true, nome: true, email: true, criadoEm: true } }, _count: { select: { indicados: true, usuariosIndicados: true, grupos: true, cotasReferenciadas: true } } }, orderBy: { criadoEm: 'asc' } });
+      nodes.push(...children.map((child) => ({ id: child.id, parentAfiliadoId: child.parentAfiliadoId, codigoAfiliado: child.codigoAfiliado, statusAprovacao: child.statusAprovacao, depth, usuario: child.usuario, indicadores: child._count })));
+      frontier = children.map((child) => child.id);
+    }
+    const own = await this.prisma.afiliado.findUniqueOrThrow({ where: { id: root.id }, include: { usuario: { select: { id: true, nome: true, email: true } }, _count: { select: { indicados: true, usuariosIndicados: true, grupos: true, cotasReferenciadas: true } } } });
+    return { raiz: { id: own.id, codigoAfiliado: own.codigoAfiliado, usuario: own.usuario, indicadores: own._count }, descendentes: nodes, totalDescendentes: nodes.length };
+  }
+
+  async affiliateWorkspace(actor: AuthUser) {
+    const affiliate = await this.requireApprovedAffiliate(actor);
+    const [groups, pools, invites] = await Promise.all([
+      this.prisma.grupo.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, include: { _count: { select: { boloes: true } } } }),
+      this.prisma.bolao.findMany({ where: { criadoPor: actor.id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } }, orderBy: { criadoEm: 'desc' }, take: 100 }),
+      this.prisma.convite.findMany({ where: { afiliadoOrigemId: affiliate.id }, orderBy: { criadoEm: 'desc' }, take: 100 }),
+    ]);
+    return { afiliado: { id: affiliate.id, codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao }, grupos: groups, boloes: pools.map((pool) => this.toPublicPool(pool)), convites: invites.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` })) };
+  }
+
+  async createGroup(dto: CreateGroupDto, actor: AuthUser) {
+    const affiliate = actor.papel === 'afiliado' ? await this.requireApprovedAffiliate(actor) : null;
+    const affiliateId = affiliate?.id ?? dto.afiliadoId;
+    if (actor.papel === 'admin' && dto.afiliadoId) {
+      const target = await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoId, statusAprovacao: 'aprovado' } });
+      if (!target) throw new NotFoundException('Afiliado aprovado não encontrado.');
+    }
+    const slug = dto.slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-');
+    if (!slug) throw new ConflictException('Slug do grupo inválido.');
+    const exists = await this.prisma.grupo.findUnique({ where: { slug } });
+    if (exists) throw new ConflictException('Slug de grupo já utilizado.');
+    const group = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.grupo.create({ data: { nome: dto.nome.trim(), slug, descricao: dto.descricao?.trim() || undefined, tipo: affiliateId ? 'afiliado' : 'oficial', afiliadoId: affiliateId, criadoPor: actor.id } });
+      await this.audit.record(tx, { entidade: 'grupo', entidadeId: created.id, evento: 'grupo.criado', atorId: actor.id, payloadDepois: created as unknown as Prisma.InputJsonValue });
+      return created;
+    });
+    return group;
+  }
+
+  async listGroups(query: AdminListQueryDto = {}, actor: AuthUser) {
+    const { page, pageSize, skip, take } = this.pagination(query);
+    const where: Prisma.GrupoWhereInput = actor.papel === 'afiliado' ? { afiliadoId: (await this.requireApprovedAffiliate(actor)).id } : { ...(query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { slug: { contains: query.busca, mode: 'insensitive' } }] } : {}) };
+    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, _count: { select: { boloes: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }), this.prisma.grupo.count({ where })]);
+    return { items, pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  private maskCpf(cpf: string): string {
+    return cpf.length === 11 ? `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}` : '***';
+  }
+
+  private toPublicPool(pool: any) {
+    const games = Array.isArray(pool.jogos) ? pool.jogos.map((game: any) => ({ id: game.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: Number(game.custo ?? 0).toFixed(2), status: game.status })) : [];
+    return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.totalCotas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: Math.max(pool.totalCotas - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug } : null };
+  }
+
   async listUsers(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const where: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
     const [items, total] = await Promise.all([
-      this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.usuario.count({ where }),
     ]);
-    return { items, pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((item) => ({ ...item, cpf: this.maskCpf(item.cpf) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async updateUserRole(id: string, dto: UpdateUserRoleDto, user: AuthUser) {
     if (id === user.id && dto.papel !== 'admin') throw new ConflictException('O administrador não pode remover o próprio acesso.');
-    const target = await this.prisma.usuario.findUnique({ where: { id } });
+    const target = await this.prisma.usuario.findUnique({ where: { id }, select: { id: true, nome: true, email: true, papel: true } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.usuario.update({ where: { id }, data: { papel: dto.papel } });
-      await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.papel.alterado', atorId: user.id, payloadAntes: target as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });
+      const affiliate = await tx.afiliado.findUnique({ where: { usuarioId: id } });
+      if (dto.papel === 'afiliado' && !affiliate) {
+        await tx.afiliado.create({ data: { usuarioId: id, codigoAfiliado: this.makeCode('BL'), statusAprovacao: 'aprovado', aprovadoPor: user.id, aprovadoEm: new Date() } });
+      } else if (dto.papel !== 'afiliado' && affiliate && affiliate.statusAprovacao !== 'inativo') {
+        await tx.afiliado.update({ where: { id: affiliate.id }, data: { statusAprovacao: 'inativo' } });
+      }
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.papel.alterado', atorId: user.id, payloadAntes: target as unknown as Prisma.InputJsonValue, payloadDepois: { id: result.id, papel: result.papel } });
       return result;
     });
     return { id: updated.id, papel: updated.papel };
@@ -346,6 +480,28 @@ export class AdminService {
       return updated;
     });
     return result;
+  }
+
+  async updateAffiliateNetwork(id: string, dto: UpdateAffiliateNetworkDto, user: AuthUser) {
+    const target = await this.prisma.afiliado.findUnique({ where: { id }, select: { id: true, parentAfiliadoId: true } });
+    if (!target) throw new NotFoundException('Afiliado não encontrado.');
+    if (dto.parentAfiliadoId === id) throw new ConflictException('Um afiliado não pode ser pai de si mesmo.');
+    if (dto.parentAfiliadoId) {
+      const parent = await this.prisma.afiliado.findFirst({ where: { id: dto.parentAfiliadoId, statusAprovacao: 'aprovado' }, select: { id: true, parentAfiliadoId: true } });
+      if (!parent) throw new NotFoundException('Afiliado-pai aprovado não encontrado.');
+      let cursor = parent.parentAfiliadoId;
+      for (let depth = 0; cursor && depth < 100; depth += 1) {
+        if (cursor === id) throw new ConflictException('A alteração criaria um ciclo na rede de afiliados.');
+        const ancestor = await this.prisma.afiliado.findUnique({ where: { id: cursor }, select: { parentAfiliadoId: true } });
+        cursor = ancestor?.parentAfiliadoId ?? null;
+      }
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.afiliado.update({ where: { id }, data: { parentAfiliadoId: dto.parentAfiliadoId ?? null } });
+      await this.audit.record(tx, { entidade: 'afiliado', entidadeId: id, evento: 'afiliado.rede.alterada', atorId: user.id, payloadAntes: target as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });
+      return result;
+    });
+    return { id: updated.id, parentAfiliadoId: updated.parentAfiliadoId };
   }
 
   async updateAffiliateCommission(id: string, dto: UpdateAffiliateCommissionDto, user: AuthUser) {

@@ -8,6 +8,9 @@ import {
   AdminListQueryDto,
   ApproveAffiliateDto,
   CreateAffiliateDto,
+  CreateGroupDto,
+  CreateInviteDto,
+  CreateManagedUserDto,
   CreatePartnerLotteryDto,
   CreateRemittanceDto,
   DashboardQueryDto,
@@ -17,6 +20,7 @@ import {
   UpdateSettingsDto,
   UpdateUserKycDto,
   UpdateUserRoleDto,
+  UpdateAffiliateNetworkDto,
 } from './admin.dto';
 
 @Controller()
@@ -90,6 +94,42 @@ export class AdminController {
     return this.admin.listUsers(query);
   }
 
+  @Post('admin/usuarios')
+  @Roles('admin')
+  createUser(@Body() dto: CreateManagedUserDto, @CurrentUser() user: AuthUser) {
+    return this.admin.createManagedUser({ ...dto, papel: 'cotista' }, user);
+  }
+
+  @Post('admin/afiliados')
+  @Roles('admin')
+  createAffiliate(@Body() dto: CreateManagedUserDto, @CurrentUser() user: AuthUser) {
+    return this.admin.createManagedUser({ ...dto, papel: 'afiliado' }, user);
+  }
+
+  @Post('admin/convites')
+  @Roles('admin')
+  createAdminInvite(@Body() dto: CreateInviteDto, @CurrentUser() user: AuthUser) {
+    return this.admin.createInvite(dto, user);
+  }
+
+  @Get('admin/convites')
+  @Roles('admin')
+  invites(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
+    return this.admin.listInvites(query, user);
+  }
+
+  @Post('admin/grupos')
+  @Roles('admin')
+  createAdminGroup(@Body() dto: CreateGroupDto, @CurrentUser() user: AuthUser) {
+    return this.admin.createGroup(dto, user);
+  }
+
+  @Get('admin/grupos')
+  @Roles('admin')
+  groups(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
+    return this.admin.listGroups(query, user);
+  }
+
   @Patch('admin/usuarios/:id/papel')
   @Roles('admin')
   updateUserRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto, @CurrentUser() user: AuthUser) {
@@ -138,6 +178,42 @@ export class AdminController {
     return this.admin.requestAffiliate(user, dto);
   }
 
+  @Post('afiliados/me/convites')
+  @Roles('afiliado')
+  createAffiliateInvite(@Body() dto: CreateInviteDto, @CurrentUser() user: AuthUser) {
+    return this.admin.createInvite({ ...dto, afiliadoOrigemId: undefined }, user);
+  }
+
+  @Get('afiliados/me/convites')
+  @Roles('afiliado')
+  affiliateInvites(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
+    return this.admin.listInvites(query, user);
+  }
+
+  @Post('afiliados/me/grupos')
+  @Roles('afiliado')
+  createAffiliateGroup(@Body() dto: CreateGroupDto, @CurrentUser() user: AuthUser) {
+    return this.admin.createGroup(dto, user);
+  }
+
+  @Get('afiliados/me/grupos')
+  @Roles('afiliado')
+  affiliateGroups(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
+    return this.admin.listGroups(query, user);
+  }
+
+  @Get('afiliados/me/rede')
+  @Roles('afiliado')
+  affiliateNetwork(@CurrentUser() user: AuthUser) {
+    return this.admin.affiliateNetwork(user);
+  }
+
+  @Get('afiliados/me/workspace')
+  @Roles('afiliado')
+  affiliateWorkspace(@CurrentUser() user: AuthUser) {
+    return this.admin.affiliateWorkspace(user);
+  }
+
   @Get('afiliados/me/dashboard')
   @Roles('afiliado')
   affiliateDashboard(@CurrentUser() user: AuthUser) {
@@ -154,6 +230,12 @@ export class AdminController {
   @Roles('admin')
   approve(@Param('id') id: string, @Body() dto: ApproveAffiliateDto, @CurrentUser() user: AuthUser) {
     return this.admin.approveAffiliate(id, dto, user);
+  }
+
+  @Patch('admin/afiliados/:id/rede')
+  @Roles('admin')
+  updateAffiliateNetwork(@Param('id') id: string, @Body() dto: UpdateAffiliateNetworkDto, @CurrentUser() user: AuthUser) {
+    return this.admin.updateAffiliateNetwork(id, dto, user);
   }
 
   @Patch('admin/afiliados/:id/comissao')

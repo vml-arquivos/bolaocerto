@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../common/prisma.service';
 import { RegisterDto, LoginDto } from './auth.dto';
@@ -18,24 +19,55 @@ export class AuthService {
     const cpf = normalizeCpf(dto.cpf);
     if (!isValidCpf(cpf)) throw new ConflictException('CPF inválido.');
     const dataNascimento = new Date(dto.dataNascimento);
+    if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
     assertAdult(dataNascimento);
-    const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email: dto.email.toLowerCase() }] } });
+    const email = dto.email.toLowerCase().trim();
+    const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
-    const affiliate = dto.codigoAfiliado
-      ? await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: dto.codigoAfiliado.trim() }, select: { id: true, statusAprovacao: true } })
+
+    const code = dto.codigoAfiliado?.trim();
+    const invite = code
+      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, emailDestino: true } })
       : null;
-    if (dto.codigoAfiliado && (!affiliate || affiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
-    const user = await this.prisma.usuario.create({
-      data: {
-        nome: dto.nome.trim(),
-        cpf,
-        email: dto.email.toLowerCase().trim(),
-        telefone: dto.telefone,
-        dataNascimento,
-        senhaHash: await argon2.hash(dto.senha, { type: argon2.argon2id }),
-        indicadoPorAfiliadoId: affiliate?.id,
-      },
-      select: { id: true, email: true, papel: true },
+    if (invite?.emailDestino && invite.emailDestino.toLowerCase() !== email) throw new ConflictException('Este convite foi direcionado a outro e-mail.');
+
+    const directAffiliate = !invite && code
+      ? await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: code }, select: { id: true, statusAprovacao: true } })
+      : null;
+    if (code && !invite && (!directAffiliate || directAffiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
+    const originAffiliateId = invite?.afiliadoOrigemId ?? directAffiliate?.id ?? null;
+    const papel = invite?.tipo === 'afiliado' ? 'afiliado' : 'cotista';
+    const passwordHash = await argon2.hash(dto.senha, { type: argon2.argon2id });
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.usuario.create({
+        data: {
+          nome: dto.nome.trim(),
+          cpf,
+          email,
+          telefone: dto.telefone?.trim() || undefined,
+          dataNascimento,
+          senhaHash: passwordHash,
+          papel,
+          indicadoPorAfiliadoId: originAffiliateId ?? undefined,
+        },
+        select: { id: true, email: true, papel: true },
+      });
+      if (invite?.tipo === 'afiliado') {
+        await tx.afiliado.create({
+          data: {
+            usuarioId: created.id,
+            codigoAfiliado: this.makeCode('BL'),
+            statusAprovacao: 'pendente',
+            parentAfiliadoId: originAffiliateId ?? undefined,
+          },
+        });
+      }
+      if (invite) {
+        const marked = await tx.convite.updateMany({ where: { id: invite.id, status: 'ativo' }, data: { status: 'usado', usadoPorUsuarioId: created.id, usadoEm: new Date() } });
+        if (marked.count !== 1) throw new ConflictException('Este convite já foi utilizado.');
+      }
+      return created;
     });
     return this.issueTokens(user);
   }
@@ -49,7 +81,7 @@ export class AuthService {
   async profile(id: string) {
     return this.prisma.usuario.findUniqueOrThrow({
       where: { id },
-      select: { id: true, nome: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true },
+      select: { id: true, nome: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } } },
     });
   }
 
@@ -65,6 +97,10 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Refresh token inválido ou expirado.');
     }
+  }
+
+  private makeCode(prefix: string): string {
+    return `${prefix}-${randomBytes(6).toString('hex').toUpperCase()}`;
   }
 
   private async issueTokens(user: AuthUser): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {

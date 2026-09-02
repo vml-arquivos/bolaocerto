@@ -13,7 +13,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       const response = await fetch(`/api/v1/auth/${mode === 'login' ? 'login' : 'registrar'}`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const result = await response.json().catch(() => ({})) as { message?: string | string[] };
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || 'Não foi possível concluir.');
-      window.location.href = '/minha-conta';
+      const authenticatedUser = (result as { user?: { papel?: string } }).user;
+      window.location.href = authenticatedUser?.papel === 'admin' ? '/admin' : authenticatedUser?.papel === 'afiliado' ? '/afiliado' : '/minha-conta';
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
   return <form onSubmit={submit}>

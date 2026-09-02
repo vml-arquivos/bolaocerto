@@ -37,7 +37,7 @@ describe('AdminService', () => {
 
 describe('PoolsService', () => {
   it('bloqueia afiliado na criação de bolão antes de acessar o banco', async () => {
-    const prisma = { concurso: { findUnique: jest.fn() } };
+    const prisma = { concurso: { findUnique: jest.fn() }, afiliado: { findUnique: jest.fn().mockResolvedValue(null) } };
     const service = new PoolsService(prisma as any, { record: jest.fn() } as any);
 
     await expect(service.create({} as any, { id: 'affiliate-1', papel: 'afiliado' } as any)).rejects.toBeInstanceOf(ForbiddenException);

@@ -5,14 +5,16 @@ jest.mock('argon2', () => ({ hash: jest.fn().mockResolvedValue('hash') }));
 
 describe('AuthService referral attribution', () => {
   function makeService(overrides: Record<string, unknown> = {}) {
-    const prisma = {
+    const prisma: any = {
       usuario: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'user-1', email: 'novo@example.com', papel: 'cotista' }),
       },
       afiliado: { findUnique: jest.fn().mockResolvedValue(null) },
+      convite: { findFirst: jest.fn().mockResolvedValue(null) },
       ...overrides,
     };
+    prisma.$transaction = jest.fn(async (callback: (tx: any) => unknown) => callback(prisma));
     const jwt = { signAsync: jest.fn().mockResolvedValueOnce('access').mockResolvedValueOnce('refresh') };
     const config = {
       getOrThrow: jest.fn((key: string) => key === 'JWT_ACCESS_SECRET' ? 'access-secret' : 'refresh-secret'),
