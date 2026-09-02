@@ -66,12 +66,13 @@ const groups = [
 const titles: Record<string, string> = Object.fromEntries(groups.flatMap((group) => group.items.map(([key, label]) => [key, label])));
 const COLLAPSE_KEY = 'bl-admin-sidebar-collapsed';
 
-export function AdminShell({ children }: { children: ReactNode }) {
+export function AdminShell({ children, testMode = false }: { children: ReactNode; testMode?: boolean }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const current = params.get('view') || 'visao-geral';
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
 
   useEffect(() => {
     try { setCollapsed(window.localStorage.getItem(COLLAPSE_KEY) === '1'); } catch { /* localStorage indisponível */ }
@@ -81,8 +82,18 @@ export function AdminShell({ children }: { children: ReactNode }) {
     setCollapsed((value) => {
       const next = !value;
       try { window.localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0'); } catch { /* localStorage indisponível */ }
+      if (!next) setTooltip(null);
       return next;
     });
+  }
+
+  function showTooltip(label: string, target: HTMLElement) {
+    if (!collapsed) return;
+    const rect = target.getBoundingClientRect();
+    setTooltip({ label, top: rect.top + rect.height / 2 });
+  }
+  function hideTooltip() {
+    setTooltip(null);
   }
 
   return (
@@ -93,7 +104,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <span className="admin-brand-mark"><img src="/brand/bl-app-icon.png" alt="" aria-hidden="true" /></span>
           <span><strong>Bolão Livre</strong><small>Central administrativa</small></span>
         </div>
-        <div className="admin-environment"><span className="admin-status-dot" /> <span>Ambiente de produção</span></div>
+        <div className={`admin-environment ${testMode ? 'is-test-mode' : ''}`}>
+          <span className="admin-status-dot" />
+          <span>{testMode ? 'Ambiente de validação' : 'Ambiente de produção'}</span>
+        </div>
+        {testMode && <p className="admin-environment-note">Não realize pagamentos reais.</p>}
         <nav className="admin-nav" aria-label="Navegação administrativa">
           {groups.map((group) => (
             <div className="admin-nav-group" key={group.label}>
@@ -104,8 +119,13 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   href={`${pathname}?view=${key}`}
                   className={`admin-nav-link ${current === key ? 'is-active' : ''}`}
                   onClick={() => setOpen(false)}
+                  onMouseEnter={(event) => showTooltip(label, event.currentTarget)}
+                  onMouseLeave={hideTooltip}
+                  onFocus={(event) => showTooltip(label, event.currentTarget)}
+                  onBlur={hideTooltip}
                   aria-current={current === key ? 'page' : undefined}
                   data-label={label}
+                  title={collapsed ? label : undefined}
                 >
                   <span className="admin-nav-icon" aria-hidden="true">{icon}</span><span>{label}</span>
                 </Link>
@@ -122,6 +142,16 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <span className="admin-footer-note">BL — Bolão Livre</span>
         </div>
       </aside>
+      {collapsed && (
+        <div
+          className={`admin-sidebar-tooltip ${tooltip ? 'is-visible' : ''}`}
+          style={tooltip ? { top: tooltip.top } : undefined}
+          role="tooltip"
+          aria-hidden={!tooltip}
+        >
+          {tooltip?.label}
+        </div>
+      )}
       {open && <button className="admin-overlay" aria-label="Fechar menu" onClick={() => setOpen(false)} />}
       <section className={`admin-content ${collapsed ? 'is-collapsed-content' : ''}`}>
         <header className="admin-topbar">

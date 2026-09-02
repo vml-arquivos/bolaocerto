@@ -38,15 +38,15 @@ const visualByModality: Record<string, LotteryVisual> = {
   },
   duplasena: {
     key: 'duplasena', name: 'Dupla Sena', eyebrow: 'Duas chances no mesmo jogo', description: 'Um único bilhete, dois sorteios para torcer.',
-    art: '/brand/lottery/mega-sena-hero.jpg', accent: '#d5457a', soft: '#ffe9f1', icon: 'DU',
+    art: '/brand/lottery/dupla-sena-hero.jpg', accent: '#d5457a', soft: '#ffe9f1', icon: 'DU',
   },
   supersete: {
     key: 'supersete', name: 'Super Sete', eyebrow: 'Simples e direto', description: 'Sete colunas, sete decisões rápidas de jogo.',
-    art: '/brand/lottery/quina-hero.jpg', accent: '#0f9d8a', soft: '#e2fbf5', icon: 'S7',
+    art: '/brand/lottery/super-sete-hero.jpg', accent: '#0f9d8a', soft: '#e2fbf5', icon: 'S7',
   },
   loteca: {
     key: 'loteca', name: 'Loteca', eyebrow: 'Paixão pelo esporte', description: 'Aposte nos resultados da rodada com o grupo.',
-    art: '/brand/lottery/timemania-hero.jpg', accent: '#c2670f', soft: '#fff0df', icon: 'LT',
+    art: '/brand/lottery/loteca-hero.jpg', accent: '#c2670f', soft: '#fff0df', icon: 'LT',
   },
 };
 

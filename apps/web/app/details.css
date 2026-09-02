@@ -11,7 +11,7 @@
 
 /* Bolinhas com os números apostados (não confundir com .number-grid, o seletor de números do assistente administrativo) */
 .result-balls { display: flex; flex-wrap: wrap; gap: 9px; }
-.number-ball { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(145deg, var(--primary), var(--accent)); color: #fff; font-weight: 850; box-shadow: 0 6px 12px rgba(86, 128, 255, .25); }
+.number-ball { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(145deg, var(--primary-solid), var(--accent-solid)); color: #fff; font-weight: 850; box-shadow: 0 6px 12px rgba(0, 40, 180, .3); }
 
 .transparency { margin-top: 28px; border-color: var(--border-strong); background: var(--primary-soft); }
 .pix-box { display: grid; gap: 10px; margin-top: 14px; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--primary-soft); }
