@@ -1,8 +1,12 @@
 FROM node:22-bookworm-slim AS deps
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
 WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
@@ -22,7 +26,7 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl openssl ca-certificates \
+  && apt-get install -y --no-install-recommends curl openssl ca-certificates tini \
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable
 
@@ -56,18 +60,24 @@ ENV APP_PORT=3000
 ENV API_INTERNAL_URL=http://127.0.0.1:3001/api/v1
 ENV API_PROXY_URL=http://127.0.0.1:3001
 ENV API_PORT=3001
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends tini \
-  && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/api ./apps/api
-COPY --from=builder /app/apps/worker ./apps/worker
-COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+COPY --from=builder /app/apps/worker/package.json ./apps/worker/package.json
+COPY --from=builder /app/packages/shared-types/package.json ./packages/shared-types/package.json
+RUN pnpm install --prod --frozen-lockfile \
+  --filter '@bolaocerto/api...' \
+  --filter '@bolaocerto/worker...'
+
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
+COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY docker/production-entrypoint.sh /usr/local/bin/bl-production-entrypoint
 RUN chmod +x /usr/local/bin/bl-production-entrypoint
+
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 CMD curl -fsS http://127.0.0.1:3001/api/v1/health >/dev/null || exit 1
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/bl-production-entrypoint"]
