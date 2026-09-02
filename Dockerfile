@@ -13,7 +13,11 @@ COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY apps/mobile/package.json apps/mobile/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile \
+  --filter '@bolaocerto/api...' \
+  --filter '@bolaocerto/web...' \
+  --filter '@bolaocerto/worker...' \
+  --filter '@bolaocerto/shared-types...'
 
 FROM deps AS builder
 COPY . .
