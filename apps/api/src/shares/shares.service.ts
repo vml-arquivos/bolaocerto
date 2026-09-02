@@ -25,7 +25,7 @@ export class SharesService {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId} FOR UPDATE`;
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
-      if (pool.status !== StatusBolao.aberto || pool.cotasVendidas + dto.quantidade > pool.totalCotas) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');
+      if (pool.status !== StatusBolao.aberto || (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas))) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');
       const share = await tx.cota.create({
         data: {
           bolaoId: pool.id,

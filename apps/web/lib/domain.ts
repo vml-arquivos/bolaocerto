@@ -4,8 +4,8 @@ export type PublicContest = {
 };
 
 export type PublicPool = {
-  id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number;
-  cotasDisponiveis: number; valorCota: string; taxaAdministracaoPct: string; modeloOperacional: string;
+  id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number | null;
+  cotasIlimitadas: boolean; cotasVendidas?: number; cotasDisponiveis: number | null; valorCota: string; taxaAdministracaoPct: string; modeloOperacional: string;
   status: string; teveGanhador: boolean; concurso?: Omit<PublicContest, 'id'>;
   grupo?: { nome: string; slug: string; descricao: string | null };
 };

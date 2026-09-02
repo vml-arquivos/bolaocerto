@@ -41,8 +41,10 @@ export interface BolaoPublico {
   numerosApostados: number[];
   jogos?: JogoBolaoPublico[];
   quantidadeJogos?: number;
-  totalCotas: number;
-  cotasDisponiveis: number;
+  totalCotas: number | null;
+  cotasIlimitadas: boolean;
+  cotasVendidas?: number;
+  cotasDisponiveis: number | null;
   valorCota: string;
   taxaAdministracaoPct: string;
   modeloOperacional: 'mandato' | 'loterica_parceira';
@@ -50,9 +52,9 @@ export interface BolaoPublico {
   teveGanhador: boolean;
   financeiro?: {
     custoJogos: string;
-    receitaPrevista: string;
-    taxaAdministracaoPrevista: string;
-    margemOperacionalPrevista: string;
+    receitaPrevista: string | null;
+    taxaAdministracaoPrevista: string | null;
+    margemOperacionalPrevista: string | null;
   };
 }
 

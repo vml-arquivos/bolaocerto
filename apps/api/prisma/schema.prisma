@@ -258,7 +258,8 @@ model Bolao {
   criadoPor             String              @map("criado_por") @db.Uuid
   tipoOrganizador       TipoOrganizador     @map("tipo_organizador")
   numerosApostados      Int[]               @map("numeros_apostados")
-  totalCotas            Int                 @map("total_cotas")
+  totalCotas            Int?                @map("total_cotas")
+  cotasIlimitadas       Boolean             @default(false) @map("cotas_ilimitadas")
   cotasVendidas         Int                 @default(0) @map("cotas_vendidas")
   valorCota             Decimal             @map("valor_cota") @db.Decimal(10,2)
   taxaAdministracaoPct  Decimal             @map("taxa_administracao_pct") @db.Decimal(5,2)

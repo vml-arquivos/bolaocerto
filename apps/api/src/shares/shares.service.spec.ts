@@ -47,4 +47,25 @@ describe('SharesService stock safety', () => {
     expect(results.filter((result) => result.status === 'rejected' && result.reason instanceof ConflictException)).toHaveLength(1);
     expect(pool.cotasVendidas).toBe(1);
   });
+
+  it('allows multiple simultaneous reservations for an unlimited pool', async () => {
+    const pool = { id: 'pool-unlimited', status: 'aberto', cotasVendidas: 0, totalCotas: null, cotasIlimitadas: true };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      bolao: {
+        findUnique: jest.fn().mockImplementation(async () => pool),
+        update: jest.fn().mockImplementation(async ({ data }: any) => { pool.cotasVendidas += data.cotasVendidas.increment; return pool; }),
+      },
+      cota: { create: jest.fn().mockImplementation(async ({ data }: any) => ({ id: `share-${data.compradorId}`, bolaoId: pool.id, status: 'reservada', quantidade: data.quantidade, expiraReservaEm: new Date() })) },
+    };
+    const prisma = { afiliado: { findFirst: jest.fn().mockResolvedValue(null) }, $transaction: serializedTransaction(tx) };
+    const service = new SharesService(prisma as any, { record: jest.fn() } as any);
+    const dto = { bolaoId: pool.id, titularCpf: '52998224725', titularNome: 'Pessoa', quantidade: 1, termoMandatoHash: 'hash' };
+    const results = await Promise.all([
+      service.reserve(dto as any, { id: 'user-1', papel: 'cotista' } as any, { ip: '127.0.0.1' }),
+      service.reserve(dto as any, { id: 'user-2', papel: 'cotista' } as any, { ip: '127.0.0.2' }),
+    ]);
+    expect(results).toHaveLength(2);
+    expect(pool.cotasVendidas).toBe(2);
+  });
 });

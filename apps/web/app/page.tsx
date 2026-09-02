@@ -13,7 +13,7 @@ export default async function HomePage() {
   const contests = contestResult.data ?? [];
   const featured = contests.filter((item) => new Date(item.cutoffAt).getTime() > Date.now()).sort((a, b) => Number(b.valorEstimadoPremio ?? 0) - Number(a.valorEstimadoPremio ?? 0))[0] ?? contests[0];
   const featuredVisual = lotteryVisual(featured?.modalidade);
-  const openPools = pools.filter((pool) => pool.status === 'aberto' && pool.cotasDisponiveis > 0).length;
+  const openPools = pools.filter((pool) => pool.status === 'aberto' && (pool.cotasDisponiveis === null || pool.cotasDisponiveis > 0)).length;
   const openContests = contests.filter((contest) => new Date(contest.cutoffAt).getTime() > Date.now()).length;
 
   return <><SiteHeader /><main>

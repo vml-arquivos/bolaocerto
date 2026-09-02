@@ -39,7 +39,7 @@ export class PoolsService {
     if (!contest) throw new NotFoundException('Concurso não encontrado.');
     if (contest.cutoffAt <= new Date()) throw new ConflictException('O concurso já passou do cutoff.');
     if (dto.taxaAdministracaoPct > Number(contest.config.taxaAdministracaoTetoPct)) throw new ConflictException('Taxa de administração acima do teto da modalidade.');
-    if (dto.totalCotas < contest.config.minCotasBolao || dto.totalCotas > contest.config.maxCotasBolao) throw new ConflictException('Quantidade de cotas fora dos limites da modalidade.');
+    if (!dto.cotasIlimitadas && (dto.totalCotas === undefined || dto.totalCotas < contest.config.minCotasBolao || dto.totalCotas > contest.config.maxCotasBolao)) throw new ConflictException('Quantidade de cotas fora dos limites da modalidade.');
     if (dto.modeloOperacional === 'loterica_parceira' && !dto.lotericaParceiraId) throw new ConflictException('Bolão com lotérica parceira exige uma lotérica ativa.');
     if (dto.modeloOperacional === 'loterica_parceira') {
       const partner = await this.prisma.lotericaParceira.findFirst({ where: { id: dto.lotericaParceiraId, statusContrato: 'ativo' } });
@@ -57,7 +57,8 @@ export class PoolsService {
           criadoPor: user.id,
           tipoOrganizador: affiliate ? 'afiliado' : 'admin',
           numerosApostados: games[0]!.numeros,
-          totalCotas: dto.totalCotas,
+          totalCotas: dto.cotasIlimitadas ? null : dto.totalCotas,
+          cotasIlimitadas: dto.cotasIlimitadas === true,
           valorCota: new Prisma.Decimal(dto.valorCota),
           taxaAdministracaoPct: new Prisma.Decimal(dto.taxaAdministracaoPct),
           modeloOperacional: dto.modeloOperacional,
@@ -73,22 +74,25 @@ export class PoolsService {
   }
 
   async update(id: string, dto: UpdatePoolDto, user: AuthUser) {
-    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { cotas: true, jogos: { orderBy: { ordem: 'asc' } } } });
+    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { cotas: true, jogos: { orderBy: { ordem: 'asc' } }, concurso: { include: { config: true } } } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     await this.assertCanManagePool(pool, user);
     const editableStatuses: StatusBolao[] = [StatusBolao.rascunho, StatusBolao.aberto];
     if (!editableStatuses.includes(pool.status)) throw new ConflictException('Bolão não pode mais ser editado neste estado.');
     const hasPaid = pool.cotas.some((share) => ([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status));
-    const sensitiveChanged = dto.numerosApostados !== undefined || dto.jogos !== undefined || dto.totalCotas !== undefined || dto.valorCota !== undefined || dto.taxaAdministracaoPct !== undefined;
+    const sensitiveChanged = dto.numerosApostados !== undefined || dto.jogos !== undefined || dto.totalCotas !== undefined || dto.cotasIlimitadas !== undefined || dto.valorCota !== undefined || dto.taxaAdministracaoPct !== undefined;
     if (hasPaid && sensitiveChanged) throw new ConflictException('Campos sensíveis não podem ser alterados após confirmação de pagamento.');
-    if (dto.totalCotas !== undefined && dto.totalCotas < pool.cotasVendidas) throw new ConflictException('Total de cotas não pode ficar abaixo das cotas já vendidas.');
+    const nextUnlimited = dto.cotasIlimitadas ?? pool.cotasIlimitadas;
+    const nextTotal = nextUnlimited ? null : (dto.totalCotas ?? pool.totalCotas);
+    if (!nextUnlimited && (nextTotal === null || nextTotal === undefined || nextTotal < pool.concurso.config.minCotasBolao || nextTotal > pool.concurso.config.maxCotasBolao)) throw new ConflictException('Quantidade de cotas fora dos limites da modalidade.');
+    if (!nextUnlimited && nextTotal !== null && nextTotal !== undefined && nextTotal < pool.cotasVendidas) throw new ConflictException('Total de cotas não pode ficar abaixo das cotas já vendidas.');
 
     const games = dto.jogos !== undefined || dto.numerosApostados !== undefined ? this.normalizeGames(dto.jogos, dto.numerosApostados ?? pool.numerosApostados) : null;
     const before = pool as unknown as Prisma.InputJsonValue;
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.bolao.update({ where: { id }, data: {
         ...(dto.numerosApostados !== undefined || games ? { numerosApostados: games![0]!.numeros } : {}),
-        ...(dto.totalCotas !== undefined ? { totalCotas: dto.totalCotas } : {}),
+        ...(dto.totalCotas !== undefined || dto.cotasIlimitadas !== undefined ? { totalCotas: nextTotal, cotasIlimitadas: nextUnlimited } : {}),
         ...(dto.valorCota !== undefined ? { valorCota: new Prisma.Decimal(dto.valorCota) } : {}),
         ...(dto.taxaAdministracaoPct !== undefined ? { taxaAdministracaoPct: new Prisma.Decimal(dto.taxaAdministracaoPct) } : {}),
         editadoPor: user.id,
@@ -136,7 +140,7 @@ export class PoolsService {
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     await this.assertCanManagePool(pool, user);
     const created = await this.prisma.$transaction(async (tx) => {
-      const copy = await tx.bolao.create({ data: { concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, status: StatusBolao.rascunho } });
+      const copy = await tx.bolao.create({ data: { concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, status: StatusBolao.rascunho } });
       if (pool.jogos.length) await tx.jogoBolao.createMany({ data: pool.jogos.map((game) => ({ bolaoId: copy.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custo, status: 'ativo' })) });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: copy.id, evento: 'bolao.duplicado', atorId: user.id, payloadDepois: { origemId: id, copiaId: copy.id } });
       return copy;
@@ -183,8 +187,8 @@ export class PoolsService {
   private toPublic(pool: any) {
     const jogos = Array.isArray(pool.jogos) ? pool.jogos.map((game: any) => ({ id: game.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: Number(game.custo ?? 0).toFixed(2), status: game.status })) : [];
     const custoJogos = jogos.reduce((sum: number, game: { custo: string }) => sum + Number(game.custo), 0);
-    const receitaPrevista = Number(pool.valorCota) * pool.totalCotas;
-    const taxaPrevista = receitaPrevista * Number(pool.taxaAdministracaoPct) / 100;
+    const receitaPrevista = pool.cotasIlimitadas || pool.totalCotas === null ? null : Number(pool.valorCota) * pool.totalCotas;
+    const taxaPrevista = receitaPrevista === null ? null : receitaPrevista * Number(pool.taxaAdministracaoPct) / 100;
     return {
       id: pool.id,
       concursoId: pool.concursoId,
@@ -192,15 +196,16 @@ export class PoolsService {
       numerosApostados: pool.numerosApostados,
       jogos,
       quantidadeJogos: jogos.length || (pool.numerosApostados.length ? 1 : 0),
-      totalCotas: pool.totalCotas,
+      totalCotas: pool.cotasIlimitadas ? null : pool.totalCotas,
+      cotasIlimitadas: pool.cotasIlimitadas,
       cotasVendidas: pool.cotasVendidas,
-      cotasDisponiveis: Math.max(pool.totalCotas - pool.cotasVendidas, 0),
+      cotasDisponiveis: pool.cotasIlimitadas || pool.totalCotas === null ? null : Math.max(pool.totalCotas - pool.cotasVendidas, 0),
       valorCota: pool.valorCota.toFixed(2),
       taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
       modeloOperacional: pool.modeloOperacional,
       status: pool.status,
       teveGanhador: pool.teveGanhador,
-      financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista.toFixed(2), margemOperacionalPrevista: (taxaPrevista - custoJogos).toFixed(2) },
+      financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista === null ? null : receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista === null ? null : taxaPrevista.toFixed(2), margemOperacionalPrevista: taxaPrevista === null ? null : (taxaPrevista - custoJogos).toFixed(2) },
       concurso: pool.concurso ? {
         modalidade: pool.concurso.modalidade,
         numeroConcurso: pool.concurso.numeroConcurso,

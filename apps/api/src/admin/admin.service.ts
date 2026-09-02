@@ -84,7 +84,7 @@ export class AdminService {
       this.prisma.comissao.aggregate({ where: { status: StatusComissao.pendente }, _sum: { valor: true }, _count: { _all: true } }),
       this.prisma.comissao.aggregate({ where: { status: StatusComissao.paga }, _sum: { valor: true }, _count: { _all: true } }),
       this.prisma.afiliado.count({ where: { statusAprovacao: 'aprovado' } }),
-      this.prisma.bolao.findMany({ where: { status: StatusBolao.aberto }, select: { totalCotas: true, cotasVendidas: true } }),
+      this.prisma.bolao.findMany({ where: { status: StatusBolao.aberto }, select: { totalCotas: true, cotasVendidas: true, cotasIlimitadas: true } }),
       this.prisma.bolao.count({ where: { status: { in: [StatusBolao.fechado] } } }),
       this.prisma.bolao.findMany({
         where: { status: { in: [StatusBolao.aberto, StatusBolao.fechado] }, concurso: { cutoffAt: { gte: new Date() } } },
@@ -124,7 +124,7 @@ export class AdminService {
         boloesFechados: poolCounts.fechado ?? 0,
         boloesRegistrados: poolCounts.registrado ?? 0,
         boloesApurados: poolCounts.apurado ?? 0,
-        cotasDisponiveis: openPoolStock.reduce((sum, pool) => sum + Math.max(pool.totalCotas - pool.cotasVendidas, 0), 0),
+        cotasDisponiveis: openPoolStock.reduce((sum, pool) => sum + (pool.cotasIlimitadas ? 0 : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0)), 0),
         cotasReservadas: shareCounts.reservada ?? 0,
         cotasPagas: shareCounts.paga ?? 0,
         cotasRegistradas: shareCounts.registrada ?? 0,
@@ -180,11 +180,12 @@ export class AdminService {
           jogos: pool.jogos.length || (pool.numerosApostados.length ? 1 : 0),
           reservadas: pool.cotas.filter((share) => share.status === StatusCota.reservada).reduce((sum, share) => sum + share.quantidade, 0),
           pagas: pool.cotas.filter((share) => share.status === StatusCota.paga).reduce((sum, share) => sum + share.quantidade, 0),
-          disponiveis: Math.max(pool.totalCotas - pool.cotasVendidas, 0),
+          cotasIlimitadas: pool.cotasIlimitadas,
+          disponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0),
           arrecadado: pool.cotas.filter((share) => share.status === StatusCota.paga || share.status === StatusCota.registrada || share.status === StatusCota.apurada || share.status === StatusCota.premiada).reduce((sum, share) => sum + Number(share.valorPago ?? 0), 0).toFixed(2),
           custoJogos: pool.jogos.reduce((sum, game) => sum + Number(game.custo), 0).toFixed(2),
-          receitaPrevista: (pool.valorCota.toNumber() * pool.totalCotas).toFixed(2),
-          taxaPrevista: (pool.valorCota.toNumber() * pool.totalCotas * pool.taxaAdministracaoPct.toNumber() / 100).toFixed(2),
+          receitaPrevista: pool.cotasIlimitadas ? null : (pool.valorCota.toNumber() * (pool.totalCotas ?? 0)).toFixed(2),
+          taxaPrevista: pool.cotasIlimitadas ? null : (pool.valorCota.toNumber() * (pool.totalCotas ?? 0) * pool.taxaAdministracaoPct.toNumber() / 100).toFixed(2),
         },
       })),
       pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) },
@@ -392,7 +393,7 @@ export class AdminService {
 
   private toPublicPool(pool: any) {
     const games = Array.isArray(pool.jogos) ? pool.jogos.map((game: any) => ({ id: game.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: Number(game.custo ?? 0).toFixed(2), status: game.status })) : [];
-    return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.totalCotas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: Math.max(pool.totalCotas - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug } : null };
+    return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.cotasIlimitadas ? null : pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug } : null };
   }
 
   async listUsers(query: AdminListQueryDto = {}) {

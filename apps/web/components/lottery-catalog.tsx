@@ -13,7 +13,7 @@ export function LotteryCatalog({ pools }: { pools: PublicPool[] }) {
     const matchesModality = modality === 'todas' || pool.concurso?.modalidade === modality;
     const value = Number(pool.valorCota);
     const matchesPrice = price === 'todos' || (price === 'ate-30' && value <= 30) || (price === '30-100' && value > 30 && value <= 100) || (price === '100+' && value > 100);
-    const matchesAvailability = !onlyAvailable || (pool.cotasDisponiveis > 0 && pool.status === 'aberto');
+    const matchesAvailability = !onlyAvailable || ((pool.cotasDisponiveis === null || pool.cotasDisponiveis > 0) && pool.status === 'aberto');
     return matchesModality && matchesPrice && matchesAvailability;
   }), [modality, onlyAvailable, pools, price]);
 

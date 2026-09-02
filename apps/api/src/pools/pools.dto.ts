@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
 
 export class PoolGameDto {
   @IsInt()
@@ -43,9 +43,14 @@ export class CreatePoolDto {
   @Type(() => PoolGameDto)
   jogos?: PoolGameDto[];
 
+  @IsOptional()
+  @IsBoolean()
+  cotasIlimitadas?: boolean;
+
+  @ValidateIf((dto: CreatePoolDto) => !dto.cotasIlimitadas)
   @IsInt()
   @Min(1)
-  totalCotas!: number;
+  totalCotas?: number;
 
   @IsPositive()
   valorCota!: number;
@@ -77,6 +82,10 @@ export class UpdatePoolDto {
   @ValidateNested({ each: true })
   @Type(() => PoolGameDto)
   jogos?: PoolGameDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  cotasIlimitadas?: boolean;
 
   @IsOptional()
   @IsInt()
