@@ -22,7 +22,7 @@ async function fetchPayload(modality: string): Promise<{ payload: ContestPayload
   let lastError = 'erro desconhecido';
   for (const [source, origin] of [['caixa', baseUrl], ...(fallbackBase ? [['fallback', fallbackBase] as const] : [])] as const) {
     try {
-      const response = await fetch(`${origin}/${modality}`, { headers: { accept: 'application/json', 'user-agent': 'Bolaocerto-worker/0.1' } });
+      const response = await fetch(`${origin}/${modality}`, { headers: { accept: 'application/json', 'user-agent': 'BL-Bolao-Livre-worker/0.2' } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return { payload: await response.json() as ContestPayload, source };
     } catch (error) {

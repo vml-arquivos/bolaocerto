@@ -11,9 +11,10 @@ export class JwtAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request & { user?: AuthUser }>();
     const header = request.headers.authorization;
-    if (!header?.startsWith('Bearer ')) throw new UnauthorizedException('Token de acesso ausente.');
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : request.cookies?.access_token;
+    if (!token) throw new UnauthorizedException('Token de acesso ausente.');
     try {
-      const payload = await this.jwt.verifyAsync<AuthUser & { typ?: string }>(header.slice(7), { secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET') });
+      const payload = await this.jwt.verifyAsync<AuthUser & { typ?: string }>(token, { secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET') });
       if (payload.typ !== 'access') throw new UnauthorizedException('Token de acesso inválido.');
       request.user = { id: payload.id, email: payload.email, papel: payload.papel };
       return true;

@@ -3,10 +3,11 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { SharesController } from './shares.controller';
 import { SharesService } from './shares.service';
 import { ReservationExpiryJob } from './reservation-expiry.job';
+import { PublicConfigController } from './public-config.controller';
 
 @Module({
   imports: [ScheduleModule.forRoot()],
-  controllers: [SharesController],
+  controllers: [SharesController, PublicConfigController],
   providers: [SharesService, ReservationExpiryJob],
   exports: [SharesService],
 })

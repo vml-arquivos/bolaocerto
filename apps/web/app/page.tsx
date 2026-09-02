@@ -1,54 +1,21 @@
-type PublicPool = {
-  id: string;
-  concursoId: string;
-  numerosApostados: number[];
-  totalCotas: number;
-  cotasDisponiveis: number;
-  valorCota: string;
-  taxaAdministracaoPct: string;
-  modeloOperacional: string;
-  status: string;
-  teveGanhador: boolean;
-};
-
-async function loadPools(): Promise<{ pools: PublicPool[]; error: string | null }> {
-  const baseUrl = process.env.API_INTERNAL_URL ?? 'http://localhost:3001/api/v1';
-  try {
-    const response = await fetch(`${baseUrl}/boloes`, { cache: 'no-store' });
-    if (!response.ok) return { pools: [], error: `A API retornou HTTP ${response.status}.` };
-    return { pools: await response.json() as PublicPool[], error: null };
-  } catch {
-    return { pools: [], error: 'O catálogo está temporariamente indisponível. Tente novamente em instantes.' };
-  }
-}
+import Link from 'next/link';
+import { PoolCard } from '../components/pool-card';
+import { SiteFooter, SiteHeader } from '../components/site-header';
+import { apiGet } from '../lib/api';
+import { modalityNames, money, PublicContest, PublicPool, shortDate } from '../lib/domain';
 
 export default async function HomePage() {
-  const { pools, error } = await loadPools();
-  return (
-    <>
-      <header className="header">
-        <div className="container header-inner">
-          <a className="brand" href="/">Bolaocerto</a>
-          <nav className="nav" aria-label="Navegação principal">
-            <a href="#boloes">Bolões</a>
-            <a href="#seguranca">Transparência</a>
-            <a href="/login">Entrar</a>
-          </nav>
-        </div>
-      </header>
-      <main>
-        <section className="container hero">
-          <div className="eyebrow">Concursos oficiais da Caixa</div>
-          <h1>Participe de bolões com clareza em cada etapa.</h1>
-          <p className="lede">Veja o valor do jogo separado da taxa de administração, acompanhe a reserva e consulte o status do registro com seu comprovante individual.</p>
-        </section>
-        <section className="container section" id="boloes">
-          <div className="section-heading"><div><div className="eyebrow">Catálogo vivo</div><h2>Bolões disponíveis</h2></div><span className="pill">Dados da API</span></div>
-          {error ? <div className="card error" role="alert"><strong>Não foi possível carregar o catálogo.</strong><p>{error}</p></div> : pools.length === 0 ? <div className="card"><strong>Nenhum bolão aberto encontrado.</strong><p>O catálogo será exibido assim que houver bolões cadastrados e disponíveis.</p></div> : <div className="grid">{pools.map((pool) => <article className="card" key={pool.id}><span className="pill">{pool.status}</span><h3>Bolão {pool.id.slice(0, 8)}</h3><p>Concurso: {pool.concursoId}</p><p>Números: {pool.numerosApostados.join(' · ')}</p><p><strong>R$ {pool.valorCota}</strong> por cota</p><p>{pool.cotasDisponiveis} de {pool.totalCotas} cotas disponíveis</p>{pool.teveGanhador && <p><span className="pill">Este bolão teve cotista premiado</span></p>}<a className="pill" href={`/boloes/${pool.id}`}>Ver detalhes</a></article>)}</div>}
-        </section>
-        <section className="container section" id="seguranca"><div className="card"><div className="eyebrow">Regras essenciais</div><h2>Seu prêmio não fica sob custódia da plataforma.</h2><p>A Bolaocerto intermedeia a compra de cotas e a operação do bolão. O resgate de qualquer prêmio é feito pelo próprio titular diretamente na Caixa ou em lotérica, usando o comprovante vinculado ao seu CPF.</p></div></section>
-      </main>
-      <footer className="footer"><div className="container">Bolaocerto · Plataforma de cotas de bolões oficiais · Termos, privacidade e suporte</div></footer>
-    </>
-  );
+  const [poolResult, contestResult] = await Promise.all([apiGet<PublicPool[]>('/boloes'), apiGet<PublicContest[]>('/concursos')]);
+  const pools = poolResult.data ?? [];
+  const contests = contestResult.data ?? [];
+  const featured = contests.filter(item => new Date(item.cutoffAt) > new Date()).sort((a, b) => Number(b.valorEstimadoPremio ?? 0) - Number(a.valorEstimadoPremio ?? 0))[0];
+  return <><SiteHeader /><main>
+    <section className="hero shell"><div className="hero-copy"><span className="live-label"><i /> Concursos oficiais atualizados</span><h1>Seu bolão, do jeito <em>livre</em> de participar.</h1><p>Escolha uma participação, acompanhe cada etapa e encontre suas cotas e comprovantes em um só lugar.</p><div className="hero-actions"><Link className="button button-primary button-large" href="#boloes">Ver bolões disponíveis</Link><Link className="text-link" href="#como-funciona">Como funciona <span>→</span></Link></div><div className="trust-row"><span>✓ Cotas rastreáveis</span><span>✓ Pagamento protegido</span><span>✓ Resultado oficial</span></div></div>
+      <div className="featured-draw"><div className="featured-glow"/><div className="featured-head"><span>Maior prêmio disponível</span><span className="live-pill">Atualizado</span></div>{featured ? <><p className="lottery-name">{modalityNames[featured.modalidade] ?? featured.modalidade}</p><strong className="prize-value">{money(featured.valorEstimadoPremio)}</strong><div className="draw-data"><span>Concurso <strong>{featured.numeroConcurso}</strong></span><span>Sorteio <strong>{shortDate(featured.dataSorteio)}</strong></span></div><Link href="#boloes" className="featured-link">Encontrar um bolão <span>→</span></Link></> : <div className="empty-compact"><strong>Sincronização em preparação</strong><p>Os próximos concursos aparecerão assim que o serviço oficial for sincronizado.</p></div>}</div>
+    </section>
+    <section className="numbers-strip"><div className="shell"><span><strong>{contests.length}</strong> concursos no catálogo</span><span><strong>{pools.length}</strong> bolões disponíveis</span><span><strong>100%</strong> histórico rastreável</span><span><strong>18+</strong> acesso exclusivo para adultos</span></div></section>
+    <section className="section shell" id="boloes"><div className="section-title"><div><span className="overline">Escolha sua participação</span><h2>Bolões em destaque</h2><p>Valores, disponibilidade e prazo apresentados antes da confirmação.</p></div></div>{poolResult.error ? <div className="notice notice-error"><strong>Catálogo temporariamente indisponível</strong><span>{poolResult.error}</span></div> : pools.length ? <div className="pool-grid">{pools.map(pool => <PoolCard pool={pool} key={pool.id}/>)}</div> : <div className="empty-state"><span>BL</span><h3>O primeiro bolão será exibido aqui</h3><p>O banco está conectado, mas ainda não existem bolões abertos. Um administrador deve sincronizar os concursos e cadastrar a primeira oferta.</p><Link className="button button-secondary" href="/admin">Ir para a administração</Link></div>}</section>
+    <section className="section soft-section" id="concursos"><div className="shell"><div className="section-title"><div><span className="overline">Calendário</span><h2>Próximos concursos</h2></div></div><div className="contest-list">{contests.slice(0, 6).map(contest => <article key={contest.id}><span className={`contest-icon ${contest.modalidade}`}>BL</span><div><strong>{modalityNames[contest.modalidade] ?? contest.modalidade}</strong><small>Concurso {contest.numeroConcurso}</small></div><div><small>Prêmio estimado</small><strong>{money(contest.valorEstimadoPremio)}</strong></div><div><small>Sorteio</small><strong>{shortDate(contest.dataSorteio)}</strong></div></article>)}{!contests.length && <p className="muted">Nenhum concurso sincronizado.</p>}</div></div></section>
+    <section className="section shell steps" id="como-funciona"><div className="section-title centered"><div><span className="overline">Simples e transparente</span><h2>Da escolha ao resultado</h2></div></div><div className="steps-grid"><article><span>1</span><h3>Escolha o bolão</h3><p>Confira concurso, valor, taxa e cotas disponíveis.</p></article><article><span>2</span><h3>Reserve suas cotas</h3><p>Entre na sua conta e confirme os dados da participação.</p></article><article><span>3</span><h3>Pague com segurança</h3><p>Use o Pix e acompanhe a confirmação dentro do BL.</p></article><article><span>4</span><h3>Acompanhe tudo</h3><p>Consulte comprovante, resultado e eventual premiação.</p></article></div></section>
+  </main><SiteFooter /></>;
 }

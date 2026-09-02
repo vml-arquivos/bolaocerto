@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bolaocerto}
+      POSTGRES_USER: ${POSTGRES_USER:-bolaocerto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD obrigatoria}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bolaocerto} -d ${POSTGRES_DB:-bolaocerto}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL obrigatoria}
+      WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN obrigatoria}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET obrigatoria}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET obrigatoria}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      CAIXA_API_BASE_URL: ${CAIXA_API_BASE_URL:-https://servicebus2.caixa.gov.br/portaldeloterias/api}
+      CAIXA_API_TIMEOUT_MS: ${CAIXA_API_TIMEOUT_MS:-8000}
+      PAYMENTS_ENABLED: ${PAYMENTS_ENABLED:-false}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-disabled}
+      PAYMENT_TEST_MODE: ${PAYMENT_TEST_MODE:-false}
+      PAYMENT_API_BASE_URL: ${PAYMENT_API_BASE_URL:-https://api-sandbox.asaas.com/api/v3}
+      PAYMENT_API_KEY: ${PAYMENT_API_KEY:-}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+      MANDATO_TERM_HASH: ${MANDATO_TERM_HASH:?MANDATO_TERM_HASH obrigatoria}
+      MANDATO_TERM_VERSION: ${MANDATO_TERM_VERSION:-2026-09-01}
+      SHARE_RESERVATION_MINUTES: ${SHARE_RESERVATION_MINUTES:-15}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:?ADMIN_BOOTSTRAP_EMAIL obrigatoria}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?ADMIN_BOOTSTRAP_PASSWORD obrigatoria}
+      ADMIN_BOOTSTRAP_CPF: ${ADMIN_BOOTSTRAP_CPF:?ADMIN_BOOTSTRAP_CPF obrigatoria}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL obrigatoria}
+      CAIXA_API_BASE_URL: ${CAIXA_API_BASE_URL:-https://servicebus2.caixa.gov.br/portaldeloterias/api}
+      CAIXA_API_TIMEOUT_MS: ${CAIXA_API_TIMEOUT_MS:-8000}
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-300000}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      API_INTERNAL_URL: http://api:3001/api/v1
+      API_PROXY_URL: http://api:3001
+      PLATFORM_TEST_MODE: ${PLATFORM_TEST_MODE:-true}
+      PLATFORM_PAYMENTS_ENABLED: ${PAYMENTS_ENABLED:-false}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

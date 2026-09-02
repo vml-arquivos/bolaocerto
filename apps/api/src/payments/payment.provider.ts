@@ -78,8 +78,50 @@ export class AsaasProvider implements PaymentProvider {
   }
 }
 
+export class TestPaymentProvider implements PaymentProvider {
+  constructor(private readonly config: ConfigService) {
+    if (config.get<string>('PAYMENT_TEST_MODE', 'false') !== 'true') {
+      throw new ServiceUnavailableException('O provedor de teste exige PAYMENT_TEST_MODE=true.');
+    }
+  }
+
+  async createPixPayment(input: CreatePixPaymentInput): Promise<CreatedPixPayment> {
+    const transactionId = `test_${input.externalReference}`;
+    return {
+      provider: 'mock',
+      transactionId,
+      status: 'pending',
+      qrCode: `PIX-TESTE-BL-${transactionId}`,
+    };
+  }
+
+  verifyWebhook(rawBody: string, headers: Record<string, string | undefined>): PaymentWebhook {
+    const secret = this.config.get<string>('PAYMENT_WEBHOOK_SECRET', '');
+    const presented = headers['x-webhook-signature'];
+    const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+    if (!secret || !presented || presented.length !== expected.length || !timingSafeEqual(Buffer.from(presented), Buffer.from(expected))) {
+      throw new UnauthorizedException('Assinatura de webhook de teste inválida.');
+    }
+    const payload = JSON.parse(rawBody) as PaymentWebhook;
+    if (!payload.transactionId || !['confirmed', 'failed', 'refunded'].includes(payload.status)) throw new UnauthorizedException('Evento de teste inválido.');
+    return payload;
+  }
+}
+
+export class DisabledPaymentProvider implements PaymentProvider {
+  async createPixPayment(): Promise<CreatedPixPayment> {
+    throw new ServiceUnavailableException('Pagamentos ainda não estão habilitados nesta fase de testes.');
+  }
+
+  verifyWebhook(): PaymentWebhook {
+    throw new ServiceUnavailableException('Webhooks de pagamento ainda não estão habilitados.');
+  }
+}
+
 export function buildPaymentProvider(config: ConfigService): PaymentProvider {
-  const provider = config.get<string>('PAYMENT_PROVIDER', 'asaas');
+  const provider = config.get<string>('PAYMENT_PROVIDER', 'disabled');
+  if (provider === 'disabled') return new DisabledPaymentProvider();
   if (provider === 'asaas') return new AsaasProvider(config);
+  if (provider === 'mock') return new TestPaymentProvider(config);
   throw new ServiceUnavailableException(`Provedor de pagamento não suportado: ${provider}`);
 }

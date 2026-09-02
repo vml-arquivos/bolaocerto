@@ -101,7 +101,7 @@ export class PoolsService {
     return { id: updated.id, status: updated.status };
   }
 
-  private toPublic(pool: { id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number; cotasVendidas: number; valorCota: Prisma.Decimal; taxaAdministracaoPct: Prisma.Decimal; modeloOperacional: string; status: StatusBolao; teveGanhador: boolean }) {
+  private toPublic(pool: { id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number; cotasVendidas: number; valorCota: Prisma.Decimal; taxaAdministracaoPct: Prisma.Decimal; modeloOperacional: string; status: StatusBolao; teveGanhador: boolean; concurso?: { modalidade: string; numeroConcurso: number; dataSorteio: Date; cutoffAt: Date; valorEstimadoPremio: Prisma.Decimal | null; acumulado: boolean }; grupo?: { nome: string; slug: string; descricao: string | null } }) {
     return {
       id: pool.id,
       concursoId: pool.concursoId,
@@ -114,6 +114,15 @@ export class PoolsService {
       modeloOperacional: pool.modeloOperacional,
       status: pool.status,
       teveGanhador: pool.teveGanhador,
+      concurso: pool.concurso ? {
+        modalidade: pool.concurso.modalidade,
+        numeroConcurso: pool.concurso.numeroConcurso,
+        dataSorteio: pool.concurso.dataSorteio,
+        cutoffAt: pool.concurso.cutoffAt,
+        valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed(2) ?? null,
+        acumulado: pool.concurso.acumulado,
+      } : undefined,
+      grupo: pool.grupo ? { nome: pool.grupo.nome, slug: pool.grupo.slug, descricao: pool.grupo.descricao } : undefined,
     };
   }
 }

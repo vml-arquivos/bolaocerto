@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma, StatusCota, StatusPagamento } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { AuthUser } from '../auth/auth.utils';
@@ -10,12 +10,15 @@ import { buildPaymentProvider, PaymentProvider } from './payment.provider';
 @Injectable()
 export class PaymentsService {
   private readonly provider: PaymentProvider;
+  private readonly enabled: boolean;
 
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, config: ConfigService) {
+    this.enabled = config.get<string>('PAYMENTS_ENABLED', 'false') === 'true';
     this.provider = buildPaymentProvider(config);
   }
 
   async createForShare(shareId: string, dto: CreatePaymentDto, user: AuthUser) {
+    if (!this.enabled) throw new ServiceUnavailableException('Pagamentos serão habilitados somente após a conclusão dos testes do sistema.');
     const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: true, comprador: true, afiliadoReferencia: true, pagamento: true } });
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.compradorId !== user.id) throw new ConflictException('A cota não pertence ao usuário autenticado.');
@@ -27,7 +30,7 @@ export class PaymentsService {
     const adminFee = gross - cost;
     const affiliateRate = share.afiliadoReferencia ? Number(share.afiliadoReferencia.comissaoPadraoPct) / 100 : 0;
     const affiliateCommission = adminFee * affiliateRate;
-    const payment = await this.prisma.pagamento.create({ data: { cotaId: share.id, metodo: dto.metodo, valorBruto: new Prisma.Decimal(gross), valorTaxaAdmin: new Prisma.Decimal(adminFee), valorComissaoAfiliado: new Prisma.Decimal(affiliateCommission), valorCustoBilhete: new Prisma.Decimal(cost), status: StatusPagamento.pendente, pspProvedor: process.env.PAYMENT_PROVIDER ?? 'asaas' } });
+    const payment = await this.prisma.pagamento.create({ data: { cotaId: share.id, metodo: dto.metodo, valorBruto: new Prisma.Decimal(gross), valorTaxaAdmin: new Prisma.Decimal(adminFee), valorComissaoAfiliado: new Prisma.Decimal(affiliateCommission), valorCustoBilhete: new Prisma.Decimal(cost), status: StatusPagamento.pendente, pspProvedor: process.env.PAYMENT_PROVIDER ?? 'disabled' } });
     try {
       const created = await this.provider.createPixPayment({ externalReference: payment.id, value: gross, customerName: share.comprador.nome, customerCpf: share.comprador.cpf, customerEmail: share.comprador.email, description: `Cota ${share.id} - Bolão ${share.bolao.id}` });
       const updated = await this.prisma.pagamento.update({ where: { id: payment.id }, data: { pspTransactionId: created.transactionId, qrCodePix: created.qrCode, status: created.status === 'confirmed' ? StatusPagamento.confirmado : StatusPagamento.pendente, confirmadoEm: created.status === 'confirmed' ? new Date() : undefined } });

@@ -1,6 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
-import { createHash } from 'node:crypto';
 import { AuthUser, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
@@ -11,6 +10,7 @@ export class SharesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
   async reserve(dto: ReserveShareDto, user: AuthUser, requestMeta: { ip: string; userAgent?: string }) {
+    if (process.env.PAYMENTS_ENABLED !== 'true') throw new ServiceUnavailableException('Reservas serão habilitadas junto com os pagamentos após a conclusão dos testes.');
     const titularCpf = normalizeCpf(dto.titularCpf);
     if (!isValidCpf(titularCpf)) throw new ConflictException('CPF do titular inválido.');
     const expectedHash = process.env.MANDATO_TERM_HASH;
@@ -32,7 +32,7 @@ export class SharesService {
           quantidade: dto.quantidade,
           status: StatusCota.reservada,
           expiraReservaEm: expiresAt,
-          mandato: { create: { usuarioId: user.id, textoHash: createHash('sha256').update(dto.termoMandatoHash).digest('hex'), ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
+          mandato: { create: { usuarioId: user.id, textoHash: dto.termoMandatoHash, ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
         },
         include: { mandato: true },
       });

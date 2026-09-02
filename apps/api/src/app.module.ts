@@ -9,6 +9,7 @@ import { SharesModule } from './shares/shares.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AdminModule } from './admin/admin.module';
 import { OperationModule } from './operation/operation.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -23,5 +24,6 @@ import { OperationModule } from './operation/operation.module';
     AdminModule,
     OperationModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

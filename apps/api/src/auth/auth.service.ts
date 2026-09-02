@@ -41,6 +41,13 @@ export class AuthService {
     return this.issueTokens({ id: user.id, email: user.email, papel: user.papel });
   }
 
+  async profile(id: string) {
+    return this.prisma.usuario.findUniqueOrThrow({
+      where: { id },
+      select: { id: true, nome: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true },
+    });
+  }
+
   async refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
     try {
       const payload = await this.jwt.verifyAsync<AuthUser & { typ: string }>(refreshToken, {

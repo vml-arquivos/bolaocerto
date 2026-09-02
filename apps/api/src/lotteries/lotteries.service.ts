@@ -99,7 +99,7 @@ export class LotteriesService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(`${base}/${modalidade}`, { signal: controller.signal, headers: { accept: 'application/json', 'user-agent': 'Bolaocerto/0.1' } });
+      const response = await fetch(`${base}/${modalidade}`, { signal: controller.signal, headers: { accept: 'application/json', 'user-agent': 'BL-Bolao-Livre/0.2' } });
       if (!response.ok) throw new Error(`Caixa respondeu HTTP ${response.status}`);
       return await response.json() as CaixaContestResponse;
     } catch (error) {

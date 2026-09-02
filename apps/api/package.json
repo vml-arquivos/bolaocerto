@@ -10,7 +10,8 @@
     "test": "jest --runInBand",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate deploy"
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@bolaocerto/shared-types": "workspace:*",

@@ -1,9 +1,10 @@
 import './globals.css';
+import './details.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Bolaocerto | Bolões oficiais',
-  description: 'Compre cotas de bolões de concursos oficiais da Caixa com transparência e rastreabilidade.',
+  title: { default: 'BL — Bolão Livre', template: '%s | BL — Bolão Livre' },
+  description: 'Acompanhe concursos oficiais, escolha seu bolão e gerencie suas cotas com transparência e rastreabilidade.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
