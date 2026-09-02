@@ -1,19 +1,15 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
+import {
+  calculateBrazilCutoff,
+  CaixaContestPayload,
+  MODALIDADES_LOTERIA,
+  ModalidadeLoteria,
+  normalizeCaixaContestPayload,
+  parseCaixaDate,
+} from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
-import { MODALIDADES_LOTERIA, ModalidadeLoteria } from '@bolaocerto/shared-types';
-
-interface CaixaContestResponse {
-  numero?: number;
-  dataApuracao?: string;
-  dataProximoConcurso?: string;
-  numeroDoConcursoProximo?: number;
-  valorAcumuladoProximoConcurso?: number;
-  acumulado?: boolean;
-  listaDezenas?: string[];
-  dezenasSorteadasOrdemSorteio?: string[];
-  listaRateioPremio?: Array<{ faixa?: number; descricaoFaixa?: string; numeroDeGanhadores?: number; valorPremio?: number }>;
-}
 
 @Injectable()
 export class LotteriesService {
@@ -50,71 +46,116 @@ export class LotteriesService {
     const modalities = modalidade ? [this.assertModalidade(modalidade)] : [...MODALIDADES_LOTERIA];
     const fontes = new Set<string>();
     let sincronizados = 0;
+
     for (const current of modalities) {
       const config = await this.prisma.configLoteria.findUnique({ where: { modalidade: current } });
       if (!config) continue;
       const payload = await this.fetchFromCaixa(current);
-      const number = payload.numero;
-      if (!number || !payload.dataProximoConcurso) continue;
-      const nextDraw = new Date(payload.dataProximoConcurso);
-      const cutoffAt = this.calculateCutoff(nextDraw, config.horarioCorteLocal);
-      const contest = await this.prisma.concurso.upsert({
-        where: { modalidade_numeroConcurso: { modalidade: current, numeroConcurso: number } },
+      const persisted = await this.persistContestPayload(current, config.horarioCorteLocal, payload);
+      if (!persisted) continue;
+      fontes.add('caixa');
+      sincronizados += 1;
+    }
+
+    return { sincronizados, fontes: [...fontes] };
+  }
+
+  private async persistContestPayload(modalidade: ModalidadeLoteria, horarioCorteLocal: string, rawPayload: unknown): Promise<boolean> {
+    const payload = normalizeCaixaContestPayload(rawPayload);
+    const currentDrawDate = parseCaixaDate(payload.dataApuracao);
+    const nextDrawDate = parseCaixaDate(payload.dataProximoConcurso);
+    if (!payload.numero || !payload.numeroConcursoProximo || !currentDrawDate || !nextDrawDate) {
+      throw new ServiceUnavailableException(`Resposta incompleta da CAIXA para ${modalidade}: concurso ou datas inválidos.`);
+    }
+
+    const currentCutoffAt = calculateBrazilCutoff(currentDrawDate, horarioCorteLocal);
+    const nextCutoffAt = calculateBrazilCutoff(nextDrawDate, horarioCorteLocal);
+    const numbers = this.parseDrawnNumbers(payload);
+    const prizeTiers = payload.listaRateioPremio ?? [];
+    const nextEstimatedPrize = payload.valorEstimadoProximoConcurso ?? payload.valorAcumuladoProximoConcurso ?? null;
+
+    await this.prisma.$transaction(async (tx) => {
+      const currentContest = await tx.concurso.upsert({
+        where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: payload.numero! } },
         create: {
-          modalidade: current,
-          numeroConcurso: number,
-          dataSorteio: payload.dataApuracao ? new Date(payload.dataApuracao) : new Date(),
-          cutoffAt,
-          valorEstimadoPremio: payload.valorAcumuladoProximoConcurso ?? null,
+          modalidade,
+          numeroConcurso: payload.numero!,
+          dataSorteio: currentDrawDate,
+          cutoffAt: currentCutoffAt,
+          valorEstimadoPremio: null,
           acumulado: Boolean(payload.acumulado),
+          status: numbers.length > 0 ? 'apurado' : 'fechado',
           fonteSincronizacao: 'caixa',
         },
         update: {
-          dataSorteio: payload.dataApuracao ? new Date(payload.dataApuracao) : undefined,
-          cutoffAt,
-          valorEstimadoPremio: payload.valorAcumuladoProximoConcurso ?? null,
+          dataSorteio: currentDrawDate,
+          cutoffAt: currentCutoffAt,
+          acumulado: Boolean(payload.acumulado),
+          ...(numbers.length > 0 ? { status: 'apurado' } : {}),
+          fonteSincronizacao: 'caixa',
+          sincronizadoEm: new Date(),
+        },
+      });
+
+      if (numbers.length > 0) {
+        await tx.resultado.upsert({
+          where: { concursoId: currentContest.id },
+          create: { concursoId: currentContest.id, numerosSorteados: numbers, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue },
+          update: { numerosSorteados: numbers, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue, apuradoEm: new Date() },
+        });
+      }
+
+      await tx.concurso.upsert({
+        where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: payload.numeroConcursoProximo! } },
+        create: {
+          modalidade,
+          numeroConcurso: payload.numeroConcursoProximo!,
+          dataSorteio: nextDrawDate,
+          cutoffAt: nextCutoffAt,
+          valorEstimadoPremio: nextEstimatedPrize,
+          acumulado: Boolean(payload.acumulado),
+          status: 'aberto',
+          fonteSincronizacao: 'caixa',
+        },
+        update: {
+          dataSorteio: nextDrawDate,
+          cutoffAt: nextCutoffAt,
+          valorEstimadoPremio: nextEstimatedPrize,
           acumulado: Boolean(payload.acumulado),
           fonteSincronizacao: 'caixa',
           sincronizadoEm: new Date(),
         },
       });
-      const ordered = payload.dezenasSorteadasOrdemSorteio ?? payload.listaDezenas ?? [];
-      if (ordered.length > 0) {
-        await this.prisma.resultado.upsert({
-          where: { concursoId: contest.id },
-          create: { concursoId: contest.id, numerosSorteados: ordered.map(Number), listaRateioPremio: payload.listaRateioPremio ?? [] },
-          update: { numerosSorteados: ordered.map(Number), listaRateioPremio: payload.listaRateioPremio ?? [], apuradoEm: new Date() },
-        });
-        await this.prisma.concurso.update({ where: { id: contest.id }, data: { status: 'apurado' } });
-      }
-      fontes.add('caixa');
-      sincronizados += 1;
-    }
-    return { sincronizados, fontes: [...fontes] };
+    });
+
+    return true;
   }
 
-  private async fetchFromCaixa(modalidade: ModalidadeLoteria): Promise<CaixaContestResponse> {
+  private parseDrawnNumbers(payload: CaixaContestPayload): number[] {
+    const rawNumbers = payload.dezenasSorteadasOrdemSorteio ?? payload.listaDezenas ?? [];
+    const numbers = rawNumbers.map((value) => Number(value));
+    if (numbers.some((value) => !Number.isInteger(value) || value < 0)) {
+      throw new ServiceUnavailableException('Resposta da CAIXA contém dezenas inválidas.');
+    }
+    return numbers;
+  }
+
+  private async fetchFromCaixa(modalidade: ModalidadeLoteria): Promise<unknown> {
     const base = this.config.get<string>('CAIXA_API_BASE_URL', 'https://servicebus2.caixa.gov.br/portaldeloterias/api').replace(/\/$/, '');
-    const timeout = this.config.get<number>('CAIXA_API_TIMEOUT_MS', 8000);
+    const configuredTimeout = Number(this.config.get<string>('CAIXA_API_TIMEOUT_MS', '8000'));
+    const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? Math.min(configuredTimeout, 60_000) : 8_000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(`${base}/${modalidade}`, { signal: controller.signal, headers: { accept: 'application/json', 'user-agent': 'BL-Bolao-Livre/0.2' } });
+      const response = await fetch(`${base}/${modalidade}`, { signal: controller.signal, headers: { accept: 'application/json', 'user-agent': 'BL-Bolao-Livre/0.3' } });
       if (!response.ok) throw new Error(`Caixa respondeu HTTP ${response.status}`);
-      return await response.json() as CaixaContestResponse;
+      return await response.json();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'falha desconhecida';
       throw new ServiceUnavailableException(`Não foi possível sincronizar ${modalidade}: ${message}`);
     } finally {
       clearTimeout(timer);
     }
-  }
-
-  private calculateCutoff(drawDate: Date, localTime: string): Date {
-    const [hours, minutes] = localTime.split(':').map(Number);
-    const cutoff = new Date(drawDate);
-    cutoff.setHours(hours || 0, minutes || 0, 0, 0);
-    return cutoff;
   }
 
   private assertModalidade(value: string): ModalidadeLoteria {
