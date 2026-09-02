@@ -46,6 +46,9 @@ importers:
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
+      dotenv:
+        specifier: ^16.5.0
+        version: 16.6.1
       express-rate-limit:
         specifier: ^7.5.0
         version: 7.5.1(express@5.2.1(supports-color@8.1.1))
