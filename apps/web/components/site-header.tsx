@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ThemeToggle } from './theme-toggle';
 
 function BrandMark() {
   return <span className="brand-icon"><img src="/brand/bl-app-icon.png" alt="" aria-hidden="true" /></span>;
@@ -6,10 +7,10 @@ function BrandMark() {
 
 export function SiteHeader() {
   const testMode = process.env.PLATFORM_TEST_MODE === 'true';
-  return <>{testMode && <div className="test-banner">Ambiente de validação: não realize pagamentos reais.</div>}<header className="site-header"><div className="shell header-row">
+  return <><a className="skip-link" href="#main-content">Pular para o conteúdo</a>{testMode && <div className="test-banner">Ambiente de validação: não realize pagamentos reais.</div>}<header className="site-header"><div className="shell header-row">
     <Link className="brand" href="/" aria-label="BL — Bolão Livre, página inicial"><BrandMark /><span><strong>Bolão Livre</strong><small>Concursos oficiais</small></span></Link>
     <nav className="main-nav" aria-label="Navegação principal"><Link href="/#modalidades">Modalidades</Link><Link href="/#concursos">Concursos</Link><Link href="/#boloes">Bolões</Link><Link href="/minha-conta">Minhas cotas</Link></nav>
-    <div className="header-actions"><Link className="button button-ghost" href="/login">Entrar</Link><Link className="button button-primary" href="/cadastro">Criar conta</Link></div>
+    <div className="header-actions"><ThemeToggle /><Link className="button button-ghost" href="/login">Entrar</Link><Link className="button button-primary" href="/cadastro">Criar conta</Link></div>
   </div></header></>;
 }
 
