@@ -144,7 +144,7 @@ function AdminDashboardContent() {
         setGroupId(group?.id ?? null);
       }
       if (['afiliados', 'rede', 'convites', 'grupos'].includes(view)) {
-        const affiliatePayload = await fetchAdmin('/api/v1/admin/afiliados?page=1&pageSize=200');
+        const affiliatePayload = await fetchAdmin('/api/v1/admin/afiliados?page=1&pageSize=100');
         setAffiliateOptions(affiliatePayload.items ?? []);
       }
     } catch (error) {
