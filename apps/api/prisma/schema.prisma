@@ -81,6 +81,8 @@ model Usuario {
   kycDocumentos         KycDocumento[]
   lotericasOperadas     LotericaParceira[] @relation("operador_loterica")
   afiliado              Afiliado?
+  indicadoPorAfiliadoId String?       @map("indicado_por_afiliado_id") @db.Uuid
+  indicadoPorAfiliado   Afiliado?     @relation("usuarios_indicados", fields: [indicadoPorAfiliadoId], references: [id], onDelete: SetNull)
   gruposCriados         Grupo[]       @relation("criador_grupo")
   boloesCriados         Bolao[]       @relation("criador_bolao")
   cotasCompradas        Cota[]        @relation("comprador_cota")
@@ -185,6 +187,7 @@ model Afiliado {
   usuario               Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   aprovador             Usuario?       @relation("aprovador_afiliado", fields: [aprovadoPor], references: [id])
   grupos               Grupo[]
+  usuariosIndicados    Usuario[]      @relation("usuarios_indicados")
   cotasReferenciadas   Cota[]
   comissoes            Comissao[]
 

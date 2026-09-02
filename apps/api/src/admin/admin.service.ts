@@ -360,17 +360,22 @@ export class AdminService {
   }
 
   async affiliateDashboard(user: AuthUser) {
-    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, include: { comissoes: true, _count: { select: { cotasReferenciadas: true } } } });
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, include: { comissoes: true, _count: { select: { cotasReferenciadas: true, usuariosIndicados: true } } } });
     if (!affiliate) throw new NotFoundException('Usuário ainda não possui cadastro de afiliado.');
+    const [volume, participants] = await Promise.all([
+      this.prisma.cota.aggregate({ where: { afiliadoReferenciaId: affiliate.id, status: { in: [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] } }, _sum: { valorPago: true } }),
+      this.prisma.cota.findMany({ where: { afiliadoReferenciaId: affiliate.id }, select: { compradorId: true }, distinct: ['compradorId'] }),
+    ]);
     const pending = affiliate.comissoes.filter((commission) => commission.status === StatusComissao.pendente).reduce((sum, commission) => sum + Number(commission.valor), 0);
     const paid = affiliate.comissoes.filter((commission) => commission.status === StatusComissao.paga).reduce((sum, commission) => sum + Number(commission.valor), 0);
-    return { codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, cotas: affiliate._count.cotasReferenciadas, comissaoPendente: pending.toFixed(2), comissaoPaga: paid.toFixed(2), totalComissoes: affiliate.comissoes.length };
+    return { codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, cadastrosAtribuidos: affiliate._count.usuariosIndicados, participantes: participants.length, cotas: affiliate._count.cotasReferenciadas, volume: Number(volume._sum.valorPago ?? 0).toFixed(2), comissaoPendente: pending.toFixed(2), comissaoPaga: paid.toFixed(2), totalComissoes: affiliate.comissoes.length };
   }
 
   async affiliateCommissions(user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
-    return this.prisma.comissao.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, select: { id: true, cotaId: true, valor: true, baseCalculo: true, percentual: true, status: true, repassadoEm: true, loteRepasseId: true, criadoEm: true } });
+    const commissions = await this.prisma.comissao.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, select: { id: true, cotaId: true, valor: true, baseCalculo: true, percentual: true, status: true, repassadoEm: true, loteRepasseId: true, criadoEm: true } });
+    return commissions.map((commission) => ({ ...commission, valor: commission.valor.toFixed(2), baseCalculo: commission.baseCalculo?.toFixed(2) ?? null, percentual: commission.percentual?.toFixed(2) ?? null }));
   }
 
   async financialReconciliation(user: AuthUser) {

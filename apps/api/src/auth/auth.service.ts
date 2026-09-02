@@ -21,6 +21,10 @@ export class AuthService {
     assertAdult(dataNascimento);
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email: dto.email.toLowerCase() }] } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
+    const affiliate = dto.codigoAfiliado
+      ? await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: dto.codigoAfiliado.trim() }, select: { id: true, statusAprovacao: true } })
+      : null;
+    if (dto.codigoAfiliado && (!affiliate || affiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
     const user = await this.prisma.usuario.create({
       data: {
         nome: dto.nome.trim(),
@@ -29,6 +33,7 @@ export class AuthService {
         telefone: dto.telefone,
         dataNascimento,
         senhaHash: await argon2.hash(dto.senha, { type: argon2.argon2id }),
+        indicadoPorAfiliadoId: affiliate?.id,
       },
       select: { id: true, email: true, papel: true },
     });

@@ -20,7 +20,7 @@ O custo dos jogos, receita prevista, taxa administrativa e margem são recalcula
 
 ## Comissão e repasse
 
-A comissão é gerada no fluxo de pagamento confirmado, com chave única por cota/afiliado quando aplicável. O código de indicação é resolvido a partir de `/r/CODIGO`, armazenado em cookie HTTP-only e injetado no proxy somente no endpoint de reserva; o backend valida o código e nunca aceita `afiliadoId` arbitrário. O administrador seleciona comissões pendentes, cria um lote, visualiza afiliado, chave Pix, quantidade e total e registra o repasse manual com data, referência, comprovante e observação. A marcação de pago atualiza o lote e as comissões numa transação auditada.
+A comissão é gerada no fluxo de pagamento confirmado, com chave única por cota/afiliado quando aplicável. O código de indicação é resolvido a partir de `/r/CODIGO`, armazenado em cookie HTTP-only e injetado pelo proxy no cadastro e na reserva; o backend valida o código, persiste o afiliado de origem do cadastro e nunca aceita `afiliadoId` arbitrário. O dashboard do afiliado expõe cadastros atribuídos, participantes, cotas, volume confirmado e histórico de comissões. O administrador seleciona comissões pendentes, cria um lote, visualiza afiliado, chave Pix, quantidade e total e registra o repasse manual com data, referência, comprovante e observação. A marcação de pago atualiza o lote e as comissões numa transação auditada.
 
 ## Banco e migration
 
@@ -32,4 +32,4 @@ O runtime anuncia somente Pix, que é o único método implementado. Cartão e b
 
 ## Validação
 
-A sequência validada localmente é `pnpm install --frozen-lockfile`, geração do Prisma Client, validação Prisma com URL sintética, lint dos workspaces, testes unitários, smoke test HTTP administrativo, builds de web/API/worker e `git diff --check`. O E2E usa um módulo HTTP isolado com mocks, portanto não substitui um teste de integração contra banco de homologação.
+A sequência validada localmente é `pnpm install --frozen-lockfile`, geração do Prisma Client, validação Prisma com URL sintética, lint dos workspaces, testes unitários de administração, cadastro por indicação, reserva concorrente e pagamentos Pix, smoke test HTTP administrativo, builds de web/API/worker e `git diff --check`. O E2E usa um módulo HTTP isolado com mocks, portanto não substitui um teste de integração contra banco de homologação.

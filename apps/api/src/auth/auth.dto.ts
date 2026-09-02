@@ -22,6 +22,11 @@ export class RegisterDto {
   @IsString()
   @MinLength(12)
   senha!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 20)
+  codigoAfiliado?: string;
 }
 
 export class LoginDto {
