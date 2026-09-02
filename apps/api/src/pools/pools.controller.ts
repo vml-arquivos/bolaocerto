@@ -27,16 +27,37 @@ export class PoolsController {
 
   @Post('admin/boloes')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'afiliado')
+  @Roles('admin')
   create(@Body() dto: CreatePoolDto, @CurrentUser() user: AuthUser) {
     return this.pools.create(dto, user);
   }
 
   @Patch('admin/boloes/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'afiliado')
+  @Roles('admin')
   update(@Param('id') id: string, @Body() dto: UpdatePoolDto, @CurrentUser() user: AuthUser) {
     return this.pools.update(id, dto, user);
+  }
+
+  @Post('admin/boloes/:id/publicar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  publish(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.publish(id, user);
+  }
+
+  @Post('admin/boloes/:id/fechar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  close(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.close(id, user);
+  }
+
+  @Post('admin/boloes/:id/duplicar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  duplicate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.duplicate(id, user);
   }
 
   @Delete('admin/boloes/:id')

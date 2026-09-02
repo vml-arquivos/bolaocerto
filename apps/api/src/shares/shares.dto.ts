@@ -1,4 +1,4 @@
-import { IsInt, IsString, IsUUID, Length, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Length, Min, MaxLength } from 'class-validator';
 
 export class ReserveShareDto {
   @IsUUID()
@@ -19,4 +19,9 @@ export class ReserveShareDto {
   @IsString()
   @Length(64, 64)
   termoMandatoHash!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  codigoAfiliado?: string;
 }

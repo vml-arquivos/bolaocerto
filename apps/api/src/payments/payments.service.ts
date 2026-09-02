@@ -46,13 +46,17 @@ export class PaymentsService {
   async handleWebhook(rawBody: string, headers: Record<string, string | undefined>) {
     const event = this.provider.verifyWebhook(rawBody, headers);
     if (event.status === 'confirmed') return this.confirmPayment(event.transactionId);
-    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: event.transactionId } });
+    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: event.transactionId }, include: { cota: true } });
     if (!payment) throw new NotFoundException('Pagamento não encontrado para o evento.');
     const status = event.status === 'refunded' ? StatusPagamento.estornado : StatusPagamento.falhou;
     const updated = await this.prisma.$transaction(async (tx) => {
       const current = await tx.pagamento.update({ where: { id: payment.id }, data: { status } });
-      await tx.cota.update({ where: { id: payment.cotaId }, data: { status: StatusCota[status === StatusPagamento.estornado ? 'estornada' : 'cancelada'] } });
-      await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: `pagamento.${status}`, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: current as unknown as Prisma.InputJsonValue });
+      const nextShareStatus = status === StatusPagamento.estornado ? StatusCota.estornada : StatusCota.cancelada;
+      const shareUpdated = await tx.cota.update({ where: { id: payment.cotaId }, data: { status: nextShareStatus } });
+      if (payment.cota.status !== StatusCota.cancelada && payment.cota.status !== StatusCota.estornada) {
+        await tx.bolao.update({ where: { id: payment.cota.bolaoId }, data: { cotasVendidas: { decrement: payment.cota.quantidade } } });
+      }
+      await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: `pagamento.${status}`, atorId: undefined, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: { pagamento: current, cota: shareUpdated } as unknown as Prisma.InputJsonValue });
       return current;
     });
     return this.toPublicPayment(updated);
@@ -68,7 +72,7 @@ export class PaymentsService {
       await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: 'pagamento.confirmado', atorId: actorId, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: updatedPayment as unknown as Prisma.InputJsonValue });
       await this.audit.record(tx, { entidade: 'cota', entidadeId: payment.cotaId, evento: 'cota.paga', atorId: actorId, payloadAntes: payment.cota as unknown as Prisma.InputJsonValue, payloadDepois: updatedShare as unknown as Prisma.InputJsonValue });
       if (payment.cota.afiliadoReferenciaId && Number(payment.valorComissaoAfiliado) > 0) {
-        await tx.comissao.upsert({ where: { cotaId: payment.cotaId }, create: { afiliadoId: payment.cota.afiliadoReferenciaId, cotaId: payment.cotaId, valor: payment.valorComissaoAfiliado }, update: {} });
+        await tx.comissao.upsert({ where: { cotaId: payment.cotaId }, create: { afiliadoId: payment.cota.afiliadoReferenciaId, cotaId: payment.cotaId, valor: payment.valorComissaoAfiliado, baseCalculo: payment.valorTaxaAdmin, percentual: new Prisma.Decimal(Number(payment.valorTaxaAdmin) > 0 ? Number(payment.valorComissaoAfiliado) / Number(payment.valorTaxaAdmin) * 100 : 0) }, update: {} });
       }
       return updatedPayment;
     });

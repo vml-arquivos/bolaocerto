@@ -1,4 +1,26 @@
-import { IsArray, IsEnum, IsInt, IsOptional, IsPositive, IsString, IsUUID, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMinSize, IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+
+export class PoolGameDto {
+  @IsInt()
+  @Min(1)
+  ordem!: number;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsInt({ each: true })
+  numeros!: number[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  quantidadeDezenas?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  custo?: number;
+}
 
 export class CreatePoolDto {
   @IsUUID()
@@ -11,6 +33,16 @@ export class CreatePoolDto {
   @IsInt({ each: true })
   numerosApostados!: number[];
 
+  @IsOptional()
+  @IsString()
+  descricao?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PoolGameDto)
+  jogos?: PoolGameDto[];
+
   @IsInt()
   @Min(1)
   totalCotas!: number;
@@ -18,7 +50,7 @@ export class CreatePoolDto {
   @IsPositive()
   valorCota!: number;
 
-  @IsPositive()
+  @Min(0)
   @Max(35)
   taxaAdministracaoPct!: number;
 
@@ -37,6 +69,16 @@ export class UpdatePoolDto {
   numerosApostados?: number[];
 
   @IsOptional()
+  @IsString()
+  descricao?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PoolGameDto)
+  jogos?: PoolGameDto[];
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   totalCotas?: number;
@@ -46,11 +88,7 @@ export class UpdatePoolDto {
   valorCota?: number;
 
   @IsOptional()
-  @IsPositive()
+  @Min(0)
   @Max(35)
   taxaAdministracaoPct?: number;
-
-  @IsOptional()
-  @IsString()
-  descricao?: string;
 }

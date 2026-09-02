@@ -18,6 +18,9 @@ export class SharesService {
     if (dto.termoMandatoHash !== expectedHash) throw new ConflictException('Versão do termo de mandato inválida.');
     const expirationMinutes = Number(process.env.SHARE_RESERVATION_MINUTES ?? 15);
     const expiresAt = new Date(Date.now() + expirationMinutes * 60_000);
+    const affiliate = dto.codigoAfiliado
+      ? await this.prisma.afiliado.findFirst({ where: { codigoAfiliado: dto.codigoAfiliado.trim(), statusAprovacao: 'aprovado' }, select: { id: true } })
+      : null;
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId} FOR UPDATE`;
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
@@ -30,6 +33,7 @@ export class SharesService {
           titularCpf,
           titularNome: dto.titularNome.trim(),
           quantidade: dto.quantidade,
+          afiliadoReferenciaId: affiliate?.id,
           status: StatusCota.reservada,
           expiraReservaEm: expiresAt,
           mandato: { create: { usuarioId: user.id, textoHash: dto.termoMandatoHash, ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
@@ -38,7 +42,7 @@ export class SharesService {
       });
       const updatedPool = await tx.bolao.update({ where: { id: pool.id }, data: { cotasVendidas: { increment: dto.quantidade } } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: pool.id, evento: 'cota.reservada', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: updatedPool as unknown as Prisma.InputJsonValue });
-      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'mandato.aceito', atorId: user.id, payloadDepois: { cotaId: share.id, termoHash: share.mandato?.textoHash } });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'mandato.aceito', atorId: user.id, payloadDepois: { cotaId: share.id, termoHash: share.mandato?.textoHash, afiliadoId: affiliate?.id ?? null } });
       return share;
     });
     return { id: result.id, bolaoId: result.bolaoId, status: result.status, quantidade: result.quantidade, expiraReservaEm: result.expiraReservaEm };

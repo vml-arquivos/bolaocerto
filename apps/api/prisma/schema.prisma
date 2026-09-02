@@ -90,6 +90,8 @@ model Usuario {
   documentosRevisados   KycDocumento[] @relation("revisor_kyc")
   boloesEditados        Bolao[]       @relation("editor_bolao")
   afiliadosAprovados    Afiliado[]    @relation("aprovador_afiliado")
+  repassesCriados       RepasseLote[] @relation("criador_repasse")
+  comissoesPagas        Comissao[]   @relation("pagador_comissao")
 
   @@map("usuarios")
 }
@@ -232,9 +234,26 @@ model Bolao {
   lotericaParceira      LotericaParceira?  @relation(fields: [lotericaParceiraId], references: [id])
   editor                Usuario?           @relation("editor_bolao", fields: [editadoPor], references: [id])
   cotas                 Cota[]
+  jogos                 JogoBolao[]
 
   @@index([concursoId, status])
   @@map("boloes")
+}
+
+model JogoBolao {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bolaoId           String   @map("bolao_id") @db.Uuid
+  ordem             Int
+  numeros           Int[]
+  quantidadeDezenas Int      @map("quantidade_dezenas")
+  custo             Decimal  @default(0) @db.Decimal(10,2)
+  status            String   @default("ativo") @db.VarChar(20)
+  criadoEm          DateTime @default(now()) @map("criado_em")
+  bolao             Bolao    @relation(fields: [bolaoId], references: [id], onDelete: Cascade)
+
+  @@unique([bolaoId, ordem])
+  @@index([bolaoId, status])
+  @@map("jogos_bolao")
 }
 
 model Cota {
@@ -300,17 +319,46 @@ model Pagamento {
   @@map("pagamentos")
 }
 
-model Comissao {
-  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  afiliadoId  String         @map("afiliado_id") @db.Uuid
-  cotaId      String         @unique @map("cota_id") @db.Uuid
-  valor       Decimal        @db.Decimal(10,2)
-  status      StatusComissao @default(pendente)
-  repassadoEm DateTime?      @map("repassado_em")
-  criadoEm    DateTime       @default(now()) @map("criado_em")
-  afiliado    Afiliado       @relation(fields: [afiliadoId], references: [id])
-  cota        Cota           @relation(fields: [cotaId], references: [id])
+model RepasseLote {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo        String         @unique @db.VarChar(40)
+  status        String         @default("rascunho") @db.VarChar(20)
+  dataRepasse   DateTime?      @map("data_repasse")
+  valorTotal    Decimal        @default(0) @map("valor_total") @db.Decimal(12,2)
+  referencia    String?        @db.VarChar(120)
+  comprovanteUrl String?       @map("comprovante_url")
+  observacao    String?
+  criadoPor     String         @map("criado_por") @db.Uuid
+  criadoEm      DateTime       @default(now()) @map("criado_em")
+  atualizadoEm  DateTime       @updatedAt @map("atualizado_em")
+  criador       Usuario        @relation("criador_repasse", fields: [criadoPor], references: [id])
+  comissoes     Comissao[]
 
+  @@index([status, criadoEm])
+  @@map("repasses_lotes")
+}
+
+model Comissao {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  afiliadoId     String         @map("afiliado_id") @db.Uuid
+  cotaId         String         @unique @map("cota_id") @db.Uuid
+  valor          Decimal        @db.Decimal(10,2)
+  baseCalculo    Decimal?       @map("base_calculo") @db.Decimal(10,2)
+  percentual     Decimal?       @db.Decimal(5,2)
+  loteRepasseId  String?        @map("lote_repasse_id") @db.Uuid
+  pagoPor        String?        @map("pago_por") @db.Uuid
+  pagoEm         DateTime?      @map("pago_em")
+  observacao     String?
+  status         StatusComissao @default(pendente)
+  repassadoEm    DateTime?      @map("repassado_em")
+  criadoEm       DateTime       @default(now()) @map("criado_em")
+  afiliado       Afiliado       @relation(fields: [afiliadoId], references: [id])
+  cota           Cota           @relation(fields: [cotaId], references: [id])
+  loteRepasse    RepasseLote?   @relation(fields: [loteRepasseId], references: [id])
+  pagador        Usuario?       @relation("pagador_comissao", fields: [pagoPor], references: [id])
+
+  @@index([status, criadoEm])
+  @@index([loteRepasseId])
   @@map("comissoes")
 }
 

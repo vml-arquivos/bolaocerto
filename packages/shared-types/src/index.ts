@@ -25,11 +25,22 @@ export interface ConcursoPublico {
   acumulado: boolean;
 }
 
+export interface JogoBolaoPublico {
+  id: string;
+  ordem: number;
+  numeros: number[];
+  quantidadeDezenas: number;
+  custo: string;
+  status: string;
+}
+
 export interface BolaoPublico {
   id: string;
   concursoId: string;
   grupoId: string;
   numerosApostados: number[];
+  jogos?: JogoBolaoPublico[];
+  quantidadeJogos?: number;
   totalCotas: number;
   cotasDisponiveis: number;
   valorCota: string;
@@ -37,6 +48,12 @@ export interface BolaoPublico {
   modeloOperacional: 'mandato' | 'loterica_parceira';
   status: StatusBolao;
   teveGanhador: boolean;
+  financeiro?: {
+    custoJogos: string;
+    receitaPrevista: string;
+    taxaAdministracaoPrevista: string;
+    margemOperacionalPrevista: string;
+  };
 }
 
 export interface CotaPrivada {
