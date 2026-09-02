@@ -7,10 +7,10 @@ if [ -z "${DATABASE_URL:-}" ]; then
 fi
 
 echo "BL - Bolao Livre: aplicando migracoes do banco..."
-pnpm --filter @bolaocerto/api prisma:migrate
+./apps/api/node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
 echo "BL - Bolao Livre: preparando dados iniciais..."
-pnpm --filter @bolaocerto/api prisma:seed
+(cd apps/api && node --import tsx prisma/seed.ts)
 
 shutdown() {
   trap - TERM INT EXIT
