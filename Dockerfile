@@ -46,3 +46,29 @@ COPY --from=builder /app/apps/worker ./apps/worker
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder /app/packages ./packages
 CMD ["node", "apps/worker/dist/main.js"]
+
+# Imagem padrao para deploy por Dockerfile (Coolify, Railway, VPS etc.).
+# Reune Web, API e worker no mesmo container; o PostgreSQL permanece externo.
+FROM node:22-bookworm-slim AS production
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV APP_PORT=3000
+ENV API_INTERNAL_URL=http://127.0.0.1:3001/api/v1
+ENV API_PROXY_URL=http://127.0.0.1:3001
+ENV API_PORT=3001
+WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends tini \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api ./apps/api
+COPY --from=builder /app/apps/worker ./apps/worker
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+COPY docker/production-entrypoint.sh /usr/local/bin/bl-production-entrypoint
+RUN chmod +x /usr/local/bin/bl-production-entrypoint
+EXPOSE 3000
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/bl-production-entrypoint"]
