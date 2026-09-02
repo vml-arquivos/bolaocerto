@@ -70,6 +70,7 @@ RUN pnpm install --prod --frozen-lockfile \
   --filter '@bolaocerto/api...' \
   --filter '@bolaocerto/worker...' \
   && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.pnpm-store /tmp/pnpm-store
+RUN pnpm --filter '@bolaocerto/api' prisma:generate
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
