@@ -8,7 +8,7 @@
   "scripts": {
     "build": "pnpm db:generate && pnpm -r build",
     "dev": "pnpm --parallel --filter @bolaocerto/api --filter @bolaocerto/web --filter @bolaocerto/worker dev",
-    "lint": "pnpm -r lint",
+    "lint": "pnpm --filter @bolaocerto/shared-types build && pnpm -r lint",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @bolaocerto/api test:e2e",
     "db:migrate": "pnpm --filter @bolaocerto/api prisma:migrate",
