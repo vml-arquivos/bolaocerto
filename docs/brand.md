@@ -32,3 +32,18 @@ No web, o cabeçalho e as telas de autenticação usam o ícone oficial com text
 No mobile, o nome visível é **BL — Bolão Livre**, o ícone oficial é configurado no Expo para iOS e Android e a tela inicial usa os mesmos tokens cromáticos da versão web. O slug técnico `bolaocerto` é preservado para não quebrar deep links ou referências existentes.
 
 A área de campanha **Copa do Mundo** permanece como material promocional separado e não substitui a identidade base do produto.
+
+## Artes premium das modalidades
+
+As artes próprias das modalidades ficam em `apps/web/public/brand/lottery/` para o web e em `apps/mobile/assets/brand/lottery/` para o Expo. São imagens sem textos, números ou logotipos incorporados, permitindo que prêmio, concurso, data, horário e cotas sejam renderizados como conteúdo HTML/nativo acessível e atualizado pela API.
+
+| Modalidade | Asset |
+| --- | --- |
+| Mega-Sena | `mega-sena-hero.jpg` |
+| Lotofácil | `lotofacil-hero.jpg` |
+| Quina | `quina-hero.jpg` |
+| Lotomania | `lotomania-hero.jpg` |
+| Timemania | `timemania-hero.jpg` |
+| Dia de Sorte | `dia-de-sorte-hero.jpg` |
+
+A arte pode receber acento cromático próprio da modalidade no hero, mas navegação, botões, foco, superfícies, marca e estados permanecem sob os tokens oficiais do BL. Não inserir valores de prêmio ou datas dentro das imagens.
