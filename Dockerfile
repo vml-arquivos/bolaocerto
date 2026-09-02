@@ -68,7 +68,8 @@ COPY --from=builder /app/apps/worker/package.json ./apps/worker/package.json
 COPY --from=builder /app/packages/shared-types/package.json ./packages/shared-types/package.json
 RUN pnpm install --prod --frozen-lockfile \
   --filter '@bolaocerto/api...' \
-  --filter '@bolaocerto/worker...'
+  --filter '@bolaocerto/worker...' \
+  && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.pnpm-store /tmp/pnpm-store
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
