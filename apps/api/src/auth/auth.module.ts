@@ -19,6 +19,6 @@ import { RolesGuard } from './roles.guard';
   ],
   controllers: [AuthController],
   providers: [PrismaService, AuthService, JwtAuthGuard, RolesGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard],
+  exports: [JwtModule, AuthService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}
