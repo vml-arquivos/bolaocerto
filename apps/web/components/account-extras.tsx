@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
 
@@ -110,5 +111,81 @@ export function PrivacyCard() {
       <div className="action-row"><button className="button button-primary" disabled={busy}>{busy ? 'Enviando…' : 'Confirmar pedido de exclusão'}</button><button type="button" className="button button-ghost" onClick={() => setAskDelete(false)}>Cancelar</button></div>
     </form>}
     {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}
+  </article>;
+}
+
+/** Verificação em duas etapas (aplicativo autenticador) e "sair de todos os dispositivos". */
+export function TwoFactorCard({ role }: { role?: string }) {
+  const [active, setActive] = useState<boolean | null>(null);
+  const [setup, setSetup] = useState<{ secret: string; otpauthUrl: string; qr: string } | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [ok, setOk] = useState(false);
+  const [disabling, setDisabling] = useState(false);
+  const privileged = role === 'admin' || role === 'operacao';
+
+  const load = useCallback(async () => {
+    try { const response = await authenticatedFetch('/api/v1/auth/me'); if (response.ok) setActive(Boolean((await response.json() as { totpAtivo?: boolean }).totpAtivo)); } catch { setActive(null); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function call(path: string, body?: unknown) {
+    const response = await authenticatedFetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const data = await response.json().catch(() => ({})) as Record<string, unknown> & { message?: string | string[] };
+    if (!response.ok) throw new Error(messageOf(data, 'Não foi possível concluir.'));
+    return data;
+  }
+  async function start() {
+    setBusy(true); setMessage(''); setOk(false);
+    try {
+      const data = await call('/api/v1/auth/2fa/iniciar') as { secret: string; otpauthUrl: string };
+      setSetup({ ...data, qr: await QRCode.toDataURL(data.otpauthUrl, { margin: 1, width: 192 }) });
+    } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
+  }
+  async function confirm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      const data = await call('/api/v1/auth/2fa/ativar', { codigo: String(new FormData(event.currentTarget).get('codigo') ?? '').trim() }) as { codigosRecuperacao: string[] };
+      setCodes(data.codigosRecuperacao); setSetup(null); setActive(true); setOk(true); setMessage('Verificação em duas etapas ativada.');
+    } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
+  }
+  async function disable(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setMessage(''); setOk(false);
+    const form = new FormData(event.currentTarget);
+    try {
+      await call('/api/v1/auth/2fa/desativar', { senha: String(form.get('senha') ?? ''), codigo: String(form.get('codigo') ?? '').trim() });
+      setActive(false); setDisabling(false); setOk(true); setMessage('Verificação em duas etapas desativada.');
+    } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
+  }
+  async function logoutAll() {
+    if (!window.confirm('Encerrar a sessão em TODOS os aparelhos, inclusive neste?')) return;
+    setBusy(true);
+    try { await call('/api/v1/auth/logout-todos'); window.location.href = '/login'; } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); setBusy(false); }
+  }
+
+  return <article className="dashboard-card wide"><h2>Verificação em duas etapas</h2>
+    <p className="muted">Além da senha, pede um código de 6 dígitos de um aplicativo (Google Authenticator, Authy, 1Password…). {privileged ? <strong>Recomendado para contas administrativas.</strong> : 'Protege a sua conta mesmo que a senha vaze.'}</p>
+    {active === false && !setup && <div className="action-row"><button type="button" className="button button-primary" onClick={() => void start()} disabled={busy}>Ativar verificação em duas etapas</button></div>}
+    {setup && <form onSubmit={confirm} className="twofa-setup">
+      <ol className="muted">
+        <li>Abra o aplicativo autenticador e escolha “adicionar conta”.</li>
+        <li>Leia o QR code abaixo (ou digite a chave manualmente).</li>
+        <li>Digite o código de 6 dígitos que o aplicativo mostrar.</li>
+      </ol>
+      <div className="twofa-qr"><img src={setup.qr} alt="QR code para o aplicativo autenticador" width={192} height={192} /><div><small className="muted">Chave manual</small><code className="twofa-secret">{setup.secret}</code></div></div>
+      <div className="field"><label htmlFor="codigo2fa">Código de 6 dígitos</label><input id="codigo2fa" name="codigo" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={8} required /></div>
+      <div className="action-row"><button className="button button-primary" disabled={busy}>{busy ? 'Confirmando…' : 'Confirmar e ativar'}</button><button type="button" className="button button-ghost" onClick={() => setSetup(null)}>Cancelar</button></div>
+    </form>}
+    {codes && <div className="notice"><strong>Guarde estes códigos de recuperação</strong><span>Cada um funciona uma única vez, caso você perca o celular. Eles não serão mostrados de novo.</span><div className="recovery-codes">{codes.map((code) => <code key={code}>{code}</code>)}</div><button type="button" className="text-link" onClick={() => void navigator.clipboard?.writeText(codes.join('\n'))}>Copiar códigos</button></div>}
+    {active && !disabling && !codes && <div className="action-row"><span className="tag tag-open">Ativa</span><button type="button" className="button button-ghost" onClick={() => setDisabling(true)} disabled={busy}>Desativar</button></div>}
+    {active && disabling && <form onSubmit={disable} className="delete-form">
+      <div className="field"><label htmlFor="senha2fa">Sua senha</label><input id="senha2fa" name="senha" type="password" required autoComplete="current-password" /></div>
+      <div className="field"><label htmlFor="cod2fa">Código do aplicativo (ou de recuperação)</label><input id="cod2fa" name="codigo" required minLength={6} maxLength={20} autoComplete="one-time-code" /></div>
+      <div className="action-row"><button className="button button-primary" disabled={busy}>Desativar</button><button type="button" className="button button-ghost" onClick={() => setDisabling(false)}>Cancelar</button></div>
+    </form>}
+    {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}
+    <hr className="soft-divider" />
+    <div className="action-row"><button type="button" className="button button-ghost" onClick={() => void logoutAll()} disabled={busy}>Sair de todos os dispositivos</button><small className="muted">Útil se perdeu um aparelho ou suspeita de acesso indevido.</small></div>
   </article>;
 }

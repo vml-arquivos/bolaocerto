@@ -5,11 +5,19 @@ export type PublicContest = {
 
 export type PoolRelease = { condicional: boolean; liberado: boolean; gatilho: number | null; premioAtual: number | null; faltam: number | null; progressoPct: number | null; mensagem: string | null };
 
+export type PoolGameResult = { ordem: number; numeros: number[]; acertos: number; acertosSegundoSorteio: number | null; premios: Array<{ faixa: string; sorteio: number; acertos: number; valor: number }>; total: number };
+export type PoolTransparency = {
+  registradoEm: string | null; codigoBilhete: string | null; comprovanteUrl: string | null; apuradoEm: string | null; premioTotal: string | null;
+  apuracao: { concurso: number; sorteados: number[]; segundoSorteio: number[]; melhorFaixa: string | null; jogos: PoolGameResult[] } | null;
+};
+
 export type PublicPool = {
   id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number | null;
   cotasIlimitadas: boolean; cotasVendidas?: number; cotasDisponiveis: number | null; valorCota: string; taxaAdministracaoPct: string; modeloOperacional: string;
   status: string; teveGanhador: boolean; concurso?: Omit<PublicContest, 'id'>;
   liberacao?: PoolRelease;
+  jogos?: Array<{ id: string; ordem: number; numeros: number[] }>;
+  transparencia?: PoolTransparency | null;
   grupo?: { nome: string; slug: string; descricao: string | null };
 };
 

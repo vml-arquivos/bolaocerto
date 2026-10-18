@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AllExceptionsFilter } from './common/exceptions.filter';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
 import { LotteriesModule } from './lotteries/lotteries.module';
@@ -37,5 +39,6 @@ import { HealthController } from './health.controller';
     OperationModule,
   ],
   controllers: [HealthController],
+  providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
 })
 export class AppModule {}

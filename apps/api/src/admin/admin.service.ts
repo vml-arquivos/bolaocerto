@@ -431,7 +431,7 @@ export class AdminService {
     const target = await this.prisma.usuario.findUnique({ where: { id }, select: { id: true, nome: true, email: true, papel: true } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.usuario.update({ where: { id }, data: { papel: dto.papel } });
+      const result = await tx.usuario.update({ where: { id }, data: { papel: dto.papel, tokenVersion: { increment: 1 } } });
       const affiliate = await tx.afiliado.findUnique({ where: { usuarioId: id } });
       if (dto.papel === 'afiliado' && !affiliate) {
         await tx.afiliado.create({ data: { usuarioId: id, codigoAfiliado: this.makeCode('BL'), statusAprovacao: 'aprovado', aprovadoPor: user.id, aprovadoEm: new Date() } });
@@ -587,7 +587,7 @@ export class AdminService {
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     if (([StatusBolao.fechado, StatusBolao.registrado] as StatusBolao[]).includes(pool.status) === false) throw new ConflictException('O bolão precisa estar fechado ou registrado para receber comprovante.');
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.bolao.update({ where: { id }, data: { comprovanteUrl: dto.comprovanteUrl, status: StatusBolao.registrado, registradoEm: new Date() } });
+      const result = await tx.bolao.update({ where: { id }, data: { comprovanteUrl: dto.comprovanteUrl, ...(dto.codigoBilhete ? { codigoBilhete: dto.codigoBilhete.trim() } : {}), status: StatusBolao.registrado, registradoEm: pool.registradoEm ?? new Date() } });
       await tx.cota.updateMany({ where: { bolaoId: id, status: StatusCota.paga }, data: { status: StatusCota.registrada, comprovanteIndividualUrl: dto.comprovanteUrl } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.comprovante.vinculado', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: { ...result, hashArquivo: dto.hashArquivo ?? null, observacao: dto.observacao ?? null } as unknown as Prisma.InputJsonValue });
       return result;

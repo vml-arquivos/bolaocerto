@@ -4,13 +4,20 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { RegisterPoolDto } from './operation.dto';
+import { OpsWatchService } from './ops-watch.service';
 import { OperationService } from './operation.service';
 
 @Controller('operacao')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin', 'operacao')
 export class OperationController {
-  constructor(private readonly operation: OperationService) {}
+  constructor(private readonly operation: OperationService, private readonly watch: OpsWatchService) {}
+
+  /** Painel de saúde: sincronização, pendências de registro/apuração e integrações configuradas. */
+  @Get('saude')
+  health() {
+    return this.watch.snapshot();
+  }
 
   @Get('fila')
   queue() {

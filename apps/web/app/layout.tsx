@@ -3,6 +3,7 @@ import './globals.css';
 import './details.css';
 import './stats.css';
 import type { Metadata, Viewport } from 'next';
+import { PwaRegister } from '../components/pwa-register';
 
 export const metadata: Metadata = {
   title: { default: 'BL — Bolão Livre', template: '%s | BL — Bolão Livre' },
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
     icon: '/brand/bl-app-icon.png',
     apple: '/brand/bl-app-icon.png',
   },
+  appleWebApp: { capable: true, title: 'Bolão Livre', statusBarStyle: 'black-translucent' },
   openGraph: {
     title: 'BL — Bolão Livre',
     description: 'Concursos oficiais, cotas rastreáveis e uma experiência clara para acompanhar cada etapa.',
@@ -33,5 +35,5 @@ export const viewport: Viewport = {
 const themeInitScript = `(function(){try{var s=localStorage.getItem('bl-theme');var t=s==='light'||s==='dark'?s:(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}</body></html>;
+  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}<PwaRegister /></body></html>;
 }

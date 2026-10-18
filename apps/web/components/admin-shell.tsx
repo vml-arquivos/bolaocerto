@@ -7,41 +7,41 @@ import { ThemeToggle } from './theme-toggle';
 
 const groups = [
   {
-    label: 'Visão',
+    label: 'Início',
     items: [
-      ['visao-geral', 'Visão geral', 'VG'],
+      ['visao-geral', 'Resumo', 'RS'],
     ],
   },
   {
-    label: 'Loterias',
+    label: 'Jogos',
     items: [
       ['concursos', 'Concursos', 'CO'],
       ['boloes', 'Bolões', 'BO'],
-      ['jogos', 'Jogos / apostas', 'JG'],
+      ['jogos', 'Apostas', 'JG'],
       ['cotas', 'Cotas', 'CT'],
-      ['controle', 'Controle por bolão', 'CB'],
+      ['controle', 'Acompanhar bolão', 'CB'],
     ],
   },
   {
-    label: 'Clientes',
+    label: 'Pessoas',
     items: [
-      ['crm', 'CRM de apostadores', 'CR'],
+      ['crm', 'Clientes', 'CR'],
       ['participantes', 'Participantes', 'PA'],
       ['grupos', 'Grupos', 'GR'],
     ],
   },
   {
-    label: 'Rede',
+    label: 'Indicações',
     items: [
       ['afiliados', 'Afiliados', 'AF'],
-      ['rede', 'Rede de afiliados', 'RD'],
+      ['rede', 'Quem indicou quem', 'RD'],
       ['convites', 'Convites', 'CV'],
       ['comissoes', 'Comissões', 'CM'],
-      ['repasses', 'Repasses', 'RP'],
+      ['repasses', 'Pagar comissões', 'RP'],
     ],
   },
   {
-    label: 'Financeiro',
+    label: 'Dinheiro',
     items: [
       ['relatorios', 'Relatórios', 'RL'],
       ['recebimentos', 'Recebimentos', 'RE'],
@@ -50,18 +50,18 @@ const groups = [
     ],
   },
   {
-    label: 'Operação',
+    label: 'Dia a dia',
     items: [
-      ['operacao', 'Fila operacional', 'OP'],
+      ['operacao', 'Para fazer', 'OP'],
       ['comprovantes', 'Comprovantes', 'CP'],
-      ['lotericas', 'Lotéricas parceiras', 'LP'],
+      ['lotericas', 'Lotéricas', 'LP'],
     ],
   },
   {
-    label: 'Sistema',
+    label: 'Conta e acesso',
     items: [
-      ['usuarios', 'Usuários', 'US'],
-      ['auditoria', 'Auditoria', 'AU'],
+      ['usuarios', 'Contas', 'US'],
+      ['auditoria', 'Histórico', 'HI'],
       ['configuracoes', 'Configurações', 'CF'],
     ],
   },
@@ -106,14 +106,11 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
       <aside className={`admin-sidebar ${open ? 'is-open' : ''} ${collapsed ? 'is-collapsed' : ''}`}>
         <div className="admin-brand">
           <span className="admin-brand-mark"><img src="/brand/bl-app-icon.png" alt="" aria-hidden="true" /></span>
-          <span><strong>Bolão Livre</strong><small>Central administrativa</small></span>
+          <span><strong>Bolão Livre</strong><small>Painel</small></span>
         </div>
-        <div className={`admin-environment ${testMode ? 'is-test-mode' : ''}`}>
-          <span className="admin-status-dot" />
-          <span>{testMode ? 'Ambiente de testes' : 'Ambiente de produção'}</span>
-        </div>
-        {testMode && <p className="admin-environment-note">Não realize pagamentos reais.</p>}
-        <nav className="admin-nav" aria-label="Navegação administrativa">
+        {testMode && <div className="admin-environment is-test-mode"><span className="admin-status-dot" /><span>Modo de teste</span></div>}
+        {testMode && <p className="admin-environment-note">Não faça pagamentos de verdade.</p>}
+        <nav className="admin-nav" aria-label="Menu do painel">
           {groups.map((group) => (
             <div className="admin-nav-group" key={group.label}>
               <span className="admin-nav-label">{group.label}</span>
@@ -141,7 +138,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
           <span aria-hidden="true">{collapsed ? '»' : '«'}</span><span>{collapsed ? 'Expandir' : 'Recolher menu'}</span>
         </button>
         <div className="admin-sidebar-footer">
-          <Link href="/" className="admin-footer-link"><span>Voltar à vitrine</span></Link>
+          <Link href="/" className="admin-footer-link"><span>Voltar ao site</span></Link>
           <Link href="/minha-conta" className="admin-footer-link"><span>Minha conta</span></Link>
           <span className="admin-footer-note">BL — Bolão Livre</span>
         </div>
@@ -159,12 +156,11 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
       {open && <button className="admin-overlay" aria-label="Fechar menu" onClick={() => setOpen(false)} />}
       <section className={`admin-content ${collapsed ? 'is-collapsed-content' : ''}`}>
         <header className="admin-topbar">
-          <button type="button" className="admin-menu-toggle" onClick={() => setOpen((value) => !value)} aria-label="Abrir menu administrativo">Menu</button>
-          <div className="admin-topbar-context"><span className="admin-eyebrow">Centro de gestão</span><strong>{titles[current] || 'Administração'}</strong></div>
+          <button type="button" className="admin-menu-toggle" onClick={() => setOpen((value) => !value)} aria-label="Abrir menu">Menu</button>
+          <div className="admin-topbar-context"><span className="admin-eyebrow">Painel</span><strong>{titles[current] || 'Painel'}</strong></div>
           <div className="admin-topbar-actions">
-            <span className="admin-live-pill"><span className="admin-status-dot" /> Operação online</span>
             <ThemeToggle />
-            <Link href="/" className="admin-topbar-link">Ver vitrine</Link>
+            <Link href="/" className="admin-topbar-link">Ver o site</Link>
           </div>
         </header>
         <main className="admin-main" id="admin-main-content">{children}</main>

@@ -4,10 +4,10 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, brl, chip, dateOnly, dateTime, Empty, ExportBar, Kpi, label, modalityNames, Notify, Panel, Progress, Rec, ReleaseBadge, Table } from './admin-ui';
 
 /* -------------------------------------------------------------------------- */
-/* CRM de apostadores                                                         */
+/* CRM de clientes                                                         */
 /* -------------------------------------------------------------------------- */
 
-const SEGMENTS: Array<[string, string]> = [['', 'Todos'], ['vip', 'Apostadores maiores (VIP)'], ['recorrente', 'Recorrentes'], ['novo', 'Novos'], ['inativo', 'Inativos'], ['inadimplente', 'Com pendência'], ['sem_compra', 'Ainda não compraram']];
+const SEGMENTS: Array<[string, string]> = [['', 'Todos'], ['vip', 'Clientes maiores (VIP)'], ['recorrente', 'Recorrentes'], ['novo', 'Novos'], ['inativo', 'Inativos'], ['inadimplente', 'Com pendência'], ['sem_compra', 'Ainda não compraram']];
 const LEVEL_CLASS: Record<string, string> = { diamante: 'status-chip status-info', ouro: 'status-chip status-warning', prata: 'status-chip', bronze: 'status-chip', sem_compra: 'status-chip' };
 const LevelChip = ({ nivel, nome }: { nivel: string; nome?: string }) => <span className={LEVEL_CLASS[nivel] ?? 'status-chip'}>{nome ?? label(nivel)}</span>;
 
@@ -37,7 +37,7 @@ export function CrmView({ notify }: { notify: Notify }) {
       const search = new URLSearchParams({ ...params(), pagina: String(page), porPagina: '25' });
       const [summary, rows] = await Promise.all([api('/api/v1/admin/crm/resumo'), api(`/api/v1/admin/crm/apostadores?${search.toString()}`)]);
       setOverview(summary); setList(rows);
-    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível carregar o CRM.'); }
+    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível carregar os clientes.'); }
     finally { setLoading(false); }
   }, [params, page, notify]);
   useEffect(() => { void load(); }, [load]);
@@ -47,37 +47,37 @@ export function CrmView({ notify }: { notify: Notify }) {
   const open = (id: string) => { setSelected(id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Relacionamento</span><h1>CRM de apostadores</h1><p>Conheça quem mais investe, quem compra com frequência e quem precisa de atenção. Registre contatos e programe o próximo retorno.</p></div></div>
+    <div className="admin-page-heading"><div><span className="admin-eyebrow">Pessoas</span><h1>Clientes</h1><p>Veja quem mais compra e quem sumiu. Anote conversas e combine o próximo contato.</p></div></div>
 
     {selected && <BettorDetail id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
 
     <div className="admin-kpi-grid">
-      <Kpi label="Apostadores cadastrados" value={totals.cadastrados ?? 0} hint={`${totals.compradores ?? 0} já compraram`} tone="blue" />
-      <Kpi label="Receita dos apostadores" value={brl(totals.receitaTotal)} hint="cotas pagas" tone="green" />
-      <Kpi label="Ticket médio por apostador" value={brl(totals.ticketMedioPorApostador)} tone="violet" />
+      <Kpi label="Clientes cadastrados" value={totals.cadastrados ?? 0} hint={`${totals.compradores ?? 0} já compraram`} tone="blue" />
+      <Kpi label="Quanto pagaram" value={brl(totals.receitaTotal)} hint="cotas pagas" tone="green" />
+      <Kpi label="Ticket médio por cliente" value={brl(totals.ticketMedioPorCliente)} tone="violet" />
       <Kpi label="Receita dos VIP" value={brl(totals.receitaVip)} hint={`${totals.participacaoVipPct ?? 0}% da receita`} tone="amber" />
-      <Kpi label="Reativar (VIP inativos)" value={(overview?.reativar ?? []).length} hint="apostadores maiores sem comprar" tone="rose" />
+      <Kpi label="Reativar (VIP inativos)" value={(overview?.reativar ?? []).length} hint="clientes maiores sem comprar" tone="rose" />
     </div>
 
-    <Panel title="Níveis de apostador" description="O nível é definido pelo total já investido em cotas pagas.">
-      <div className="admin-kpi-grid admin-kpi-grid-four">{(overview?.niveis ?? []).map((tier: Rec) => <Kpi key={tier.nivel} label={tier.nome} value={tier.apostadores} hint={`${brl(tier.valor)} investidos`} tone={tier.nivel === 'diamante' ? 'violet' : tier.nivel === 'ouro' ? 'amber' : tier.nivel === 'prata' ? 'blue' : 'green'} />)}</div>
-      <p className="admin-help">Critérios atuais: <strong>Prata</strong> a partir de {brl(criteria.prata)} · <strong>Ouro</strong> a partir de {brl(criteria.ouro)} · <strong>Diamante</strong> a partir de {brl(criteria.diamante)}. <strong>Inativo</strong>: sem comprar há mais de {criteria.inativoDias} dias · <strong>Recorrente</strong>: {criteria.recorrenteMinBoloes}+ bolões diferentes · <strong>Novo</strong>: primeira compra nos últimos {criteria.novoDias} dias. Um apostador pode estar em vários segmentos ao mesmo tempo.</p>
+    <Panel title="Níveis de cliente" description="O nível é definido pelo total já investido em cotas pagas.">
+      <div className="admin-kpi-grid admin-kpi-grid-four">{(overview?.niveis ?? []).map((tier: Rec) => <Kpi key={tier.nivel} label={tier.nome} value={tier.clientes} hint={`${brl(tier.valor)} investidos`} tone={tier.nivel === 'diamante' ? 'violet' : tier.nivel === 'ouro' ? 'amber' : tier.nivel === 'prata' ? 'blue' : 'green'} />)}</div>
+      <p className="admin-help">Critérios atuais: <strong>Prata</strong> a partir de {brl(criteria.prata)} · <strong>Ouro</strong> a partir de {brl(criteria.ouro)} · <strong>Diamante</strong> a partir de {brl(criteria.diamante)}. <strong>Inativo</strong>: sem comprar há mais de {criteria.inativoDias} dias · <strong>Recorrente</strong>: {criteria.recorrenteMinBoloes}+ bolões diferentes · <strong>Novo</strong>: primeira compra nos últimos {criteria.novoDias} dias. Um cliente pode estar em vários segmentos ao mesmo tempo.</p>
     </Panel>
 
     <div className="admin-two-col">
-      <Panel title="Maiores apostadores" description="Ranking por total investido">
-        <Table minWidth={460}><thead><tr><th>#</th><th>Apostador</th><th>Nível</th><th>Investido</th><th>Cotas</th></tr></thead><tbody>{(overview?.maioresApostadores ?? []).map((row: Rec, index: number) => <tr key={row.id}><td>{index + 1}</td><td><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button><small>{row.boloesDistintos} bolão(ões) · última compra {dateOnly(row.ultimaCompraEm)}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td></tr>)}</tbody></Table>
+      <Panel title="Maiores clientes" description="Ranking por total investido">
+        <Table minWidth={460}><thead><tr><th>#</th><th>Cliente</th><th>Nível</th><th>Investido</th><th>Cotas</th></tr></thead><tbody>{(overview?.maioresApostadores ?? []).map((row: Rec, index: number) => <tr key={row.id}><td>{index + 1}</td><td><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button><small>{row.boloesDistintos} bolão(ões) · última compra {dateOnly(row.ultimaCompraEm)}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td></tr>)}</tbody></Table>
         {!(overview?.maioresApostadores ?? []).length && <Empty text="Ainda não há compras pagas" hint="Assim que houver pagamentos confirmados, o ranking aparece aqui." />}
       </Panel>
-      <Panel title="Para reativar" description="Apostadores maiores que não compram há algum tempo">
-        <Table minWidth={420}><thead><tr><th>Apostador</th><th>Nível</th><th>Investido</th><th>Sem comprar</th></tr></thead><tbody>{(overview?.reativar ?? []).map((row: Rec) => <tr key={row.id}><td><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button></td><td>{row.nivelNome}</td><td>{brl(row.totalGasto)}</td><td>{row.diasSemComprar} dias</td></tr>)}</tbody></Table>
-        {!(overview?.reativar ?? []).length && <Empty text="Nenhum apostador maior inativo" hint="Ótimo sinal: seus melhores clientes estão comprando." />}
+      <Panel title="Para reativar" description="Clientes maiores que não compram há algum tempo">
+        <Table minWidth={420}><thead><tr><th>Cliente</th><th>Nível</th><th>Investido</th><th>Sem comprar</th></tr></thead><tbody>{(overview?.reativar ?? []).map((row: Rec) => <tr key={row.id}><td><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button></td><td>{row.nivelNome}</td><td>{brl(row.totalGasto)}</td><td>{row.diasSemComprar} dias</td></tr>)}</tbody></Table>
+        {!(overview?.reativar ?? []).length && <Empty text="Nenhum cliente maior inativo" hint="Ótimo sinal: seus melhores clientes estão comprando." />}
         {(overview?.acompanhamentos ?? []).length > 0 && <><h3 style={{ margin: '18px 0 8px', fontSize: 13 }}>Contatos programados (próximos 7 dias)</h3><Table minWidth={360}><tbody>{overview!.acompanhamentos.map((row: Rec) => <tr key={row.id}><td><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button></td><td>{dateTime(row.proximoContatoEm)}</td></tr>)}</tbody></Table></>}
       </Panel>
     </div>
 
-    <Panel title="Todos os apostadores" description="Filtre por segmento, nível ou busque por nome, e-mail ou CPF. A planilha traz o CPF completo; o PDF e a tela mostram o CPF protegido." action={<ExportBar path="/api/v1/admin/crm/apostadores" params={params()} id="apostadores" onError={(text) => notify('error', text)} />}>
-      <div className="admin-chip-row" role="tablist" aria-label="Segmentos">{SEGMENTS.map(([key, title]) => { const count = key ? (overview?.segmentos ?? []).find((item: Rec) => item.chave === key)?.apostadores : totals.cadastrados; return <button key={key || 'todos'} role="tab" aria-selected={segment === key} className={`admin-chip-button ${segment === key ? 'is-current' : ''}`} onClick={() => { setSegment(key); setPage(1); }}>{title}<strong>{count ?? 0}</strong></button>; })}</div>
+    <Panel title="Todos os clientes" description="Filtre por segmento, nível ou busque por nome, e-mail ou CPF. A planilha traz o CPF completo; o PDF e a tela mostram o CPF protegido." action={<ExportBar path="/api/v1/admin/crm/apostadores" params={params()} id="clientes" onError={(text) => notify('error', text)} />}>
+      <div className="admin-chip-row" role="tablist" aria-label="Segmentos">{SEGMENTS.map(([key, title]) => { const count = key ? (overview?.segmentos ?? []).find((item: Rec) => item.chave === key)?.clientes : totals.cadastrados; return <button key={key || 'todos'} role="tab" aria-selected={segment === key} className={`admin-chip-button ${segment === key ? 'is-current' : ''}`} onClick={() => { setSegment(key); setPage(1); }}>{title}<strong>{count ?? 0}</strong></button>; })}</div>
       <form className="admin-toolbar-filters" style={{ marginBottom: 14 }} onSubmit={(event: FormEvent) => { event.preventDefault(); setTerm(search.trim()); setPage(1); }}>
         <label className="admin-field"><span>Buscar</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome, e-mail, CPF ou etiqueta" /></label>
         <label className="admin-field"><span>Nível</span><select value={level} onChange={(event) => { setLevel(event.target.value); setPage(1); }}><option value="">Todos</option><option value="diamante">Diamante</option><option value="ouro">Ouro</option><option value="prata">Prata</option><option value="bronze">Bronze</option></select></label>
@@ -85,9 +85,9 @@ export function CrmView({ notify }: { notify: Notify }) {
         <button className="admin-button admin-button-primary" type="submit">Buscar</button>
       </form>
       {loading && <div className="admin-spinner" aria-label="Carregando" />}
-      <Table minWidth={1180}><thead><tr><th>Apostador</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td>{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button></td></tr>)}</tbody></Table>
-      {!loading && !(list?.items ?? []).length && <Empty text="Nenhum apostador encontrado" hint="Ajuste os filtros ou a busca." />}
-      {(list?.paginas ?? 1) > 1 && <div className="admin-row-actions" style={{ marginTop: 14 }}><button className="admin-button admin-button-small admin-button-ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span className="admin-help" style={{ margin: 0 }}>Página {list?.pagina} de {list?.paginas} · {list?.total} apostadores</span><button className="admin-button admin-button-small admin-button-ghost" disabled={page >= (list?.paginas ?? 1)} onClick={() => setPage((value) => value + 1)}>Próxima →</button></div>}
+      <Table minWidth={1180}><thead><tr><th>Cliente</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td>{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button></td></tr>)}</tbody></Table>
+      {!loading && !(list?.items ?? []).length && <Empty text="Nenhum cliente encontrado" hint="Ajuste os filtros ou a busca." />}
+      {(list?.paginas ?? 1) > 1 && <div className="admin-row-actions" style={{ marginTop: 14 }}><button className="admin-button admin-button-small admin-button-ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span className="admin-help" style={{ margin: 0 }}>Página {list?.pagina} de {list?.paginas} · {list?.total} clientes</span><button className="admin-button admin-button-small admin-button-ghost" disabled={page >= (list?.paginas ?? 1)} onClick={() => setPage((value) => value + 1)}>Próxima →</button></div>}
     </Panel>
   </>;
 }
@@ -114,10 +114,16 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
     catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível salvar a nota.'); } finally { setBusy(false); }
   }
   async function generateResetLink() {
-    if (!window.confirm('Gerar um link de redefinição de senha para este apostador? O link vale por 1 hora e a ação fica registrada na auditoria.')) return;
+    if (!window.confirm('Gerar um link de redefinição de senha para este cliente? O link vale por 1 hora e a ação fica registrada na auditoria.')) return;
     setBusy(true);
-    try { const result = await api(`/api/v1/admin/usuarios/${id}/redefinicao-senha`, { method: 'POST' }); setResetLink(String(result.link ?? '')); notify('success', 'Link gerado. Envie ao apostador por um canal seguro.'); }
+    try { const result = await api(`/api/v1/admin/usuarios/${id}/redefinicao-senha`, { method: 'POST' }); setResetLink(String(result.link ?? '')); notify('success', 'Link gerado. Envie ao cliente por um canal seguro.'); }
     catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível gerar o link.'); } finally { setBusy(false); }
+  }
+  async function resetTwoFactor() {
+    if (!window.confirm('Desligar a verificação em duas etapas desta conta e encerrar as sessões dela? Use quando a pessoa perdeu o celular e os códigos de recuperação. A ação fica registrada na auditoria.')) return;
+    setBusy(true);
+    try { await api(`/api/v1/admin/usuarios/${id}/2fa/redefinir`, { method: 'POST' }); notify('success', '2FA desligado. A pessoa já pode entrar só com a senha e ativar de novo.'); }
+    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível redefinir o 2FA.'); } finally { setBusy(false); }
   }
   async function saveProfile(event: FormEvent) {
     event.preventDefault(); setBusy(true);
@@ -137,9 +143,9 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
       <Kpi label="Última compra" value={metrics.ultimaCompraEm ? dateOnly(metrics.ultimaCompraEm) : '—'} hint={metrics.diasSemComprar != null ? `há ${metrics.diasSemComprar} dia(s)` : 'nunca comprou'} tone="amber" />
       <Kpi label="Pendente" value={brl(metrics.valorPendente)} hint={`${metrics.cotasPendentes ?? 0} cota(s) aguardando`} tone="rose" />
     </div>
-    <p className="admin-help">Cadastrado em {dateOnly(profile.cadastradoEm)}{profile.afiliadoOrigem ? ` · indicado por ${profile.afiliadoOrigem.nome} (${profile.afiliadoOrigem.codigo})` : ' · cadastro direto'} · KYC: {label(profile.statusKyc)}{Number(metrics.premiosGanhos) > 0 ? ` · prêmios: ${brl(metrics.premiosGanhos)}` : ''}</p>
+    <p className="admin-help">Cadastrado em {dateOnly(profile.cadastradoEm)}{profile.afiliadoOrigem ? ` · indicado por ${profile.afiliadoOrigem.nome} (${profile.afiliadoOrigem.codigo})` : ' · cadastro direto'} · Verificação: {label(profile.statusKyc)}{Number(metrics.premiosGanhos) > 0 ? ` · prêmios: ${brl(metrics.premiosGanhos)}` : ''}</p>
     {profile.exclusaoSolicitadaEm && <div className="admin-callout admin-callout-warning"><strong>Pediu a exclusão da conta (LGPD)</strong> em {dateOnly(profile.exclusaoSolicitadaEm)}. Analise o pedido: cotas em andamento e dados fiscais precisam ser mantidos pelo prazo legal.</div>}
-    <div className="admin-row-actions" style={{ margin: '4px 0 12px' }}><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void generateResetLink()}>Gerar link de redefinição de senha</button></div>
+    <div className="admin-row-actions" style={{ margin: '4px 0 12px' }}><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void generateResetLink()}>Gerar link de redefinição de senha</button><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void resetTwoFactor()}>Redefinir 2FA</button></div>
     {resetLink && <div className="admin-callout"><strong>Link de redefinição (vale 1 hora, uso único):</strong><br /><input readOnly value={resetLink} onFocus={(event) => event.currentTarget.select()} style={{ width: '100%', marginTop: 6 }} aria-label="Link de redefinição" /><button type="button" className="admin-button admin-button-small" style={{ marginTop: 8 }} onClick={() => void navigator.clipboard?.writeText(resetLink).then(() => notify('success', 'Link copiado.')).catch(() => undefined)}>Copiar link</button></div>}
     <div className="admin-two-col">
       <div>
@@ -149,7 +155,7 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
           <label className="admin-field"><span>Próximo contato</span><input type="date" value={next} onChange={(event) => setNext(event.target.value)} /></label>
           <div className="admin-field" style={{ alignSelf: 'end' }}><button className="admin-button admin-button-primary" disabled={busy}>Salvar</button></div>
         </form>
-        <p className="admin-help">A etiqueta <code>vip</code> promove o apostador a VIP mesmo abaixo do valor de corte.</p>
+        <p className="admin-help">A etiqueta <code>vip</code> promove o cliente a VIP mesmo abaixo do valor de corte.</p>
         <h3 style={{ margin: '16px 0 8px', fontSize: 13 }}>Notas do relacionamento</h3>
         <form onSubmit={saveNote} style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <label className="admin-field"><span>Nova nota</span><textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex.: Ligou pedindo cotas maiores no próximo bolão da Mega da Virada." /></label>
@@ -191,7 +197,7 @@ export function PoolControlView({ notify }: { notify: Notify }) {
   const totals = pools.reduce((acc, pool) => ({ pagas: acc.pagas + Number(pool.cotasPagas ?? 0), aguardando: acc.aguardando + Number(pool.cotasAguardando ?? 0), receita: acc.receita + Number(pool.receita ?? 0), aReceber: acc.aReceber + Number(pool.aReceber ?? 0) }), { pagas: 0, aguardando: 0, receita: 0, aReceber: 0 });
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Controle de cotas</span><h1>Controle por bolão</h1><p>Para cada bolão: quantas cotas foram vendidas, quem comprou, quem já pagou e quanto falta receber. Abra um bolão para ver os participantes e baixar o relatório em PDF, planilha ou CSV.</p></div></div>
+    <div className="admin-page-heading"><div><span className="admin-eyebrow">Jogos</span><h1>Acompanhar bolão</h1><p>Para cada bolão: quantas cotas foram vendidas, quem comprou, quem já pagou e quanto falta receber. Abra um bolão para ver os participantes e baixar o relatório em PDF, planilha ou CSV.</p></div></div>
     {selected && <PoolDetail id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
     <div className="admin-kpi-grid admin-kpi-grid-four">
       <Kpi label="Bolões" value={pools.length} tone="blue" />

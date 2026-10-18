@@ -102,3 +102,40 @@
 .notify-me small { line-height: 1.45; }
 .auth-brand-panel .brand strong { color: #fff; }
 @media (max-width: 640px) { .notice-actions { flex-direction: row; gap: 16px; align-items: center; } }
+
+/* ── Transparência do bolão (linha do tempo e conferência) ── */
+.transparency { margin: 28px 0; padding: 22px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); display: grid; gap: 14px; }
+.transparency h2 { margin: 0; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.timeline li { position: relative; padding: 0 0 16px 26px; display: grid; gap: 2px; color: var(--text-muted); }
+.timeline li::before { content: ''; position: absolute; left: 3px; top: 5px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--border-strong); background: var(--surface); }
+.timeline li::after { content: ''; position: absolute; left: 8px; top: 18px; bottom: 0; width: 1px; background: var(--border); }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li:last-child::after { display: none; }
+.timeline li.is-done { color: var(--text-primary); }
+.timeline li.is-done::before { border-color: var(--primary); background: var(--primary); }
+.timeline small { color: var(--text-muted); }
+.draw-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.draw-line > small { margin-right: 4px; color: var(--text-muted); }
+.ball { display: inline-grid; place-items: center; min-width: 32px; height: 32px; padding: 0 4px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); font-size: .82rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.ball-drawn { background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.ball-hit { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+.game-results { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.game-results article { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); display: grid; gap: 8px; }
+.game-results header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: .88rem; }
+.game-results header span { color: var(--text-muted); }
+.small-print { font-size: .8rem; line-height: 1.5; margin: 0; }
+
+/* ── Verificação em duas etapas ── */
+.twofa-setup { display: grid; gap: 14px; margin-top: 12px; max-width: 520px; }
+.twofa-setup ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: .9rem; }
+.twofa-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.twofa-qr img { border-radius: var(--radius-sm); border: 1px solid var(--border); background: #fff; }
+.twofa-secret { display: block; margin-top: 4px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-hover); font-size: .85rem; letter-spacing: .06em; word-break: break-all; }
+.recovery-codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 10px 0; }
+.recovery-codes code { padding: 7px 9px; border-radius: var(--radius-sm); background: var(--surface-hover); text-align: center; font-size: .88rem; letter-spacing: .05em; }
+.soft-divider { border: 0; border-top: 1px solid var(--border); margin: 18px 0 14px; }
+
+/* Banner de instalação do app (PWA) */
+.install-banner{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:16px;background:var(--surface-2,#111a3a);border:1px solid color-mix(in srgb,currentColor 14%,transparent);box-shadow:0 12px 40px rgba(0,0,0,.35);font-size:.92rem}
+@media (min-width:720px){.install-banner{left:auto;max-width:460px}}

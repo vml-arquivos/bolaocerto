@@ -19,9 +19,11 @@ export class OperationService {
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     const registrableStatuses: StatusBolao[] = [StatusBolao.aberto, StatusBolao.fechado];
     if (!registrableStatuses.includes(pool.status)) throw new ConflictException('Bolão não está disponível para registro.');
-    if (pool.cotas.length === 0 || pool.cotas.some((share) => share.status !== StatusCota.paga)) throw new ConflictException('Todas as cotas devem estar confirmadas antes do registro.');
+    // Cotas canceladas/estornadas (ex.: reserva que expirou) não contam: só as ativas precisam estar pagas.
+    const live = pool.cotas.filter((share) => share.status !== StatusCota.cancelada && share.status !== StatusCota.estornada);
+    if (live.length === 0 || live.some((share) => share.status !== StatusCota.paga)) throw new ConflictException('Todas as cotas ativas devem estar pagas antes do registro. Cotas canceladas ou estornadas são ignoradas.');
     const updated = await this.prisma.$transaction(async (tx) => {
-      const registered = await tx.bolao.update({ where: { id: poolId }, data: { status: StatusBolao.registrado, comprovanteUrl: dto.comprovanteUrl, registradoEm: new Date() } });
+      const registered = await tx.bolao.update({ where: { id: poolId }, data: { status: StatusBolao.registrado, comprovanteUrl: dto.comprovanteUrl, codigoBilhete: dto.codigoBilhete ?? null, registradoEm: new Date() } });
       await tx.cota.updateMany({ where: { bolaoId: poolId, status: StatusCota.paga }, data: { status: StatusCota.registrada, comprovanteIndividualUrl: dto.comprovanteUrl } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: poolId, evento: 'aposta.registrada', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: registered as unknown as Prisma.InputJsonValue });
       for (const share of pool.cotas) {

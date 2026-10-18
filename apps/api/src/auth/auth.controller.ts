@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto } from './auth.dto';
+import { DisableTwoFactorDto, LoginDto, RegisterDto, TwoFactorCodeDto } from './auth.dto';
+import { clearAuthCookies, setAuthCookies } from './cookies';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './auth.decorators';
 import { AuthUser } from './auth.utils';
@@ -13,14 +14,14 @@ export class AuthController {
   @Post('registrar')
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) {
     const result = await this.auth.register(dto);
-    this.setAuthCookies(response, result.accessToken, result.refreshToken);
+    setAuthCookies(response, result.accessToken, result.refreshToken);
     return { user: result.user };
   }
 
   @Post('login')
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response) {
     const result = await this.auth.login(dto);
-    this.setAuthCookies(response, result.accessToken, result.refreshToken);
+    setAuthCookies(response, result.accessToken, result.refreshToken);
     return { user: result.user };
   }
 
@@ -28,7 +29,7 @@ export class AuthController {
   async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const token = request.cookies?.refresh_token;
     const result = await this.auth.refresh(token);
-    this.setAuthCookies(response, result.accessToken, result.refreshToken);
+    setAuthCookies(response, result.accessToken, result.refreshToken);
     return { user: result.user };
   }
 
@@ -40,26 +41,32 @@ export class AuthController {
 
   @Post('logout')
   logout(@Res({ passthrough: true }) response: Response) {
-    response.clearCookie('access_token', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/api/v1' });
-    response.clearCookie('refresh_token', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/api/v1/auth' });
+    clearAuthCookies(response);
     return { ok: true };
   }
 
-  private setAuthCookies(response: Response, accessToken: string, refreshToken: string): void {
-    const secure = process.env.NODE_ENV === 'production';
-    response.cookie('access_token', accessToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure,
-      maxAge: 15 * 60 * 1000,
-      path: '/api/v1',
-    });
-    response.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure,
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/api/v1/auth',
-    });
+  /** Encerra TODAS as sessões desta conta (todos os aparelhos). */
+  @Post('logout-todos')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  async logoutAll(@CurrentUser() user: AuthUser, @Res({ passthrough: true }) response: Response) {
+    await this.auth.revokeAllSessions(user.id);
+    clearAuthCookies(response);
+    return { ok: true };
   }
+
+  @Post('2fa/iniciar')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  startTwoFactor(@CurrentUser() user: AuthUser) { return this.auth.startTwoFactor(user.id); }
+
+  @Post('2fa/ativar')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  enableTwoFactor(@CurrentUser() user: AuthUser, @Body() dto: TwoFactorCodeDto) { return this.auth.enableTwoFactor(user.id, dto.codigo); }
+
+  @Post('2fa/desativar')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  disableTwoFactor(@CurrentUser() user: AuthUser, @Body() dto: DisableTwoFactorDto) { return this.auth.disableTwoFactor(user.id, dto.senha, dto.codigo); }
 }

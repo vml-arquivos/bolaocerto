@@ -8,6 +8,22 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bolao
+          POSTGRES_PASSWORD: bolao
+          POSTGRES_DB: bolao
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bolao"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bolao:bolao@localhost:5432/bolao
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -19,6 +35,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+      # Garante que TODAS as migrações aplicam do zero num Postgres real.
+      - run: pnpm --filter @bolaocerto/api exec prisma migrate deploy
       - run: pnpm lint
       - run: pnpm test
+      # Contrato HTTP (usa o ValidationPipe de produção).
+      - run: pnpm test:e2e
       - run: pnpm build

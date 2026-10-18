@@ -240,3 +240,4 @@ export function calculateBrazilCutoff(drawDate: Date, localTime: string): Date {
 
 export * from './caixa-client';
 export * from './lottery-stats';
+export * from './settlement';

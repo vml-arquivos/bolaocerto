@@ -66,7 +66,7 @@ export class AccountService {
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.tokenSenha.updateMany({ where: { id: row.id, usadoEm: null }, data: { usadoEm: new Date() } });
       if (claimed.count !== 1) throw new BadRequestException('Este link expirou ou já foi usado. Peça uma nova redefinição de senha.');
-      await tx.usuario.update({ where: { id: row.usuarioId }, data: { senhaHash: hash } });
+      await tx.usuario.update({ where: { id: row.usuarioId }, data: { senhaHash: hash, tokenVersion: { increment: 1 }, tentativasLogin: 0, bloqueadoAte: null } });
       await tx.tokenSenha.updateMany({ where: { usuarioId: row.usuarioId, usadoEm: null }, data: { usadoEm: new Date() } });
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: row.usuarioId, evento: 'usuario.senha_redefinida', atorId: row.usuarioId });
     });
@@ -80,7 +80,7 @@ export class AccountService {
     if (currentPassword === newPassword) throw new BadRequestException('A nova senha deve ser diferente da atual.');
     const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
     await this.prisma.$transaction(async (tx) => {
-      await tx.usuario.update({ where: { id: usuarioId }, data: { senhaHash: hash } });
+      await tx.usuario.update({ where: { id: usuarioId }, data: { senhaHash: hash, tokenVersion: { increment: 1 } } });
       await tx.tokenSenha.updateMany({ where: { usuarioId, usadoEm: null }, data: { usadoEm: new Date() } });
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: usuarioId, evento: 'usuario.senha_alterada', atorId: usuarioId });
     });

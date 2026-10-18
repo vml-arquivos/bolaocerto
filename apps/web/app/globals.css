@@ -1090,3 +1090,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .receipt-table .receipt-sum td { font-weight: 560; border-bottom: 0; }
 .receipt-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }
 .receipt-explain p { margin: 0 0 8px; font-size: .88rem; line-height: 1.5; }
+
+/* ── Saúde do sistema (admin) ── */
+.health-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.health-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.health-list li > span { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 600; }
+.health-list li.is-ok > span { background: var(--success-soft, #e3f6ec); color: var(--success-strong, #11784a); }
+.health-list li.is-warn > span { background: var(--warning-soft); color: var(--warning-strong); }
+.health-list small { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.45; margin-top: 2px; }

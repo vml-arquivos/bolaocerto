@@ -36,4 +36,22 @@ export class LoginDto {
   @IsString()
   @MinLength(1)
   senha!: string;
+
+  /** Código de 6 dígitos do aplicativo (ou código de recuperação). Só é exigido quando a conta tem 2FA. */
+  @IsOptional()
+  @IsString()
+  @Length(6, 20)
+  codigo?: string;
+}
+
+export class TwoFactorCodeDto {
+  @IsString()
+  @Length(6, 20)
+  codigo!: string;
+}
+
+export class DisableTwoFactorDto extends TwoFactorCodeDto {
+  @IsString()
+  @MinLength(1)
+  senha!: string;
 }

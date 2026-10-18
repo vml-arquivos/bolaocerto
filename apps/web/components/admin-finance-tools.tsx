@@ -65,7 +65,7 @@ function Empty({ text }: { text: string }) {
 /* -------------------------------------------------------------------------- */
 
 type Tab = 'resumo' | 'vendas' | 'pagamentos' | 'nao-pagos' | 'comissoes' | 'notas-fiscais' | 'boloes';
-const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['pagamentos', 'Pagamentos e conciliação'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['notas-fiscais', 'Notas fiscais'], ['boloes', 'Por bolão']];
+const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['pagamentos', 'Pagamentos'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['notas-fiscais', 'Notas fiscais'], ['boloes', 'Por bolão']];
 
 export function ReportsView() {
   const [tab, setTab] = useState<Tab>('resumo');
@@ -163,7 +163,7 @@ export function ReportsView() {
       {!rows.length && <Empty text="Nenhuma comissão no período" />}
     </Panel>}
 
-    {!loading && tab === 'pagamentos' && <Panel title="Pagamentos e conciliação" description={`${data?.total ?? 0} pagamentos — custo dos jogos, taxa, comissão e resultado da plataforma por venda (a planilha traz o CPF completo)`} action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
+    {!loading && tab === 'pagamentos' && <Panel title="Pagamentos" description={`${data?.total ?? 0} pagamentos — custo dos jogos, taxa, comissão e resultado da plataforma por venda (a planilha traz o CPF completo)`} action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
       <Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td>{brl(row.valorBruto)}</td><td>{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td>{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td>{row.comissao === null ? '—' : brl(row.comissao)}</td><td>{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhum pagamento no período" />}
     </Panel>}
@@ -278,19 +278,19 @@ export function PaymentSettingsPanel({ notify }: { notify: (type: 'success' | 'e
     finally { setBusy(''); }
   }
   if (!settings) return null;
-  return <Panel title="Pagamentos (Cora)" description="Estado do provedor, sem expor credenciais.">
+  return <Panel title="Pagamentos (Cora)" description="Como está a cobrança pela Cora.">
     <div className="admin-summary-list">
       <div><span>Pagamentos habilitados</span><strong>{settings.habilitado ? 'Sim' : 'Não'}</strong></div>
-      <div><span>Provedor</span><strong>{settings.provedor}{settings.ambienteCora ? ` (${settings.ambienteCora === 'production' ? 'produção' : 'homologação'})` : ''}</strong></div>
+      <div><span>Serviço de cobrança</span><strong>{settings.provedor}{settings.ambienteCora ? ` (${settings.ambienteCora === 'production' ? 'produção' : 'teste'})` : ''}</strong></div>
       <div><span>Formas disponíveis</span><strong>{(settings.metodos ?? []).map(label).join(', ') || '—'}</strong></div>
       <div><span>Valor mínimo por cobrança</span><strong>{brl(settings.valorMinimo)}</strong></div>
       <div><span>Boleto: vencimento / antecedência mínima</span><strong>{settings.boletoVencimentoDias} dias / {settings.boletoAntecedenciaMinimaHoras} h antes do corte</strong></div>
-      <div><span>URL do webhook</span><strong style={{ wordBreak: 'break-all' }}>{settings.webhookUrl ?? 'Defina PUBLIC_API_URL'}</strong></div>
-      <div><span>Token do webhook</span><strong>{settings.webhookTokenConfigurado ? 'Configurado' : 'Não configurado (recomendado)'}</strong></div>
+      <div><span>Endereço de avisos da Cora</span><strong style={{ wordBreak: 'break-all' }}>{settings.webhookUrl ?? 'Defina PUBLIC_API_URL'}</strong></div>
+      <div><span>Senha dos avisos</span><strong>{settings.webhookTokenConfigurado ? 'Configurado' : 'Não configurado (recomendado)'}</strong></div>
     </div>
     <div className="admin-row-actions" style={{ marginTop: 12 }}>
-      {settings.provedor === 'cora' && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void run('/api/v1/admin/pagamentos/cora/webhooks', (result) => `Webhooks cadastrados na Cora (${(result.resultados ?? []).map((item: Rec) => `${item.trigger}: HTTP ${item.status}`).join(', ')}).`, 'webhook')}>{busy === 'webhook' ? 'Cadastrando…' : 'Cadastrar webhooks na Cora'}</button>}
-      <button className="admin-button admin-button-ghost" disabled={Boolean(busy)} onClick={() => void run('/api/v1/admin/pagamentos/conciliar', (result) => `Conciliação: ${result.verificados} verificados, ${result.confirmados} confirmados, ${result.cancelados} cancelados, ${result.erros} erros.`, 'reconcile')}>{busy === 'reconcile' ? 'Conciliando…' : 'Conciliar pagamentos agora'}</button>
+      {settings.provedor === 'cora' && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void run('/api/v1/admin/pagamentos/cora/webhooks', (result) => `Avisos da Cora ligados (${(result.resultados ?? []).map((item: Rec) => `${item.trigger}: HTTP ${item.status}`).join(', ')}).`, 'webhook')}>{busy === 'webhook' ? 'Ligando…' : 'Ligar avisos da Cora'}</button>}
+      <button className="admin-button admin-button-ghost" disabled={Boolean(busy)} onClick={() => void run('/api/v1/admin/pagamentos/conciliar', (result) => `Conferência: ${result.verificados} verificados, ${result.confirmados} confirmados, ${result.cancelados} cancelados, ${result.erros} erros.`, 'reconcile')}>{busy === 'reconcile' ? 'Conferindo…' : 'Conferir pagamentos agora'}</button>
     </div>
   </Panel>;
 }
@@ -400,7 +400,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       <div className="admin-callout"><strong>Atenção fiscal</strong><p>{settings.aviso}</p></div>
       <Panel title="Emissor e conexão" description="Parâmetros vêm das variáveis do servidor; nenhum segredo é editável aqui." action={<div className="admin-row-actions">
         <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : 'Verificar na Cora'}</button>
-        <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Cadastrando…' : 'Cadastrar emissor'}</button>
+        <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>
         <button className="admin-button admin-button-ghost" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
       </div>}>
         <div className="admin-summary-list">

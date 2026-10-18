@@ -224,6 +224,14 @@ export class PoolsService {
       modeloOperacional: pool.modeloOperacional,
       status: pool.status,
       teveGanhador: pool.teveGanhador,
+      transparencia: ['registrado', 'apurado'].includes(pool.status) ? {
+        registradoEm: pool.registradoEm ?? null,
+        codigoBilhete: pool.codigoBilhete ?? null,
+        comprovanteUrl: pool.comprovanteUrl ?? null,
+        apuradoEm: pool.apuradoEm ?? null,
+        premioTotal: pool.premioTotal === null || pool.premioTotal === undefined ? null : Number(pool.premioTotal).toFixed(2),
+        apuracao: pool.apuracao ?? null,
+      } : null,
       liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso?.valorEstimadoPremio }),
       financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista === null ? null : receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista === null ? null : taxaPrevista.toFixed(2), margemOperacionalPrevista: taxaPrevista === null ? null : (taxaPrevista - custoJogos).toFixed(2) },
       concurso: pool.concurso ? {

@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Max, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreatePartnerLotteryDto {
   @IsString()
@@ -166,6 +166,12 @@ export class DashboardQueryDto {
   @IsOptional()
   @IsDateString()
   ate?: string;
+
+  /** Aceitos (e ignorados) para não derrubar o painel se um navegador ainda tiver a versão antiga do site em cache. */
+  @IsOptional() page?: unknown;
+  @IsOptional() pageSize?: unknown;
+  @IsOptional() busca?: unknown;
+  @IsOptional() status?: unknown;
 }
 
 export class CreateRemittanceDto {
@@ -225,8 +231,14 @@ export class UpdateUserKycDto {
 }
 
 export class OperationReceiptDto {
-  @IsString()
+  /** Aparece publicamente na página do bolão: só https (bloqueia javascript:, data: etc.). */
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'Informe o link do comprovante começando com https://' })
   comprovanteUrl!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  codigoBilhete?: string;
 
   @IsOptional()
   @IsString()

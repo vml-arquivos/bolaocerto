@@ -4,12 +4,14 @@ import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { AuthService } from '../auth/auth.service';
+import { setAuthCookies } from '../auth/cookies';
 import { AccountService } from './account.service';
 import { ChangePasswordDto, DeletionRequestDto, ForgotPasswordDto, ResetPasswordDto } from './account.dto';
 
 @Controller()
 export class AccountController {
-  constructor(private readonly account: AccountService) {}
+  constructor(private readonly account: AccountService, private readonly auth: AuthService) {}
 
   @Post('auth/esqueci-senha')
   @HttpCode(200)
@@ -22,7 +24,13 @@ export class AccountController {
   @Post('usuarios/me/senha')
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
-  change(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) { return this.account.changePassword(user.id, dto.senhaAtual, dto.novaSenha); }
+  async change(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto, @Res({ passthrough: true }) response: Response) {
+    const result = await this.account.changePassword(user.id, dto.senhaAtual, dto.novaSenha);
+    // A troca encerra as OUTRAS sessões (tokenVersion); esta continua com tokens novos.
+    const fresh = await this.auth.reissue(user.id);
+    setAuthCookies(response, fresh.accessToken, fresh.refreshToken);
+    return result;
+  }
 
   @Get('usuarios/me/dados')
   @UseGuards(JwtAuthGuard)
@@ -42,4 +50,10 @@ export class AccountController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   adminLink(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: AuthUser) { return this.account.adminResetLink(id, admin.id); }
+
+  @Post('admin/usuarios/:id/2fa/redefinir')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  adminResetTwoFactor(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: AuthUser) { return this.auth.adminResetTwoFactor(id, admin.id); }
 }

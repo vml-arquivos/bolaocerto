@@ -57,4 +57,5 @@ Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a 
 ## Documentação adicional
 
 - [Estatísticas, avisos, recuperação de senha e LGPD](docs/estatisticas-avisos-conta.md)
+- [Checklist de lançamento, segurança e operação](docs/lancamento-checklist.md)
 - [Bolão condicional, relatórios, CRM e recibo](docs/profissionalizacao-crm-relatorios.md)

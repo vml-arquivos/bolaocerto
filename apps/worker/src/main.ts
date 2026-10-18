@@ -12,7 +12,9 @@ import {
   parseCaixaDate,
   resolveCaixaTimeout,
 } from '@bolaocerto/shared-types';
+import { sendAlert } from './alert';
 import { backfillHistory, readHistoryOptions } from './history';
+import { apurarConcurso } from './settle';
 
 const prisma = new PrismaClient();
 const modalities = [...MODALIDADES_LOTERIA];
@@ -35,42 +37,6 @@ function parseDrawnNumbers(payload: CaixaContestPayload): number[] {
   return numbers;
 }
 
-function hitsFor(numbers: number[], drawn: number[]): number {
-  const drawnSet = new Set(drawn);
-  return numbers.filter((number) => drawnSet.has(number)).length;
-}
-
-function findPrizeTier(tiers: CaixaPrizeTier[], hits: number): CaixaPrizeTier | undefined {
-  return tiers.find((tier) => {
-    const description = (tier.descricaoFaixa ?? '').toLowerCase();
-    const digits = description.match(/\d+/)?.[0];
-    if (digits === undefined) return false; // faixas sem número de acertos (ex.: "Time do Coração") não casam com 0 acertos
-    const numeric = Number(digits);
-    return numeric === hits && Number(tier.numeroDeGanhadores ?? 0) > 0 && Number(tier.valorPremio ?? 0) > 0;
-  });
-}
-
-async function apurarConcurso(concursoId: string, numbers: number[], tiers: CaixaPrizeTier[]): Promise<void> {
-  const pools = await prisma.bolao.findMany({ where: { concursoId, status: 'registrado' }, include: { cotas: true } });
-  for (const pool of pools) {
-    const hits = hitsFor(pool.numerosApostados, numbers);
-    const prizeTier = findPrizeTier(tiers, hits);
-    await prisma.$transaction(async (tx) => {
-      await tx.bolao.update({ where: { id: pool.id }, data: { status: 'apurado', teveGanhador: Boolean(prizeTier) } });
-      const totalUnits = pool.cotas.reduce((sum, share) => sum + share.quantidade, 0);
-      const unitPrize = prizeTier ? Number(prizeTier.valorPremio ?? 0) / Math.max(totalUnits, 1) : null;
-      for (const share of pool.cotas) {
-        const status = prizeTier ? 'premiada' : 'apurada';
-        const prizeValue = unitPrize === null ? null : unitPrize * share.quantidade;
-        await tx.cota.update({ where: { id: share.id }, data: { status, faixaPremio: prizeTier?.descricaoFaixa ?? null, valorPremio: prizeValue } });
-        await tx.auditoriaEvento.create({ data: { entidade: 'cota', entidadeId: share.id, evento: prizeTier ? 'cota.premiada' : 'cota.apurada', payloadDepois: { status, faixaPremio: prizeTier?.descricaoFaixa ?? null, valorPremio: prizeValue } } });
-        if (prizeTier) await tx.notificacao.create({ data: { usuarioId: share.compradorId, canal: 'push', tipo: 'cota.premiada', payload: { cotaId: share.id, mensagem: 'Você possui uma cota premiada. Acesse sua conta autenticada para consultar os detalhes.' } } });
-      }
-      await tx.auditoriaEvento.create({ data: { entidade: 'bolao', entidadeId: pool.id, evento: 'resultado.apurado', payloadDepois: { teveGanhador: Boolean(prizeTier), hits } } });
-    });
-  }
-}
-
 /** Concursos cujo prazo (cutoff) já passou nunca ficam "abertos", mesmo que a CAIXA esteja fora do ar. */
 async function closeExpiredContests(): Promise<void> {
   try {
@@ -83,6 +49,7 @@ async function closeExpiredContests(): Promise<void> {
 
 async function syncOnce(): Promise<void> {
   await closeExpiredContests();
+  let failed = 0;
   for (const modality of modalities) {
     try {
       const config = await prisma.configLoteria.findUnique({ where: { modalidade: modality } });
@@ -158,9 +125,13 @@ async function syncOnce(): Promise<void> {
         });
       });
 
-      if (numbers.length > 0) await apurarConcurso(currentContestId!, numbers, prizeTiers);
+      if (numbers.length > 0) {
+        const secondDraw = modality === 'duplasena' ? (payload.listaDezenasSegundoSorteio ?? []).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0) : [];
+        await apurarConcurso(prisma, currentContestId!, modality, currentNumber, numbers, secondDraw, prizeTiers);
+      }
       console.log(JSON.stringify({ event: 'concursos.sincronizados', modalidade: modality, numero: payload.numero, proximo: payload.numeroConcursoProximo, fonte: source }));
     } catch (error) {
+      failed += 1;
       console.error(JSON.stringify({
         event: 'concursos.sincronizacao_falhou',
         modalidade: modality,
@@ -170,6 +141,7 @@ async function syncOnce(): Promise<void> {
     }
   }
   await closeExpiredContests();
+  if (failed > 0 && failed === modalities.length) await sendAlert('caixa-falha-total', 'Todas as sincronizações com a CAIXA falharam neste ciclo. Veja o diagnóstico no painel admin.', 2 * 3_600_000);
   await syncHistory();
 }
 

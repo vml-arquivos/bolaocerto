@@ -105,6 +105,12 @@ model Usuario {
   enderecoBairro        String?       @map("endereco_bairro") @db.VarChar(80)
   enderecoCidade        String?       @map("endereco_cidade") @db.VarChar(80)
   enderecoUf            String?       @map("endereco_uf") @db.VarChar(2)
+  tokenVersion          Int           @default(0) @map("token_version")
+  tentativasLogin       Int           @default(0) @map("tentativas_login")
+  bloqueadoAte          DateTime?     @map("bloqueado_ate")
+  totpSecret            String?       @map("totp_secret")
+  totpAtivo             Boolean       @default(false) @map("totp_ativo")
+  totpRecuperacao       String[]      @default([]) @map("totp_recuperacao")
   criadoEm              DateTime      @default(now()) @map("criado_em")
   atualizadoEm          DateTime      @updatedAt @map("atualizado_em")
   kycDocumentos         KycDocumento[]
@@ -294,6 +300,10 @@ model Bolao {
   comprovanteUrl        String?             @map("comprovante_url")
   registradoEm          DateTime?           @map("registrado_em")
   teveGanhador          Boolean             @default(false) @map("teve_ganhador")
+  premioTotal           Decimal?            @map("premio_total") @db.Decimal(16,2)
+  apuracao              Json?
+  apuradoEm             DateTime?           @map("apurado_em")
+  codigoBilhete         String?             @map("codigo_bilhete") @db.VarChar(80)
   premioMinimoLiberacao Decimal?            @map("premio_minimo_liberacao") @db.Decimal(16,2)
   liberadoEm            DateTime?           @map("liberado_em")
   editadoPor            String?             @map("editado_por") @db.Uuid
