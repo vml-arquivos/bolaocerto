@@ -10,9 +10,9 @@ const dateTime = (value: unknown) => (value ? new Intl.DateTimeFormat('pt-BR', {
 const label = (value: unknown) => String(value ?? '—').replaceAll('_', ' ');
 function chip(status: unknown) {
   const s = String(status ?? '').toLowerCase();
-  if (['paga', 'pago', 'confirmado', 'registrada', 'apurada', 'premiada'].includes(s)) return 'status-chip status-success';
-  if (['pendente', 'reservada', 'reservada (vencida)', 'sem cobrança'].includes(s)) return 'status-chip status-warning';
-  if (['falhou', 'cancelada', 'estornado', 'estornada'].includes(s)) return 'status-chip status-danger';
+  if (['paga', 'pago', 'confirmado', 'registrada', 'apurada', 'premiada', 'emitida'].includes(s)) return 'status-chip status-success';
+  if (['pendente', 'reservada', 'reservada (vencida)', 'sem cobrança', 'aguardando', 'aguardando_certificado', 'aguardando certificado', 'sem nota'].includes(s)) return 'status-chip status-warning';
+  if (['falhou', 'cancelada', 'estornado', 'estornada', 'erro'].includes(s)) return 'status-chip status-danger';
   return 'status-chip';
 }
 
@@ -64,8 +64,8 @@ function Empty({ text }: { text: string }) {
 /* Relatórios                                                                 */
 /* -------------------------------------------------------------------------- */
 
-type Tab = 'resumo' | 'vendas' | 'nao-pagos' | 'comissoes' | 'boloes';
-const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['boloes', 'Por bolão']];
+type Tab = 'resumo' | 'vendas' | 'pagamentos' | 'nao-pagos' | 'comissoes' | 'notas-fiscais' | 'boloes';
+const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['pagamentos', 'Pagamentos e conciliação'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['notas-fiscais', 'Notas fiscais'], ['boloes', 'Por bolão']];
 
 export function ReportsView() {
   const [tab, setTab] = useState<Tab>('resumo');
@@ -109,7 +109,7 @@ export function ReportsView() {
   </div>;
 
   const summary = tab === 'resumo' ? data : null;
-  const rows: Rec[] = tab === 'vendas' || tab === 'nao-pagos' || tab === 'comissoes' ? (data?.linhas ?? []) : [];
+  const rows: Rec[] = tab === 'vendas' || tab === 'nao-pagos' || tab === 'comissoes' || tab === 'pagamentos' || tab === 'notas-fiscais' ? (data?.linhas ?? []) : [];
 
   return <>
     <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Relatórios</h1><p>Receita, comissões, inadimplência e planilhas completas para conferência e prestação de contas.</p></div></div>
@@ -119,7 +119,7 @@ export function ReportsView() {
       {tab === 'vendas' && <label className="admin-field"><span>Status da cota</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos</option>{['reservada', 'paga', 'registrada', 'apurada', 'premiada', 'cancelada', 'estornada'].map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>}
       <button className="admin-button" onClick={() => { setDe(''); setAte(''); setStatus(''); }}>Limpar</button>
     </div></div>
-    <div className="wizard-steps" role="tablist" aria-label="Relatórios">{TABS.map(([key, title]) => <button key={key} role="tab" aria-selected={tab === key} className={`wizard-step ${tab === key ? 'is-current' : ''}`} onClick={() => setTab(key)}><span>{title}</span></button>)}</div>
+    <div className="report-tabs" role="tablist" aria-label="Relatórios">{TABS.map(([key, title]) => <button key={key} role="tab" aria-selected={tab === key} className={`report-tab ${tab === key ? 'is-current' : ''}`} onClick={() => setTab(key)}>{title}</button>)}</div>
     {error && <div className="admin-toast admin-toast-error" role="alert">{error}</div>}
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
 
@@ -159,6 +159,16 @@ export function ReportsView() {
     {!loading && tab === 'comissoes' && <Panel title="Comissões por afiliado" description="Base de cálculo = taxa de administração das vendas pagas." action={<ExportButtons path="/api/v1/admin/relatorios/comissoes" id="comissoes" />}>
       <Table minWidth={960}><thead><tr><th>Afiliado</th><th>Código</th><th>Chave Pix</th><th>%</th><th>Vendas</th><th>Base</th><th>A pagar</th><th>Paga</th><th>Cancelada</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td><strong>{row.afiliado}</strong></td><td>{row.codigo}</td><td>{row.chavePix ?? '—'}</td><td>{row.percentual}%</td><td>{row.vendas}</td><td>{brl(row.base)}</td><td>{brl(row.pendente)}</td><td>{brl(row.paga)}</td><td>{brl(row.cancelada)}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma comissão no período" />}
+    </Panel>}
+
+    {!loading && tab === 'pagamentos' && <Panel title="Pagamentos e conciliação" description={`${data?.total ?? 0} pagamentos — custo dos jogos, taxa, comissão e resultado da plataforma por venda (a planilha traz o CPF completo)`} action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
+      <Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td>{brl(row.valorBruto)}</td><td>{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td>{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td>{row.comissao === null ? '—' : brl(row.comissao)}</td><td>{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
+      {!rows.length && <Empty text="Nenhum pagamento no período" />}
+    </Panel>}
+
+    {!loading && tab === 'notas-fiscais' && <Panel title="Notas fiscais de serviço" description={`${data?.total ?? 0} notas no período · ${data?.pagamentosSemNota ?? 0} pagamento(s) confirmado(s) ainda sem nota`} action={<ExportButtons path="/api/v1/admin/relatorios/notas-fiscais" id="notas-fiscais" />}>
+      <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td>{brl(row.valorNota)}</td><td>{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td>{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
+      {!rows.length && <Empty text="Nenhuma nota fiscal no período" />}
     </Panel>}
 
     {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" description="Baixe a ficha completa de cada bolão: participantes, pagamentos, jogos e totais.">
@@ -305,4 +315,135 @@ export function ManualContestForm({ onDone, notify }: { onDone: () => Promise<vo
       <div><button className="admin-button admin-button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Cadastrar concurso'}</button></div>
     </form>
   </Panel>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Notas fiscais de serviço (NFS-e pela Cora)                                 */
+/* -------------------------------------------------------------------------- */
+
+const MODE_TEXT: Record<string, string> = { off: 'Desligada', manual: 'Manual', auto: 'Automática' };
+const ADDRESS_FIELDS: Array<[string, string, number?]> = [['cep', 'CEP', 9], ['logradouro', 'Rua / logradouro'], ['numero', 'Número'], ['complemento', 'Complemento'], ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF', 2]];
+
+function NoteForm({ kind, onSubmit, onCancel, busy }: { kind: 'emitir' | 'manual' | 'cancelar'; onSubmit: (values: Record<string, string>) => void; onCancel: () => void; busy: boolean }) {
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    onSubmit(Object.fromEntries([...form.entries()].map(([key, value]) => [key, String(value).trim()]).filter(([, value]) => value)));
+  }
+  return <form onSubmit={submit} className="admin-form-grid" style={{ marginTop: 12 }}>
+    {kind === 'emitir' && ADDRESS_FIELDS.map(([name, title, max]) => <label key={name} className="admin-field"><span>{title}</span><input name={name} maxLength={max} required={name !== 'complemento'} /></label>)}
+    {kind === 'manual' && <>
+      <label className="admin-field"><span>Número da nota</span><input name="numero" required maxLength={40} /></label>
+      <label className="admin-field"><span>Link do PDF (opcional)</span><input name="pdfUrl" type="url" placeholder="https://" /></label>
+      <label className="admin-field"><span>Observação (opcional)</span><input name="observacao" maxLength={300} /></label>
+    </>}
+    {kind === 'cancelar' && <label className="admin-field"><span>Motivo do cancelamento</span><input name="motivo" required minLength={3} maxLength={300} /></label>}
+    <div className="admin-row-actions" style={{ alignSelf: 'end' }}>
+      <button className="admin-button admin-button-primary" disabled={busy}>{busy ? 'Enviando…' : kind === 'emitir' ? 'Salvar endereço e emitir' : kind === 'manual' ? 'Registrar nota' : 'Confirmar cancelamento'}</button>
+      <button type="button" className="admin-button admin-button-ghost" onClick={onCancel}>Fechar</button>
+    </div>
+  </form>;
+}
+
+export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', text: string) => void }) {
+  const [settings, setSettings] = useState<Rec | null>(null);
+  const [data, setData] = useState<Rec>({ notas: [], semNota: [] });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [form, setForm] = useState<{ kind: 'emitir' | 'manual' | 'cancelar'; id: string } | null>(null);
+  const [diagnostic, setDiagnostic] = useState<Rec | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [config, list] = await Promise.all([api('/api/v1/admin/nfse/configuracao'), api('/api/v1/admin/notas-fiscais')]);
+      setSettings(config); setData(list);
+    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Falha ao carregar as notas fiscais.'); }
+    finally { setLoading(false); }
+  }, [notify]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function run(key: string, path: string, body: unknown, success: (result: Rec) => string) {
+    setBusy(key);
+    try {
+      const result = await api(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+      notify('success', success(result)); setForm(null); await load();
+    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Falha na operação.'); }
+    finally { setBusy(''); }
+  }
+  function submitPaymentForm(kind: 'emitir' | 'manual' | 'cancelar', paymentId: string, values: Record<string, string>) {
+    if (kind === 'emitir') return run(`emit-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/emitir`, { endereco: values }, () => 'Endereço salvo e nota solicitada à Cora.');
+    return run(`manual-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/manual`, values, () => 'Nota registrada.');
+  }
+  async function checkAvailability() {
+    setBusy('diag');
+    try { setDiagnostic(await api('/api/v1/admin/nfse/diagnostico')); }
+    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Falha ao consultar a Cora.'); }
+    finally { setBusy(''); }
+  }
+
+  const count = (status: string) => (settings?.porStatus ?? []).find((row: Rec) => row.status === status)?.notas ?? 0;
+  const off = settings?.modo === 'off';
+  return <>
+    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Notas fiscais</h1><p>Emissão e acompanhamento da NFS-e pela Cora, com registro manual para vendas de balcão.</p></div></div>
+    {loading && <div className="admin-spinner" aria-label="Carregando" />}
+    {!loading && settings && <>
+      <div className="admin-kpi-grid">
+        <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto ? 'configuração completa' : off ? 'defina NFSE_MODE no servidor' : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
+        <Kpi label="Pagamentos sem nota" value={settings.pagamentosSemNota} hint="confirmados e ainda sem nota" tone="amber" />
+        <Kpi label="Emitidas" value={count('emitida')} tone="green" />
+        <Kpi label="Aguardando" value={count('aguardando') + count('aguardando_certificado')} hint="pagamento ou certificado A1" tone="blue" />
+        <Kpi label="Com erro" value={count('erro')} hint="prefeitura recusou" tone="rose" />
+      </div>
+      <div className="admin-callout"><strong>Atenção fiscal</strong><p>{settings.aviso}</p></div>
+      <Panel title="Emissor e conexão" description="Parâmetros vêm das variáveis do servidor; nenhum segredo é editável aqui." action={<div className="admin-row-actions">
+        <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : 'Verificar na Cora'}</button>
+        <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Cadastrando…' : 'Cadastrar emissor'}</button>
+        <button className="admin-button admin-button-ghost" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
+      </div>}>
+        <div className="admin-summary-list">
+          <div><span>Ambiente da Cora</span><strong>{settings.ambiente === 'production' ? 'Produção' : 'Homologação'}</strong></div>
+          <div><span>Alíquota do ISS</span><strong>{settings.aliquotaIssPct ? `${settings.aliquotaIssPct}%` : 'Não definida (NFSE_ISS_PCT)'}</strong></div>
+          <div><span>Código de serviço</span><strong>{settings.codigoServico ?? 'Não definido (NFSE_SERVICE_CODE)'}</strong></div>
+          <div><span>CNAE</span><strong>{settings.cnae ?? '—'}</strong></div>
+          <div><span>Inscrição municipal cadastrada no servidor</span><strong>{settings.emissorConfigurado ? 'Sim' : 'Não (NFSE_MUNICIPAL_REGISTER)'}</strong></div>
+        </div>
+        {diagnostic && <div className="admin-summary-list" style={{ marginTop: 12 }}>
+          <div><span>Cidade/empresa habilitadas na Cora</span><strong>{diagnostic.disponivel ? 'Sim' : 'Não'}</strong></div>
+          <div><span>CNAE principal</span><strong>{diagnostic.cnaes?.main ? `${diagnostic.cnaes.main.code} — ${diagnostic.cnaes.main.description}` : '—'}</strong></div>
+          <div><span>Códigos de serviço</span><strong>{(diagnostic.codigosServico ?? []).slice(0, 8).map((item: Rec) => `${item.code} (${item.description})`).join(' · ') || '—'}</strong></div>
+        </div>}
+      </Panel>
+
+      <Panel title="Pagamentos confirmados sem nota" description="Emita pela Cora (precisa do endereço do participante) ou registre uma nota emitida fora do sistema.">
+        <Table minWidth={980}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Valor</th><th>Taxa adm.</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
+          <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.taxaAdmin)}</td>
+          <td><span className={chip(row.enderecoCompleto ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : 'faltando'}</span></td>
+          <td><div className="admin-row-actions">
+            {row.emitivelPelaCora && row.enderecoCompleto && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => 'Nota solicitada à Cora.')}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : 'Emitir pela Cora'}</button>}
+            {row.emitivelPelaCora && !row.enderecoCompleto && <button className="admin-button admin-button-small" disabled={off} onClick={() => setForm({ kind: 'emitir', id: row.pagamentoId })}>Informar endereço e emitir</button>}
+            <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'manual', id: row.pagamentoId })}>Registrar nota manual</button>
+          </div>
+          {form && form.id === row.pagamentoId && (form.kind === 'emitir' || form.kind === 'manual') && <NoteForm kind={form.kind} busy={busy.endsWith(row.pagamentoId)} onCancel={() => setForm(null)}
+            onSubmit={(values) => void submitPaymentForm(form.kind, row.pagamentoId, values)} />}
+          </td></tr>)}</tbody></Table>
+        {!(data.semNota ?? []).length && <Empty text="Todos os pagamentos confirmados já têm nota" />}
+      </Panel>
+
+      <Panel title="Notas emitidas e em andamento" action={<button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button>}>
+        <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody>{(data.notas ?? []).map((note: Rec) => <tr key={note.id}>
+          <td>{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
+          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{note.erro}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
+          <td>{note.pdfUrl ? <a className="text-link" href={note.pdfUrl} target="_blank" rel="noreferrer">PDF</a> : '—'}{note.xmlUrl ? <> · <a className="text-link" href={note.xmlUrl} target="_blank" rel="noreferrer">XML</a></> : null}</td>
+          <td><div className="admin-row-actions">
+            {note.origem === 'cora' && note.status !== 'cancelada' && <button className="admin-button admin-button-small" disabled={Boolean(busy)} onClick={() => void run(`sync-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, {}, () => 'Nota atualizada.')}>Atualizar</button>}
+            {note.status === 'erro' && note.origem === 'cora' && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${note.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${note.pagamentoId}/emitir`, {}, () => 'Nova tentativa enviada à Cora.')}>Tentar de novo</button>}
+            {note.status !== 'cancelada' && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'cancelar', id: note.id })}>Cancelar</button>}
+          </div>
+          {form && form.kind === 'cancelar' && form.id === note.id && <NoteForm kind="cancelar" busy={busy === `cancel-${note.id}`} onCancel={() => setForm(null)} onSubmit={(values) => void run(`cancel-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/cancelar`, values, () => 'Nota cancelada.')} />}
+          </td></tr>)}</tbody></Table>
+        {!(data.notas ?? []).length && <Empty text="Nenhuma nota fiscal registrada ainda" />}
+      </Panel>
+    </>}
+  </>;
 }

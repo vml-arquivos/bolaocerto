@@ -10,7 +10,7 @@ export class SharesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
   async reserve(dto: ReserveShareDto, user: AuthUser, requestMeta: { ip: string; userAgent?: string }) {
-    if (process.env.PAYMENTS_ENABLED !== 'true') throw new ServiceUnavailableException('Reservas serão habilitadas junto com os pagamentos após a conclusão dos testes.');
+    if (process.env.PAYMENTS_ENABLED !== 'true') throw new ServiceUnavailableException('As reservas estão temporariamente indisponíveis. Tente novamente em instantes.');
     const titularCpf = normalizeCpf(dto.titularCpf);
     if (!isValidCpf(titularCpf)) throw new ConflictException('CPF do titular inválido.');
     const expectedHash = process.env.MANDATO_TERM_HASH;
@@ -52,7 +52,7 @@ export class SharesService {
     const shares = await this.prisma.cota.findMany({
       where: { compradorId: user.id, ...(onlyPrize ? { status: StatusCota.premiada } : {}) },
       orderBy: { criadoEm: 'desc' },
-      include: { pagamento: true, bolao: { include: { concurso: true, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
+      include: { pagamento: { include: { notaFiscal: true } }, bolao: { include: { concurso: true, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
     });
     return shares.map((share) => ({
       ...this.toPrivate(share, true),
@@ -79,6 +79,7 @@ export class SharesService {
         linhaDigitavel: share.pagamento.linhaDigitavel,
         boletoUrl: share.pagamento.boletoUrl,
         vencimentoEm: share.pagamento.vencimentoEm,
+        notaFiscal: share.pagamento.notaFiscal && share.pagamento.notaFiscal.status !== 'cancelada' ? { status: share.pagamento.notaFiscal.status, numero: share.pagamento.notaFiscal.numero, pdfUrl: share.pagamento.notaFiscal.pdfUrl } : null,
       } : null,
     }));
   }

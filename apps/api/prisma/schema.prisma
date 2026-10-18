@@ -49,6 +49,15 @@ enum MetodoPagamento {
   cartao
   boleto
   manual
+  pix_automatico
+}
+
+enum StatusNotaFiscal {
+  aguardando
+  aguardando_certificado
+  emitida
+  erro
+  cancelada
 }
 enum StatusPagamento {
   pendente
@@ -89,6 +98,13 @@ model Usuario {
   papel                 PapelUsuario  @default(cotista)
   statusKyc             StatusKyc     @default(nao_iniciado) @map("status_kyc")
   chavePixRecebimento   String?       @map("chave_pix_recebimento") @db.VarChar(140)
+  enderecoCep           String?       @map("endereco_cep") @db.VarChar(8)
+  enderecoLogradouro    String?       @map("endereco_logradouro") @db.VarChar(120)
+  enderecoNumero        String?       @map("endereco_numero") @db.VarChar(20)
+  enderecoComplemento   String?       @map("endereco_complemento") @db.VarChar(80)
+  enderecoBairro        String?       @map("endereco_bairro") @db.VarChar(80)
+  enderecoCidade        String?       @map("endereco_cidade") @db.VarChar(80)
+  enderecoUf            String?       @map("endereco_uf") @db.VarChar(2)
   criadoEm              DateTime      @default(now()) @map("criado_em")
   atualizadoEm          DateTime      @updatedAt @map("atualizado_em")
   kycDocumentos         KycDocumento[]
@@ -371,10 +387,36 @@ model Pagamento {
   confirmadoEm         DateTime?        @map("confirmado_em")
   criadoEm             DateTime         @default(now()) @map("criado_em")
   cota                 Cota             @relation(fields: [cotaId], references: [id])
+  notaFiscal           NotaFiscal?
 
   @@unique([pspProvedor, pspTransactionId])
   @@index([status, criadoEm])
   @@map("pagamentos")
+}
+
+model NotaFiscal {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pagamentoId    String           @unique @map("pagamento_id") @db.Uuid
+  status         StatusNotaFiscal @default(aguardando)
+  origem         String           @default("cora") @db.VarChar(20)
+  provedorId     String?          @map("provedor_id") @db.VarChar(100)
+  numero         String?          @db.VarChar(40)
+  valor          Decimal          @db.Decimal(10,2)
+  issPct         Decimal?         @map("iss_pct") @db.Decimal(5,2)
+  descricao      String?
+  pdfUrl         String?          @map("pdf_url")
+  xmlUrl         String?          @map("xml_url")
+  erro           String?
+  observacao     String?
+  emitidaEm      DateTime?        @map("emitida_em")
+  canceladaEm    DateTime?        @map("cancelada_em")
+  criadoPor      String?          @map("criado_por") @db.Uuid
+  criadoEm       DateTime         @default(now()) @map("criado_em")
+  atualizadoEm   DateTime         @updatedAt @map("atualizado_em")
+  pagamento      Pagamento        @relation(fields: [pagamentoId], references: [id])
+
+  @@index([status, criadoEm])
+  @@map("notas_fiscais")
 }
 
 model RepasseLote {

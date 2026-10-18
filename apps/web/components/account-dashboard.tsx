@@ -9,8 +9,10 @@ type Share = {
   id: string; bolaoId: string; titularNome: string; status: string; quantidade: number; valorPago: string | null; valorTotal?: string;
   comprovanteIndividualUrl: string | null; valorPremio?: string | null; faixaPremio?: string | null; expiraReservaEm?: string | null; criadoEm?: string; origemVenda?: string;
   bolao?: { id: string; status: string; grupo: string; valorCota: string; modalidade: string; numeroConcurso: number; dataSorteio: string; teveGanhador: boolean; jogos: Array<{ ordem: number; numeros: number[] }> };
-  pagamento?: (PaymentView & { id: string }) | null;
+  pagamento?: (PaymentView & { id: string; notaFiscal?: { status: string; numero: string | null; pdfUrl: string | null } | null }) | null;
 };
+type Address = { cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; completo: boolean; nfseAtiva: boolean };
+const NOTE_TEXT: Record<string, string> = { aguardando: 'em processamento', aguardando_certificado: 'em processamento', emitida: 'emitida', erro: 'em análise' };
 
 const PAID = ['paga', 'registrada', 'apurada', 'premiada'];
 const STATUS_TEXT: Record<string, string> = { reservada: 'Aguardando pagamento', paga: 'Paga', registrada: 'Registrada na loteria', apurada: 'Apurada', premiada: 'Premiada', cancelada: 'Cancelada', estornada: 'Estornada' };
@@ -34,6 +36,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
       <div><span className="tag">{expired ? 'Reserva expirada' : STATUS_TEXT[share.status] ?? share.status}</span>{share.comprovanteIndividualUrl && <a className="text-link" style={{ display: 'block' }} href={share.comprovanteIndividualUrl} target="_blank" rel="noreferrer">Comprovante</a>}</div>
     </div>
     {share.bolao && share.bolao.jogos.length > 0 && <details><summary>Ver jogos ({share.bolao.jogos.length})</summary><ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'grid', gap: 4 }}>{share.bolao.jogos.map((game) => <li key={game.ordem}><small>Jogo {game.ordem}:</small> <code>{game.numeros.map((n) => String(n).padStart(2, '0')).join(' ')}</code></li>)}</ul></details>}
+    {share.pagamento?.notaFiscal && <small className="muted">Nota fiscal de serviço: {NOTE_TEXT[share.pagamento.notaFiscal.status] ?? share.pagamento.notaFiscal.status}{share.pagamento.notaFiscal.numero ? ` · nº ${share.pagamento.notaFiscal.numero}` : ''} {share.pagamento.notaFiscal.pdfUrl && <a className="text-link" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar PDF</a>}</small>}
     {share.status === 'premiada' && <div className="form-message form-success">Cota premiada{share.faixaPremio ? ` (${share.faixaPremio})` : ''}: {money(share.valorPremio)}. Resgate com o comprovante individual vinculado ao seu CPF.</div>}
     {pending && share.pagamento && <div>
       <button type="button" className="button button-secondary" onClick={() => setShowPayment((value) => !value)}>{showPayment ? 'Ocultar pagamento' : share.pagamento.metodo === 'boleto' ? 'Ver boleto / Pix' : 'Pagar com Pix'}</button>
@@ -43,9 +46,40 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
   </div>;
 }
 
+function AddressCard({ address, onSaved }: { address: Address; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setMessage('');
+    const form = new FormData(event.currentTarget);
+    const body = Object.fromEntries(['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'].map((key) => [key, String(form.get(key) ?? '').trim()]).filter(([, value]) => value));
+    try {
+      const response = await authenticatedFetch('/api/v1/usuarios/me/endereco', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((Array.isArray(data.message) ? data.message.join(' ') : data.message) || 'Não foi possível salvar o endereço.');
+      setMessage('Endereço salvo. Sua nota fiscal será emitida automaticamente.'); onSaved();
+    } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setSaving(false); }
+  }
+  return <article className="dashboard-card wide"><h2>Endereço para nota fiscal</h2>
+    <p className="muted">{address.completo ? 'Seu endereço está completo. Você pode atualizá-lo aqui.' : 'Informe seu endereço para receber a nota fiscal de serviço das suas participações.'}</p>
+    <form onSubmit={submit} className="admin-form-grid">
+      <div className="field"><label htmlFor="end-cep">CEP</label><input id="end-cep" name="cep" inputMode="numeric" maxLength={9} defaultValue={address.cep ?? ''} required /></div>
+      <div className="field"><label htmlFor="end-logradouro">Rua / logradouro</label><input id="end-logradouro" name="logradouro" defaultValue={address.logradouro ?? ''} required /></div>
+      <div className="field"><label htmlFor="end-numero">Número</label><input id="end-numero" name="numero" defaultValue={address.numero ?? ''} required /></div>
+      <div className="field"><label htmlFor="end-complemento">Complemento</label><input id="end-complemento" name="complemento" defaultValue={address.complemento ?? ''} /></div>
+      <div className="field"><label htmlFor="end-bairro">Bairro</label><input id="end-bairro" name="bairro" defaultValue={address.bairro ?? ''} required /></div>
+      <div className="field"><label htmlFor="end-cidade">Cidade</label><input id="end-cidade" name="cidade" defaultValue={address.cidade ?? ''} required /></div>
+      <div className="field"><label htmlFor="end-uf">UF</label><input id="end-uf" name="uf" maxLength={2} defaultValue={address.uf ?? ''} required /></div>
+      <div className="field" style={{ alignSelf: 'end' }}><button className="button button-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar endereço'}</button></div>
+    </form>
+    {message && <div className={`form-message ${message.startsWith('Endereço salvo') ? 'form-success' : 'form-error'}`}>{message}</div>}
+  </article>;
+}
+
 export function AccountDashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
+  const [address, setAddress] = useState<Address | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -55,6 +89,7 @@ export function AccountDashboard() {
       if (meResponse.status === 401) { window.location.href = '/login'; return; }
       if (!meResponse.ok || !sharesResponse.ok) throw new Error('Não foi possível carregar sua conta.');
       setUser(await meResponse.json()); setShares(await sharesResponse.json());
+      try { const addressResponse = await authenticatedFetch('/api/v1/usuarios/me/endereco'); setAddress(addressResponse.ok ? await addressResponse.json() : null); } catch { setAddress(null); }
     } catch (issue) { setError(issue instanceof Error ? issue.message : 'Falha ao carregar.'); } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -75,6 +110,7 @@ export function AccountDashboard() {
       <article className="dashboard-card"><span className="overline">Aguardando pagamento</span><strong className="stat-value">{awaiting}</strong><small className="muted">reservas dentro do prazo</small></article>
       <article className="dashboard-card"><span className="overline">Prêmios</span><strong className="stat-value">{money(prizes)}</strong><small className="muted">em cotas premiadas</small></article>
       <article className="dashboard-card"><span className="overline">Verificação</span><strong className="stat-value stat-text">{user?.statusKyc?.replace('_', ' ')}</strong><small className="muted">situação cadastral</small></article>
+      {address?.nfseAtiva && paidShares.length > 0 && <AddressCard address={address} onSaved={() => void load()} />}
       <article className="dashboard-card wide"><h2>Minhas cotas</h2>
         {shares.length ? <div className="share-list">{shares.map((share) => <ShareCard key={share.id} share={share} onPaid={() => void load()} />)}</div>
           : <div className="empty-state compact"><h3>Você ainda não possui cotas</h3><p>Escolha um bolão disponível para iniciar sua participação.</p><Link className="button button-primary" href="/#boloes">Ver bolões</Link></div>}

@@ -716,6 +716,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .wizard-step.is-current { color: var(--primary); }
 .wizard-step.is-current span { background: var(--primary-solid); color: #fff; border-color: transparent; }
 .wizard-step.is-done { color: var(--success); }
+.report-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 17px; margin-bottom: 20px; }
+.report-tab { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.report-tab.is-current { background: var(--primary-solid); color: #fff; border-color: transparent; }
 .wizard-step.is-done span { background: var(--success-soft); color: var(--success); border-color: transparent; }
 .wizard-content { min-height: 210px; }
 .wizard-intro h3 { margin: 7px 0 5px; font-size: 17px; color: var(--text-primary); letter-spacing: -.03em; }

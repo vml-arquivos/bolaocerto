@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
+import { Prisma, StatusComissao, StatusCota, StatusNotaFiscal, StatusPagamento, MetodoPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { endOfBrazilDay, round2 } from '../common/brazil-time';
@@ -248,5 +248,97 @@ export class ReportsService {
     ];
     const delivered = await this.deliver(admin, 'comissoes', query, 'comissoes-bolao-livre', [{ name: 'Comissões', columns, rows }]);
     return 'json' in delivered ? { colunas: columns, linhas: rows, total: rows.length } : delivered;
+  }
+
+  /** Conciliação financeira: um registro por pagamento, com decomposição (custo, taxa, comissão) e situação da nota fiscal. */
+  async payments(query: ReportQueryDto, admin: AuthUser) {
+    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const range = this.range(query);
+    const items = await this.prisma.pagamento.findMany({
+      where: {
+        ...(range ? { criadoEm: range } : {}),
+        ...(query.statusPagamento && query.statusPagamento !== 'sem_pagamento' ? { status: query.statusPagamento as StatusPagamento } : {}),
+        ...(query.metodo ? { metodo: query.metodo as MetodoPagamento } : {}),
+        ...(query.bolaoId || query.afiliadoId ? { cota: { ...(query.bolaoId ? { bolaoId: query.bolaoId } : {}), ...(query.afiliadoId ? { afiliadoReferenciaId: query.afiliadoId } : {}) } } : {}),
+      },
+      include: { notaFiscal: true, cota: { include: { comprador: true, bolao: { include: { concurso: true } }, afiliadoReferencia: true, comissao: true } } },
+      orderBy: { criadoEm: 'desc' },
+      take: full ? 20000 : 500,
+    });
+    const rows: Row[] = items.map((item) => {
+      const confirmed = item.status === StatusPagamento.confirmado;
+      const commission = item.cota.comissao && item.cota.comissao.status !== StatusComissao.cancelada ? Number(item.cota.comissao.valor) : 0;
+      return {
+        criadoEm: item.criadoEm,
+        confirmadoEm: item.confirmadoEm,
+        participante: item.cota.titularNome,
+        cpf: full ? formatCpf(item.cota.titularCpf) : maskCpf(item.cota.titularCpf),
+        email: item.cota.comprador.email,
+        modalidade: item.cota.bolao.concurso.modalidade,
+        concurso: item.cota.bolao.concurso.numeroConcurso,
+        bolao: item.cota.bolaoId.slice(0, 8),
+        quantidade: item.cota.quantidade,
+        metodo: item.metodo,
+        provedor: item.pspProvedor,
+        cobranca: item.pspTransactionId,
+        origem: item.origem,
+        formaBaixa: item.formaBaixa,
+        status: item.status,
+        statusCota: item.cota.status,
+        valorBruto: Number(item.valorBruto),
+        custoBilhete: confirmed ? Number(item.valorCustoBilhete) : null,
+        taxaAdmin: confirmed ? Number(item.valorTaxaAdmin) : null,
+        comissao: confirmed ? commission : null,
+        resultadoPlataforma: confirmed ? round2(Number(item.valorTaxaAdmin) - commission) : null,
+        vencimento: item.vencimentoEm,
+        notaFiscal: item.notaFiscal ? item.notaFiscal.status : confirmed ? 'sem nota' : null,
+        numeroNota: item.notaFiscal?.numero ?? null,
+        observacao: item.observacao,
+      };
+    });
+    const columns: Column[] = [
+      { key: 'criadoEm', header: 'Criado em', type: 'date' }, { key: 'confirmadoEm', header: 'Confirmado em', type: 'date' },
+      { key: 'participante', header: 'Participante', width: 30 }, { key: 'cpf', header: 'CPF', width: 16 }, { key: 'email', header: 'E-mail', width: 30 },
+      { key: 'modalidade', header: 'Modalidade' }, { key: 'concurso', header: 'Concurso', type: 'int', width: 11 }, { key: 'bolao', header: 'Bolão (ID)', width: 12 }, { key: 'quantidade', header: 'Qtd. cotas', type: 'int', width: 10 },
+      { key: 'metodo', header: 'Forma' }, { key: 'provedor', header: 'Provedor' }, { key: 'cobranca', header: 'ID da cobrança', width: 28 }, { key: 'origem', header: 'Origem' }, { key: 'formaBaixa', header: 'Forma da baixa manual' },
+      { key: 'status', header: 'Pagamento' }, { key: 'statusCota', header: 'Cota' },
+      { key: 'valorBruto', header: 'Valor bruto', type: 'money' }, { key: 'custoBilhete', header: 'Custo dos jogos', type: 'money' }, { key: 'taxaAdmin', header: 'Taxa de administração', type: 'money' },
+      { key: 'comissao', header: 'Comissão', type: 'money' }, { key: 'resultadoPlataforma', header: 'Resultado da plataforma', type: 'money' },
+      { key: 'vencimento', header: 'Vencimento', type: 'date' }, { key: 'notaFiscal', header: 'Nota fiscal' }, { key: 'numeroNota', header: 'Nº da nota', width: 14 }, { key: 'observacao', header: 'Observação', width: 30 },
+    ];
+    const delivered = await this.deliver(admin, 'pagamentos', query, 'pagamentos-bolao-livre', [{ name: 'Pagamentos', columns, rows }]);
+    return 'json' in delivered ? { colunas: columns, linhas: rows, total: rows.length } : delivered;
+  }
+
+  /** Notas fiscais de serviço: situação, número, valor, ISS estimado e pendências de emissão. */
+  async invoices(query: ReportQueryDto, admin: AuthUser) {
+    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const range = this.range(query);
+    const notes = await this.prisma.notaFiscal.findMany({
+      where: { ...(range ? { criadoEm: range } : {}), ...(query.statusNota ? { status: query.statusNota as StatusNotaFiscal } : {}) },
+      include: { pagamento: { include: { cota: { include: { comprador: true, bolao: { include: { concurso: true } } } } } } },
+      orderBy: { criadoEm: 'desc' },
+      take: full ? 20000 : 500,
+    });
+    const rows: Row[] = notes.map((note) => {
+      const iss = note.issPct ? round2(Number(note.valor) * Number(note.issPct) / 100) : null;
+      return {
+        criadoEm: note.criadoEm, emitidaEm: note.emitidaEm, status: note.status, origem: note.origem, numero: note.numero,
+        participante: note.pagamento.cota.titularNome, cpf: full ? formatCpf(note.pagamento.cota.titularCpf) : maskCpf(note.pagamento.cota.titularCpf), email: note.pagamento.cota.comprador.email,
+        modalidade: note.pagamento.cota.bolao.concurso.modalidade, concurso: note.pagamento.cota.bolao.concurso.numeroConcurso,
+        valorNota: Number(note.valor), issPct: note.issPct ? Number(note.issPct) : null, issEstimado: iss, taxaAdmin: Number(note.pagamento.valorTaxaAdmin),
+        cobranca: note.pagamento.pspTransactionId, notaId: note.provedorId, pdf: note.pdfUrl, erro: note.erro, observacao: note.observacao,
+      };
+    });
+    const columns: Column[] = [
+      { key: 'criadoEm', header: 'Solicitada em', type: 'date' }, { key: 'emitidaEm', header: 'Emitida em', type: 'date' }, { key: 'status', header: 'Situação' }, { key: 'origem', header: 'Origem' }, { key: 'numero', header: 'Nº da nota', width: 14 },
+      { key: 'participante', header: 'Tomador', width: 30 }, { key: 'cpf', header: 'CPF', width: 16 }, { key: 'email', header: 'E-mail', width: 30 },
+      { key: 'modalidade', header: 'Modalidade' }, { key: 'concurso', header: 'Concurso', type: 'int', width: 11 },
+      { key: 'valorNota', header: 'Valor da nota', type: 'money' }, { key: 'issPct', header: 'ISS %', width: 8 }, { key: 'issEstimado', header: 'ISS estimado', type: 'money' }, { key: 'taxaAdmin', header: 'Taxa de administração do pagamento', type: 'money', width: 22 },
+      { key: 'cobranca', header: 'ID da cobrança', width: 28 }, { key: 'notaId', header: 'ID da nota (Cora)', width: 28 }, { key: 'pdf', header: 'PDF', width: 40 }, { key: 'erro', header: 'Erro', width: 40 }, { key: 'observacao', header: 'Observação', width: 30 },
+    ];
+    const pendingCount = await this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, notaFiscal: null, ...(range ? { confirmadoEm: range } : {}) } });
+    const delivered = await this.deliver(admin, 'notas-fiscais', query, 'notas-fiscais-bolao-livre', [{ name: 'Notas fiscais', columns, rows }]);
+    return 'json' in delivered ? { colunas: columns, linhas: rows, total: rows.length, pagamentosSemNota: pendingCount } : delivered;
   }
 }

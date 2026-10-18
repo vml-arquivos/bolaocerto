@@ -8,6 +8,8 @@ export class ReportQueryDto {
   @IsOptional() @IsIn(['reservada', 'paga', 'registrada', 'apurada', 'premiada', 'cancelada', 'estornada']) status?: string;
   @IsOptional() @IsIn(['pendente', 'confirmado', 'falhou', 'estornado', 'sem_pagamento']) statusPagamento?: string;
   @IsOptional() @IsIn(['online', 'manual']) origem?: string;
+  @IsOptional() @IsIn(['aguardando', 'aguardando_certificado', 'emitida', 'erro', 'cancelada']) statusNota?: string;
+  @IsOptional() @IsIn(['pix', 'boleto', 'cartao', 'pix_automatico', 'manual']) metodo?: string;
   @IsOptional() @IsUUID() bolaoId?: string;
   @IsOptional() @IsUUID() afiliadoId?: string;
   @IsOptional() @IsIn(['json', 'csv', 'xlsx']) formato?: 'json' | 'csv' | 'xlsx';

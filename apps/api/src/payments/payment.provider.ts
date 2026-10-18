@@ -4,7 +4,11 @@ import { request as httpsRequest } from 'node:https';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 
-export type ChargeMethod = 'pix' | 'boleto';
+/**
+ * Métodos que um provedor pode declarar em `methods`. A Cora oferece 'pix' e 'boleto';
+ * 'cartao' e 'pix_automatico' só aparecem para o cliente quando o provedor ativo os declarar.
+ */
+export type ChargeMethod = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 export type ChargeStatus = 'pending' | 'confirmed' | 'failed' | 'refunded';
 
 export interface CreateChargeInput {
@@ -181,6 +185,11 @@ export class CoraProvider implements PaymentProvider {
     const first = await send(false);
     if (first.status !== 401) return first;
     return send(true);
+  }
+
+  /** Chamada autenticada à API da Cora (mTLS + Bearer), reutilizada pelo módulo fiscal. */
+  async request(method: CoraTransportRequest['method'], path: string, body?: unknown, idempotencyKey?: string): Promise<CoraTransportResponse> {
+    return this.call(method, path, body, idempotencyKey);
   }
 
   async createCharge(input: CreateChargeInput): Promise<CreatedCharge> {
@@ -391,11 +400,11 @@ export class DisabledPaymentProvider implements PaymentProvider {
   readonly minAmount = 0;
 
   async createCharge(): Promise<CreatedCharge> {
-    throw new ServiceUnavailableException('Pagamentos ainda não estão habilitados nesta fase de testes.');
+    throw new ServiceUnavailableException('Os pagamentos estão temporariamente indisponíveis.');
   }
 
   async resolveWebhook(): Promise<PaymentWebhook | null> {
-    throw new ServiceUnavailableException('Webhooks de pagamento ainda não estão habilitados.');
+    throw new ServiceUnavailableException('Webhooks de pagamento indisponíveis: provedor não configurado.');
   }
 }
 

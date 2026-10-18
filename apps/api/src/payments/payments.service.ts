@@ -47,6 +47,11 @@ export class PaymentsService {
     this.boletoMinHoursToCutoff = Number(config.get<string>('PAYMENT_BOLETO_MIN_HOURS_TO_CUTOFF', '96')) || 96;
   }
 
+  /** Provedor Cora ativo (usado pelo módulo fiscal para emitir NFS-e), ou null. */
+  coraProvider(): CoraProvider | null {
+    return this.provider instanceof CoraProvider ? this.provider : null;
+  }
+
   /** Estado público da configuração de pagamentos (sem segredos). */
   settings() {
     const publicUrl = this.config.get<string>('PUBLIC_API_URL', '') || this.config.get<string>('WEB_ORIGIN', '');
@@ -68,7 +73,7 @@ export class PaymentsService {
   /* ------------------------------------------------------------------ */
 
   async createForShare(shareId: string, dto: CreatePaymentDto, user: AuthUser) {
-    if (!this.enabled) throw new ServiceUnavailableException('Pagamentos serão habilitados somente após a conclusão dos testes do sistema.');
+    if (!this.enabled) throw new ServiceUnavailableException('Os pagamentos estão temporariamente indisponíveis. Tente novamente em instantes.');
     const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: { include: { concurso: true } }, comprador: true, afiliadoReferencia: true, pagamento: true } });
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.compradorId !== user.id) throw new ConflictException('A cota não pertence ao usuário autenticado.');

@@ -2,8 +2,8 @@ import { Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class CreatePaymentDto {
-  @IsIn(['pix', 'boleto'], { message: 'Método de pagamento indisponível. Use pix ou boleto.' })
-  metodo!: 'pix' | 'boleto';
+  @IsIn(['pix', 'boleto', 'cartao', 'pix_automatico'], { message: 'Método de pagamento inválido.' })
+  metodo!: 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 }
 
 export const MANUAL_PAYMENT_FORMS = ['dinheiro', 'pix_direto', 'transferencia', 'cartao_maquininha', 'outro'] as const;

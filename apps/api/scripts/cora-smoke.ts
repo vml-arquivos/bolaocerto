@@ -4,10 +4,14 @@
  *
  * Uso (na raiz do repositório, com as variáveis CORA_* exportadas):
  *   pnpm --filter @bolaocerto/api cora:smoke
+ *
+ * Com CORA_SMOKE_NFSE=yes, também consulta (somente leitura) a disponibilidade de NFS-e, os CNAEs e os
+ * códigos de serviço da sua empresa. Não emite nota.
  */
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
+import { CoraFiscalClient } from '../src/fiscal/nfse.client';
 import { CoraProvider } from '../src/payments/payment.provider';
 
 async function main() {
@@ -32,6 +36,13 @@ async function main() {
     console.log('Cancelada:', charge.transactionId, await provider.fetchStatus(charge.transactionId));
   }
   console.log('OK — autenticação mTLS, emissão, consulta e cancelamento funcionando.');
+
+  if (process.env.CORA_SMOKE_NFSE === 'yes') {
+    const fiscal = new CoraFiscalClient((method, path, body, key) => provider.request(method, path, body, key));
+    console.log('NFS-e disponível para esta empresa/cidade:', await fiscal.checkAvailability());
+    console.log('CNAEs:', await fiscal.cnaes());
+    console.log('Códigos de serviço (primeiros 10):', (await fiscal.serviceCodes()).slice(0, 10));
+  }
 }
 
 main().catch((error) => { console.error('FALHA:', error instanceof Error ? error.message : error); process.exit(1); });

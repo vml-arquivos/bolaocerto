@@ -47,4 +47,4 @@ Esta é uma beta Web controlada. Ela inclui portal responsivo, autenticação po
 - teste de carga, backup e restauração;
 - homologação completa de conciliação e premiação.
 
-Não desative `PLATFORM_TEST_MODE` antes de concluir esses itens.
+`PLATFORM_TEST_MODE=false` é o padrão de produção (sem faixa de aviso). Use `true` apenas em um ambiente de testes separado. Os itens acima são a pendência operacional antes de divulgar o site ao público.

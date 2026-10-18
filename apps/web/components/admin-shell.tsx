@@ -44,6 +44,7 @@ const groups = [
       ['relatorios', 'Relatórios', 'RL'],
       ['recebimentos', 'Recebimentos', 'RE'],
       ['pagamentos', 'Pagamentos', 'PG'],
+      ['notas-fiscais', 'Notas fiscais', 'NF'],
     ],
   },
   {
@@ -107,7 +108,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
         </div>
         <div className={`admin-environment ${testMode ? 'is-test-mode' : ''}`}>
           <span className="admin-status-dot" />
-          <span>{testMode ? 'Ambiente de validação' : 'Ambiente de produção'}</span>
+          <span>{testMode ? 'Ambiente de testes' : 'Ambiente de produção'}</span>
         </div>
         {testMode && <p className="admin-environment-note">Não realize pagamentos reais.</p>}
         <nav className="admin-nav" aria-label="Navegação administrativa">

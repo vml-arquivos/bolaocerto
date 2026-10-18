@@ -7,6 +7,7 @@ import { LotteriesModule } from './lotteries/lotteries.module';
 import { PoolsModule } from './pools/pools.module';
 import { SharesModule } from './shares/shares.module';
 import { PaymentsModule } from './payments/payments.module';
+import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
 import { AdminModule } from './admin/admin.module';
 import { OperationModule } from './operation/operation.module';
@@ -22,6 +23,7 @@ import { HealthController } from './health.controller';
     PoolsModule,
     SharesModule,
     PaymentsModule,
+    FiscalModule,
     ReportsModule,
     AdminModule,
     OperationModule,

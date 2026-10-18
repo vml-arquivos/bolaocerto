@@ -43,6 +43,16 @@ export class ReportsController {
     return respond(await this.reports.commissions(query, admin), response);
   }
 
+  @Get('pagamentos')
+  async payments(@Query() query: ReportQueryDto, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {
+    return respond(await this.reports.payments(query, admin), response);
+  }
+
+  @Get('notas-fiscais')
+  async invoices(@Query() query: ReportQueryDto, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {
+    return respond(await this.reports.invoices(query, admin), response);
+  }
+
   @Get('boloes/:id')
   async poolSheet(@Param('id', ParseUUIDPipe) id: string, @Query() query: ReportQueryDto, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {
     return respond(await this.reports.poolSheet(id, query, admin), response);

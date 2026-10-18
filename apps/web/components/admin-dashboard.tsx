@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { AdminShell } from './admin-shell';
 import { AdminGroupForm, AffiliateNetworkTable, InviteManager, ManagedUserForm } from './admin-people-tools';
 import { PoolWizard as SimplePoolWizard } from './pool-wizard';
-import { ManualContestForm, ManualSaleForm, PaymentSettingsPanel, ReportsView, ShareActions } from './admin-finance-tools';
+import { InvoicesView, ManualContestForm, ManualSaleForm, PaymentSettingsPanel, ReportsView, ShareActions } from './admin-finance-tools';
 
 type RecordValue = Record<string, any>;
 type PagePayload = { items?: RecordValue[]; pagination?: { page: number; pageSize: number; total: number; pages: number } };
@@ -133,7 +133,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     setLoading(true);
     setToast(null);
     try {
-      if (view === 'relatorios') { setLoading(false); return; }
+      if (view === 'relatorios' || view === 'notas-fiscais') { setLoading(false); return; }
       const query = new URLSearchParams({ page: '1', pageSize: '50' });
       if (search) query.set('busca', search);
       if (statusFilter) query.set('status', statusFilter);
@@ -272,12 +272,13 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   function SettingsView() {
     const [reserveMinutes, setReserveMinutes] = useState('15');
     const [commission, setCommission] = useState('10');
-    return <><SectionHeading eyebrow="Governança" title="Configurações" description="Parâmetros operacionais preparados para evolução segura, sem expor segredos do ambiente." /><div className="admin-settings-grid"><Panel title="Reserva e comissionamento" description="Altere somente valores operacionais validados."><div className="admin-form-grid"><label className="admin-field"><span>Prazo de reserva (minutos)</span><input type="number" min="1" max="60" value={reserveMinutes} onChange={(event) => setReserveMinutes(event.target.value)} /></label><label className="admin-field"><span>Comissão padrão (%)</span><input type="number" min="0" max="100" step="0.01" value={commission} onChange={(event) => setCommission(event.target.value)} /></label></div><button className="admin-button admin-button-primary" onClick={() => execute('/api/v1/admin/configuracoes', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prazoReservaMinutos: Number(reserveMinutes), comissaoPadraoPct: Number(commission) }) }, 'Configuração registrada na auditoria.')}>Salvar parâmetros</button></Panel><Panel title="Pagamentos" description="O runtime atual suporta Pix em modo configurável; cartão e boleto não são anunciados."><div className="admin-callout"><strong>Pix como único método disponível</strong><p>Provider, credenciais e modo teste continuam controlados por variáveis do ambiente de produção. Nenhum segredo é editável nesta tela.</p></div></Panel></div></>;
+    return <><SectionHeading eyebrow="Governança" title="Configurações" description="Parâmetros operacionais preparados para evolução segura, sem expor segredos do ambiente." /><div className="admin-settings-grid"><Panel title="Reserva e comissionamento" description="Altere somente valores operacionais validados."><div className="admin-form-grid"><label className="admin-field"><span>Prazo de reserva (minutos)</span><input type="number" min="1" max="60" value={reserveMinutes} onChange={(event) => setReserveMinutes(event.target.value)} /></label><label className="admin-field"><span>Comissão padrão (%)</span><input type="number" min="0" max="100" step="0.01" value={commission} onChange={(event) => setCommission(event.target.value)} /></label></div><button className="admin-button admin-button-primary" onClick={() => execute('/api/v1/admin/configuracoes', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prazoReservaMinutos: Number(reserveMinutes), comissaoPadraoPct: Number(commission) }) }, 'Configuração registrada na auditoria.')}>Salvar parâmetros</button></Panel><Panel title="Pagamentos" description="Pix e boleto com Pix incluso, processados pela Cora. A conciliação automática roda a cada 3 minutos."><div className="admin-callout"><strong>Provedor e credenciais</strong><p>Provedor, credenciais e ambiente são controlados por variáveis do servidor. Nenhum segredo é editável nesta tela.</p></div></Panel></div></>;
   }
 
   function renderView() {
     if (view === 'visao-geral') return <DashboardView />;
     if (view === 'relatorios') return <ReportsView />;
+    if (view === 'notas-fiscais') return <InvoicesView notify={notify} />;
     if (view === 'concursos') return <ContestsView />;
     if (view === 'boloes') return <PoolsView />;
     if (view === 'jogos') return <GamesView />;

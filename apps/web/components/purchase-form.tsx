@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { money } from '../lib/domain';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 
-type Method = 'pix' | 'boleto';
-const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)' };
+type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
+const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito', pix_automatico: 'Pix Automático (recorrente)' };
 
 export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled }: { poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean }) {
   const [message, setMessage] = useState('');
@@ -44,7 +44,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   }
 
   return <aside className="purchase-card"><span className="overline">Participar agora</span><p className="price">{money(unitPrice)}</p><p className="muted">por cota · {unlimited ? 'cotas ilimitadas' : `${available} disponíveis`}</p>
-    {!paymentsEnabled ? <div className="notice payment-disabled"><strong>Pagamentos ainda não habilitados</strong><span>Nesta primeira etapa, valide cadastro, acesso, concursos, bolões e responsividade. Reservas financeiras e pagamentos serão liberados posteriormente.</span></div>
+    {!paymentsEnabled ? <div className="notice payment-disabled"><strong>Reservas temporariamente indisponíveis</strong><span>As reservas deste bolão estão pausadas no momento. Tente novamente em alguns instantes.</span></div>
       : enabled ? <form onSubmit={submit}>
         <div className="field"><label htmlFor="quantidade">Quantidade de cotas</label><input id="quantidade" name="quantidade" type="number" min={1} {...(unlimited ? {} : { max: available ?? undefined })} defaultValue={1} required /></div>
         <div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required /></div>

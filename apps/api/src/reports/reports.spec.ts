@@ -70,3 +70,61 @@ describe('ReportsService.sales', () => {
     await expect(reports.sales({ de: '2026-10-10', ate: '2026-10-01' }, admin)).rejects.toThrow('data inicial');
   });
 });
+
+function paymentRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'pay-1', criadoEm: new Date('2026-10-01T15:00:00Z'), confirmadoEm: new Date('2026-10-01T15:05:00Z'), metodo: 'pix', pspProvedor: 'cora', pspTransactionId: 'inv_1', origem: 'gateway', formaBaixa: null,
+    status: StatusPagamento.confirmado, valorBruto: new Prisma.Decimal(100), valorCustoBilhete: new Prisma.Decimal(74.07), valorTaxaAdmin: new Prisma.Decimal(25.93), vencimentoEm: null, observacao: null, notaFiscal: null,
+    cota: { titularNome: 'Maria Souza', titularCpf: '12345678909', quantidade: 2, bolaoId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', status: StatusCota.paga, comprador: { email: 'maria@x.com' }, bolao: { concurso: { modalidade: 'megasena', numeroConcurso: 2900 } }, comissao: { valor: new Prisma.Decimal(2.59), status: StatusComissao.pendente } },
+    ...overrides,
+  };
+}
+
+describe('ReportsService.payments (conciliação)', () => {
+  it('decompõe custo, taxa, comissão e resultado; mascara o CPF no JSON', async () => {
+    const prisma = { pagamento: { findMany: jest.fn().mockResolvedValue([paymentRow()]) } };
+    const reports = new ReportsService(prisma as never, { record: jest.fn() } as never);
+    const result = await reports.payments({}, admin) as { linhas: Array<Record<string, unknown>> };
+    expect(result.linhas[0]).toEqual(expect.objectContaining({ cpf: '***.***.789-09', valorBruto: 100, taxaAdmin: 25.93, comissao: 2.59, resultadoPlataforma: 23.34, notaFiscal: 'sem nota', provedor: 'cora' }));
+  });
+
+  it('pagamento pendente não conta custo, taxa nem resultado; comissão cancelada não abate', async () => {
+    const pending = paymentRow({ status: StatusPagamento.pendente, confirmadoEm: null });
+    const cancelled = paymentRow({ cota: { ...paymentRow().cota, comissao: { valor: new Prisma.Decimal(2.59), status: StatusComissao.cancelada } } });
+    const prisma = { pagamento: { findMany: jest.fn().mockResolvedValue([pending, cancelled]) } };
+    const result = await new ReportsService(prisma as never, { record: jest.fn() } as never).payments({}, admin) as { linhas: Array<Record<string, unknown>> };
+    expect(result.linhas[0]).toEqual(expect.objectContaining({ taxaAdmin: null, resultadoPlataforma: null, notaFiscal: null }));
+    expect(result.linhas[1]).toEqual(expect.objectContaining({ comissao: 0, resultadoPlataforma: 25.93 }));
+  });
+
+  it('exporta XLSX com CPF completo e registra auditoria', async () => {
+    const prisma = { pagamento: { findMany: jest.fn().mockResolvedValue([paymentRow()]) } };
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const file = await new ReportsService(prisma as never, audit as never).payments({ formato: 'xlsx' }, admin) as { filename: string; buffer: Buffer };
+    expect(file.filename).toMatch(/^pagamentos-bolao-livre-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(file.buffer.subarray(0, 2).toString()).toBe('PK');
+    expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ evento: 'relatorio.exportado' }));
+  });
+});
+
+describe('ReportsService.invoices (notas fiscais)', () => {
+  const note = (overrides: Record<string, unknown> = {}) => ({
+    criadoEm: new Date('2026-10-02T12:00:00Z'), emitidaEm: new Date('2026-10-02T12:05:00Z'), status: 'emitida', origem: 'cora', numero: '123', provedorId: 'nfse_abcd1234', pdfUrl: 'https://x/p.pdf', erro: null, observacao: null,
+    valor: new Prisma.Decimal(100), issPct: new Prisma.Decimal(5), pagamento: { valorTaxaAdmin: new Prisma.Decimal(25.93), pspTransactionId: 'inv_1', cota: paymentRow().cota },
+    ...overrides,
+  });
+
+  it('calcula o ISS estimado e informa pagamentos sem nota', async () => {
+    const prisma = { notaFiscal: { findMany: jest.fn().mockResolvedValue([note()]) }, pagamento: { count: jest.fn().mockResolvedValue(4) } };
+    const result = await new ReportsService(prisma as never, { record: jest.fn() } as never).invoices({}, admin) as { linhas: Array<Record<string, unknown>>; pagamentosSemNota: number };
+    expect(result.linhas[0]).toEqual(expect.objectContaining({ valorNota: 100, issPct: 5, issEstimado: 5, numero: '123', cpf: '***.***.789-09' }));
+    expect(result.pagamentosSemNota).toBe(4);
+  });
+
+  it('filtra por situação da nota', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { notaFiscal: { findMany }, pagamento: { count: jest.fn().mockResolvedValue(0) } };
+    await new ReportsService(prisma as never, { record: jest.fn() } as never).invoices({ statusNota: 'erro' }, admin);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'erro' }) }));
+  });
+});

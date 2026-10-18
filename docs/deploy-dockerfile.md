@@ -33,7 +33,7 @@ Use `.env.production.example` como referencia. No primeiro deploy, mantenha:
 PAYMENTS_ENABLED=false
 PAYMENT_PROVIDER=disabled
 PAYMENT_TEST_MODE=false
-PLATFORM_TEST_MODE=true
+PLATFORM_TEST_MODE=false
 PLATFORM_PAYMENTS_ENABLED=false
 APP_PORT=3000
 API_PORT=3001

@@ -43,13 +43,13 @@ Use `docker-compose.production.yml` no Coolify. Copie as chaves de `.env.product
 PAYMENTS_ENABLED=false
 PAYMENT_PROVIDER=disabled
 PAYMENT_TEST_MODE=false
-PLATFORM_TEST_MODE=true
+PLATFORM_TEST_MODE=false
 ```
 
-Nesse modo, o sistema não cria reserva financeira, cobrança, Pix ou webhook. Para liberar a operação financeira, configure o provedor homologado e conclua a validação jurídica, contratual e operacional.
+Nesse modo, o sistema não cria reserva financeira, cobrança, Pix ou webhook. Para liberar a operação financeira, configure o provedor homologado.
 
 Consulte [docs/deploy-production.md](docs/deploy-production.md) para o checklist completo.
 
 ## Cora, vendas e relatórios
 
-Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a Cora (boleto + Pix), operar vendas e usar os relatórios.
+Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a Cora (boleto + Pix + nota fiscal de serviço), operar vendas e usar os relatórios.
