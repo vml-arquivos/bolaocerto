@@ -41,6 +41,7 @@ const groups = [
   {
     label: 'Financeiro',
     items: [
+      ['relatorios', 'Relatórios', 'RL'],
       ['recebimentos', 'Recebimentos', 'RE'],
       ['pagamentos', 'Pagamentos', 'PG'],
     ],

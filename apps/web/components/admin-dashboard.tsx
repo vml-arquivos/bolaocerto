@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { AdminShell } from './admin-shell';
 import { AdminGroupForm, AffiliateNetworkTable, InviteManager, ManagedUserForm } from './admin-people-tools';
 import { PoolWizard as SimplePoolWizard } from './pool-wizard';
+import { ManualContestForm, ManualSaleForm, PaymentSettingsPanel, ReportsView, ShareActions } from './admin-finance-tools';
 
 type RecordValue = Record<string, any>;
 type PagePayload = { items?: RecordValue[]; pagination?: { page: number; pageSize: number; total: number; pages: number } };
@@ -132,6 +133,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     setLoading(true);
     setToast(null);
     try {
+      if (view === 'relatorios') { setLoading(false); return; }
       const query = new URLSearchParams({ page: '1', pageSize: '50' });
       if (search) query.set('busca', search);
       if (statusFilter) query.set('status', statusFilter);
@@ -178,6 +180,8 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     }
   }
 
+  function notify(type: 'success' | 'error', text: string) { setToast({ type, text }); }
+
   async function syncContests() {
     await execute('/api/v1/admin/concursos/sincronizar', { method: 'POST' }, 'Concursos sincronizados com sucesso.');
   }
@@ -195,7 +199,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   }
 
   function ContestsView() {
-    return <><SectionHeading eyebrow="Operação" title="Concursos" description="Concursos sincronizados, prêmios estimados e bolões vinculados." action={<button className="admin-button admin-button-primary" onClick={syncContests} disabled={busy}>Sincronizar agora</button>} /><Panel title="Concursos cadastrados" description={`${payload.pagination?.total ?? items.length} registros encontrados`}><Table minWidth={980}><thead><tr><th>Modalidade</th><th>Concurso</th><th>Sorteio</th><th>Prêmio estimado</th><th>Status</th><th>Bolões</th><th>Sincronizado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{modalityNames[item.modalidade] ?? item.modalidade}</strong></td><td>#{item.numeroConcurso}</td><td>{dateOnly(item.dataSorteio)}</td><td>{money(item.valorEstimadoPremio)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item._count?.boloes ?? 0}</td><td>{dateTime(item.sincronizadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum concurso encontrado" description="Sincronize a base da CAIXA ou ajuste os filtros." />}</Panel></>;
+    return <><SectionHeading eyebrow="Operação" title="Concursos" description="Concursos sincronizados, prêmios estimados e bolões vinculados." action={<button className="admin-button admin-button-primary" onClick={syncContests} disabled={busy}>Sincronizar agora</button>} /><div style={{ marginBottom: 16 }}><ManualContestForm onDone={load} notify={notify} /></div><Panel title="Concursos cadastrados" description={`${payload.pagination?.total ?? items.length} registros encontrados`}><Table minWidth={980}><thead><tr><th>Modalidade</th><th>Concurso</th><th>Sorteio</th><th>Prêmio estimado</th><th>Status</th><th>Bolões</th><th>Sincronizado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{modalityNames[item.modalidade] ?? item.modalidade}</strong></td><td>#{item.numeroConcurso}</td><td>{dateOnly(item.dataSorteio)}</td><td>{money(item.valorEstimadoPremio)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item._count?.boloes ?? 0}</td><td>{dateTime(item.sincronizadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum concurso encontrado" description="Sincronize a base da CAIXA ou ajuste os filtros." />}</Panel></>;
   }
 
   function PoolsView() {
@@ -203,12 +207,12 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   }
 
   function SharesView() {
-    return <><SectionHeading eyebrow="Participações" title="Cotas" description="Reservas, pagamentos, expirações e vínculo de afiliados." /><Panel title="Cotas e reservas"><Table minWidth={1180}><thead><tr><th>Titular</th><th>Bolão</th><th>Concurso</th><th>Quantidade</th><th>Valor</th><th>Status</th><th>Afiliado</th><th>Reserva</th><th>Pagamento</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.titularNome}</strong><small>{item.titularCpf}</small></td><td>{item.bolao?.id?.slice(0, 8) ?? '—'}</td><td>{item.bolao?.concurso?.numeroConcurso ?? '—'}</td><td>{item.quantidade}</td><td>{money(item.valorPago)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item.afiliadoReferencia?.codigoAfiliado ?? 'Orgânico'}</td><td>{dateTime(item.expiraReservaEm)}</td><td>{item.pagamento ? <span className={statusClass(item.pagamento.status)}>{statusLabel(item.pagamento.status)}</span> : '—'}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhuma cota encontrada" description="As reservas e pagamentos aparecerão nesta fila assim que existirem." />}</Panel></>;
+    return <><SectionHeading eyebrow="Participações" title="Cotas" description="Reservas, pagamentos, expirações e vínculo de afiliados." /><div style={{ marginBottom: 16 }}><ManualSaleForm onDone={load} notify={notify} /></div><Panel title="Cotas e reservas"><Table minWidth={1320}><thead><tr><th>Titular</th><th>Bolão</th><th>Concurso</th><th>Quantidade</th><th>Valor</th><th>Status</th><th>Afiliado</th><th>Reserva</th><th>Pagamento</th><th>Ações</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.titularNome}</strong><small>{item.titularCpf}</small></td><td>{item.bolao?.id?.slice(0, 8) ?? '—'}</td><td>{item.bolao?.concurso?.numeroConcurso ?? '—'}</td><td>{item.quantidade}</td><td>{money(item.valorPago)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item.afiliadoReferencia?.codigoAfiliado ?? 'Orgânico'}</td><td>{dateTime(item.expiraReservaEm)}</td><td>{item.pagamento ? <span className={statusClass(item.pagamento.status)}>{statusLabel(item.pagamento.status)}</span> : '—'}</td><td><ShareActions item={item} onDone={load} notify={notify} /></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhuma cota encontrada" description="As reservas e pagamentos aparecerão nesta fila assim que existirem." />}</Panel></>;
   }
 
   function PaymentsView() {
     const title = view === 'pagamentos' ? 'Pagamentos' : 'Recebimentos';
-    return <><SectionHeading eyebrow="Financeiro" title={title} description="Acompanhe somente o método Pix, único provider habilitado no runtime atual." /><div className="admin-kpi-grid admin-kpi-grid-four"><Kpi label="Confirmados" value={items.filter((item) => item.status === 'confirmado').length} tone="green" /><Kpi label="Pendentes" value={items.filter((item) => item.status === 'pendente').length} tone="amber" /><Kpi label="Falhos" value={items.filter((item) => item.status === 'falhou').length} tone="rose" /><Kpi label="Estornados" value={items.filter((item) => item.status === 'estornado').length} /></div><Panel title="Transações Pix"><Table minWidth={1220}><thead><tr><th>Data</th><th>Transação</th><th>Usuário</th><th>Cota</th><th>Método</th><th>Valor</th><th>Taxa</th><th>Comissão</th><th>Provedor</th><th>Status</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateTime(item.criadoEm)}</td><td><code>{item.pspTransactionId ?? item.id?.slice(0, 8)}</code></td><td>{item.cota?.comprador?.nome ?? '—'}</td><td>{item.cotaId?.slice(0, 8)}</td><td>Pix</td><td>{money(item.valorBruto)}</td><td>{money(item.valorTaxaAdmin)}</td><td>{money(item.valorComissaoAfiliado)}</td><td>{item.pspProvedor}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum recebimento" description="As transações Pix aparecerão após a criação de pagamentos." />}</Panel></>;
+    return <><SectionHeading eyebrow="Financeiro" title={title} description="Pix e boleto emitidos pela Cora, mais baixas manuais. Status atualizados por webhook e conciliação automática." /><div className="admin-kpi-grid admin-kpi-grid-four"><Kpi label="Confirmados" value={items.filter((item) => item.status === 'confirmado').length} tone="green" /><Kpi label="Pendentes" value={items.filter((item) => item.status === 'pendente').length} tone="amber" /><Kpi label="Falhos" value={items.filter((item) => item.status === 'falhou').length} tone="rose" /><Kpi label="Estornados" value={items.filter((item) => item.status === 'estornado').length} /></div><Panel title="Transações"><Table minWidth={1220}><thead><tr><th>Data</th><th>Transação</th><th>Usuário</th><th>Cota</th><th>Método</th><th>Valor</th><th>Taxa</th><th>Comissão</th><th>Provedor</th><th>Vencimento</th><th>Status</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{dateTime(item.criadoEm)}</td><td><code>{item.pspTransactionId ?? item.id?.slice(0, 8)}</code></td><td>{item.cota?.comprador?.nome ?? '—'}</td><td>{item.cotaId?.slice(0, 8)}</td><td>{statusLabel(item.metodo ?? 'pix')}</td><td>{money(item.valorBruto)}</td><td>{money(item.valorTaxaAdmin)}</td><td>{money(item.valorComissaoAfiliado)}</td><td>{item.pspProvedor}</td><td>{dateTime(item.vencimentoEm)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum recebimento" description="As cobranças Pix e boleto aparecerão após a criação de pagamentos." />}</Panel></>;
   }
 
   function GamesView() {
@@ -273,6 +277,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
 
   function renderView() {
     if (view === 'visao-geral') return <DashboardView />;
+    if (view === 'relatorios') return <ReportsView />;
     if (view === 'concursos') return <ContestsView />;
     if (view === 'boloes') return <PoolsView />;
     if (view === 'jogos') return <GamesView />;
@@ -290,7 +295,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'comprovantes') return <ReceiptsView />;
     if (view === 'lotericas') return <PartnersView />;
     if (view === 'auditoria') return <AuditView />;
-    if (view === 'configuracoes') return <SettingsView />;
+    if (view === 'configuracoes') return <><SettingsView /><PaymentSettingsPanel notify={notify} /></>;
     return <DashboardView />;
   }
 

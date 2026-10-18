@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import {
@@ -10,6 +10,7 @@ import {
   parseCaixaDate,
 } from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
+import { CreateManualContestDto } from './lotteries.dto';
 
 @Injectable()
 export class LotteriesService {
@@ -156,6 +157,22 @@ export class LotteriesService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** Cadastro manual de concurso (contingência quando a API da CAIXA está indisponível). */
+  async createManual(dto: CreateManualContestDto) {
+    const modalidade = this.assertModalidade(dto.modalidade);
+    const config = await this.prisma.configLoteria.findUnique({ where: { modalidade } });
+    if (!config) throw new BadRequestException('Modalidade sem configuração cadastrada.');
+    const drawDate = new Date(`${dto.dataSorteio}T20:00:00-03:00`);
+    if (Number.isNaN(drawDate.getTime())) throw new BadRequestException('Data do sorteio inválida.');
+    if (drawDate.getTime() < Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
+    const exists = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: dto.numeroConcurso } } });
+    if (exists) throw new ConflictException('Este concurso já está cadastrado.');
+    const contest = await this.prisma.concurso.create({
+      data: { modalidade, numeroConcurso: dto.numeroConcurso, dataSorteio: drawDate, cutoffAt: calculateBrazilCutoff(drawDate, config.horarioCorteLocal), acumulado: Boolean(dto.acumulado), status: 'aberto', fonteSincronizacao: 'manual' },
+    });
+    return this.toPublicContest(contest);
   }
 
   private assertModalidade(value: string): ModalidadeLoteria {

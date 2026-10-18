@@ -48,6 +48,7 @@ enum MetodoPagamento {
   pix
   cartao
   boleto
+  manual
 }
 enum StatusPagamento {
   pendente
@@ -317,6 +318,7 @@ model Cota {
   faixaPremio           String?         @map("faixa_premio") @db.VarChar(60)
   valorPremio           Decimal?        @map("valor_premio") @db.Decimal(14,2)
   premioNotificadoEm    DateTime?       @map("premio_notificado_em")
+  origemVenda           String          @default("online") @map("origem_venda") @db.VarChar(20)
   criadoEm              DateTime        @default(now()) @map("criado_em")
   bolao                 Bolao           @relation(fields: [bolaoId], references: [id])
   comprador             Usuario         @relation("comprador_cota", fields: [compradorId], references: [id])
@@ -327,6 +329,7 @@ model Cota {
 
   @@index([bolaoId, status])
   @@index([compradorId, status])
+  @@index([criadoEm])
   @@map("cotas")
 }
 
@@ -356,11 +359,21 @@ model Pagamento {
   pspProvedor          String           @map("psp_provedor") @db.VarChar(30)
   pspTransactionId     String?         @map("psp_transaction_id") @db.VarChar(100)
   qrCodePix            String?         @map("qr_code_pix")
+  qrCodeUrl            String?         @map("qr_code_url")
+  linhaDigitavel       String?         @map("linha_digitavel")
+  codigoBarras         String?         @map("codigo_barras")
+  boletoUrl            String?         @map("boleto_url")
+  vencimentoEm         DateTime?       @map("vencimento_em")
+  origem               String          @default("gateway") @db.VarChar(20)
+  formaBaixa           String?         @map("forma_baixa") @db.VarChar(30)
+  observacao           String?
+  baixaPor             String?         @map("baixa_por") @db.Uuid
   confirmadoEm         DateTime?        @map("confirmado_em")
   criadoEm             DateTime         @default(now()) @map("criado_em")
   cota                 Cota             @relation(fields: [cotaId], references: [id])
 
   @@unique([pspProvedor, pspTransactionId])
+  @@index([status, criadoEm])
   @@map("pagamentos")
 }
 

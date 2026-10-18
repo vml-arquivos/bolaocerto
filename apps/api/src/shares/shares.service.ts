@@ -22,7 +22,7 @@ export class SharesService {
       ? await this.prisma.afiliado.findFirst({ where: { codigoAfiliado: dto.codigoAfiliado.trim(), statusAprovacao: 'aprovado' }, select: { id: true } })
       : null;
     const result = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId}::uuid FOR UPDATE`;
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
       if (pool.status !== StatusBolao.aberto || (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas))) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');
@@ -49,8 +49,38 @@ export class SharesService {
   }
 
   async listMine(user: AuthUser, onlyPrize = false) {
-    const shares = await this.prisma.cota.findMany({ where: { compradorId: user.id, ...(onlyPrize ? { status: StatusCota.premiada } : {}) }, orderBy: { criadoEm: 'desc' } });
-    return shares.map((share) => this.toPrivate(share, true));
+    const shares = await this.prisma.cota.findMany({
+      where: { compradorId: user.id, ...(onlyPrize ? { status: StatusCota.premiada } : {}) },
+      orderBy: { criadoEm: 'desc' },
+      include: { pagamento: true, bolao: { include: { concurso: true, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
+    });
+    return shares.map((share) => ({
+      ...this.toPrivate(share, true),
+      origemVenda: share.origemVenda,
+      criadoEm: share.criadoEm,
+      valorTotal: share.pagamento ? share.pagamento.valorBruto.toFixed(2) : (Number(share.bolao.valorCota) * share.quantidade).toFixed(2),
+      bolao: {
+        id: share.bolao.id,
+        status: share.bolao.status,
+        grupo: share.bolao.grupo.nome,
+        valorCota: share.bolao.valorCota.toFixed(2),
+        modalidade: share.bolao.concurso.modalidade,
+        numeroConcurso: share.bolao.concurso.numeroConcurso,
+        dataSorteio: share.bolao.concurso.dataSorteio,
+        teveGanhador: share.bolao.teveGanhador,
+        jogos: share.bolao.jogos.map((jogo) => ({ ordem: jogo.ordem, numeros: jogo.numeros })),
+      },
+      pagamento: share.pagamento ? {
+        id: share.pagamento.id,
+        status: share.pagamento.status,
+        metodo: share.pagamento.metodo,
+        qrCodePix: share.pagamento.qrCodePix,
+        qrCodeUrl: share.pagamento.qrCodeUrl,
+        linhaDigitavel: share.pagamento.linhaDigitavel,
+        boletoUrl: share.pagamento.boletoUrl,
+        vencimentoEm: share.pagamento.vencimentoEm,
+      } : null,
+    }));
   }
 
   async getPrivate(id: string, user: AuthUser) {

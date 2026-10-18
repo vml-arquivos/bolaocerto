@@ -539,7 +539,21 @@ export class AdminService {
     const payments = await this.prisma.pagamento.findMany({ where: { status: StatusPagamento.confirmado }, select: { valorBruto: true, valorTaxaAdmin: true, valorCustoBilhete: true, valorComissaoAfiliado: true } });
     const totals = payments.reduce((acc, payment) => ({ gross: acc.gross + Number(payment.valorBruto), fees: acc.fees + Number(payment.valorTaxaAdmin), cost: acc.cost + Number(payment.valorCustoBilhete), commissions: acc.commissions + Number(payment.valorComissaoAfiliado) }), { gross: 0, fees: 0, cost: 0, commissions: 0 });
     await this.audit.record(this.prisma, { entidade: 'financeiro', entidadeId: user.id, evento: 'financeiro.consultado', atorId: user.id, payloadDepois: totals });
-    return { valorArrecadado: totals.gross.toFixed(2), taxaAdministracao: totals.fees.toFixed(2), custoBilhetes: totals.cost.toFixed(2), comissoes: totals.commissions.toFixed(2), conciliado: Math.abs(totals.gross - totals.cost - totals.fees - totals.commissions) < 0.01 };
+    const pagamentosSemCota = await this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, cota: { status: { in: [StatusCota.cancelada, StatusCota.estornada] } } } });
+    const cotasPagasSemPagamento = await this.prisma.cota.count({ where: { status: { in: [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] }, OR: [{ pagamento: null }, { pagamento: { status: { not: StatusPagamento.confirmado } } }] } });
+    // Arrecadação = custo dos bilhetes + taxa de administração; a comissão do afiliado sai da taxa.
+    const fechaArrecadacao = Math.abs(totals.gross - totals.cost - totals.fees) < 0.01;
+    const comissaoDentroDaTaxa = totals.commissions <= totals.fees + 0.01;
+    return {
+      valorArrecadado: totals.gross.toFixed(2),
+      taxaAdministracao: totals.fees.toFixed(2),
+      custoBilhetes: totals.cost.toFixed(2),
+      comissoes: totals.commissions.toFixed(2),
+      resultadoLiquidoPlataforma: (totals.fees - totals.commissions).toFixed(2),
+      pagamentosSemCota,
+      cotasPagasSemPagamento,
+      conciliado: fechaArrecadacao && comissaoDentroDaTaxa && pagamentosSemCota === 0 && cotasPagasSemPagamento === 0,
+    };
   }
 
   async updateSettings(dto: UpdateSettingsDto, user: AuthUser) {

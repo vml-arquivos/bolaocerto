@@ -49,3 +49,7 @@ PLATFORM_TEST_MODE=true
 Nesse modo, o sistema não cria reserva financeira, cobrança, Pix ou webhook. Para liberar a operação financeira, configure o provedor homologado e conclua a validação jurídica, contratual e operacional.
 
 Consulte [docs/deploy-production.md](docs/deploy-production.md) para o checklist completo.
+
+## Cora, vendas e relatórios
+
+Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a Cora (boleto + Pix), operar vendas e usar os relatórios.

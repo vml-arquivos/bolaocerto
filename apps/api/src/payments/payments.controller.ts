@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Req, Headers, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser } from '../auth/auth.decorators';
@@ -16,9 +16,21 @@ export class PaymentsController {
     return this.payments.createForShare(id, dto, user);
   }
 
+  @Get('cotas/:id/pagamento')
+  @UseGuards(JwtAuthGuard)
+  current(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.getForShare(id, user);
+  }
+
+  @Get('pagamentos/metodos')
+  methods() {
+    const settings = this.payments.settings();
+    return { habilitado: settings.habilitado, metodos: settings.metodos, valorMinimo: settings.valorMinimo };
+  }
+
   @Post('webhooks/pagamento/:provedor')
-  webhook(@Req() request: Request & { rawBody?: Buffer }, @Headers() headers: Record<string, string | undefined>) {
+  webhook(@Req() request: Request & { rawBody?: Buffer }, @Headers() headers: Record<string, string | undefined>, @Query() query: Record<string, string | undefined>) {
     const rawBody = request.rawBody?.toString('utf8') ?? JSON.stringify(request.body ?? {});
-    return this.payments.handleWebhook(rawBody, headers);
+    return this.payments.handleWebhook(rawBody, headers, query);
   }
 }
