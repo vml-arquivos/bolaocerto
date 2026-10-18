@@ -24,14 +24,28 @@ export class LotteriesService {
 
   constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
 
+  /**
+   * Lista pública. Sem filtro (ou status=aberto) devolve só os concursos realmente abertos (prazo no futuro), do mais próximo
+   * para o mais distante. Com outro status devolve o histórico, do mais recente para o mais antigo.
+   */
   async list(modalidade?: string, status?: string) {
     const allowed = modalidade ? this.assertModalidade(modalidade) : undefined;
+    const openOnly = !status || status === 'aberto';
     const contests = await this.prisma.concurso.findMany({
-      where: { ...(allowed ? { modalidade: allowed } : {}), ...(status ? { status } : {}) },
-      orderBy: [{ dataSorteio: 'asc' }, { modalidade: 'asc' }],
+      where: {
+        ...(allowed ? { modalidade: allowed } : {}),
+        ...(openOnly ? { status: 'aberto', cutoffAt: { gt: new Date() } } : { status }),
+      },
+      orderBy: [{ dataSorteio: openOnly ? 'asc' : 'desc' }, { modalidade: 'asc' }],
       take: 100,
     });
     return contests.map((contest) => this.toPublicContest(contest));
+  }
+
+  /** Fecha os concursos abertos cujo prazo já passou. Retorna quantos foram fechados. */
+  async closeExpired(): Promise<number> {
+    const result = await this.prisma.concurso.updateMany({ where: { status: 'aberto', cutoffAt: { lte: new Date() } }, data: { status: 'fechado' } });
+    return result.count;
   }
 
   async getById(id: string) {
@@ -56,6 +70,7 @@ export class LotteriesService {
     const fontes = new Set<string>();
     const falhas: Array<{ modalidade: string; erro: string }> = [];
     let sincronizados = 0;
+    await this.closeExpired();
 
     for (const current of modalities) {
       const config = await this.prisma.configLoteria.findUnique({ where: { modalidade: current } });
@@ -69,6 +84,8 @@ export class LotteriesService {
         falhas.push({ modalidade: current, erro: error instanceof Error ? error.message : 'falha desconhecida' });
       }
     }
+
+    await this.closeExpired();
 
     // Uma modalidade com problema não derruba as demais; só falha por inteiro se nada foi sincronizado.
     if (sincronizados === 0 && falhas.length > 0) {
@@ -150,7 +167,7 @@ export class LotteriesService {
           cutoffAt: nextCutoffAt,
           valorEstimadoPremio: nextEstimatedPrize,
           acumulado: Boolean(payload.acumulado),
-          status: 'aberto',
+          status: nextCutoffAt.getTime() > Date.now() ? 'aberto' : 'fechado',
           fonteSincronizacao: source,
         },
         update: {

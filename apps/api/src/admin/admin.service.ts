@@ -143,16 +143,27 @@ export class AdminService {
     };
   }
 
+  /**
+   * status=aberto: só concursos realmente abertos (prazo no futuro), do mais próximo ao mais distante.
+   * status=historico: tudo que já fechou/apurou ou passou do prazo, do mais recente ao mais antigo.
+   * Demais valores (ou vazio): filtro exato de status, do mais recente ao mais antigo.
+   */
   async listContests(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const dateRange = this.dateRange({ de: query.de, ate: query.ate });
+    const now = new Date();
+    const scope: Prisma.ConcursoWhereInput =
+      query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now } }
+      : query.status === 'historico' ? { OR: [{ status: { not: 'aberto' } }, { cutoffAt: { lte: now } }] }
+      : query.status ? { status: query.status } : {};
     const where: Prisma.ConcursoWhereInput = {
+      ...scope,
       ...(query.modalidade ? { modalidade: query.modalidade } : {}),
-      ...(query.status ? { status: query.status } : {}),
       ...(Object.keys(dateRange).length ? { dataSorteio: dateRange } : {}),
     };
+    const order: Prisma.SortOrder = query.status === 'aberto' ? 'asc' : 'desc';
     const [items, total] = await Promise.all([
-      this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: { dataSorteio: 'asc' }, skip, take }),
+      this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: [{ dataSorteio: order }, { modalidade: 'asc' }], skip, take }),
       this.prisma.concurso.count({ where }),
     ]);
     return { items, pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };

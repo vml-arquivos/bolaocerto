@@ -36,3 +36,9 @@ No admin, **Concursos → Testar conexão com a CAIXA** consulta as 9 modalidade
 ## Cuidado com fontes alternativas
 
 Fontes alternativas são serviços de terceiros que republicam os dados da CAIXA, e o resultado delas alimenta a apuração das cotas. Use apenas se aceitar esse risco, confira o resultado de concursos premiados no site oficial e prefira a fonte oficial sempre que possível.
+
+## Concursos vencidos nunca ficam "abertos"
+
+- O worker (a cada 5 minutos, mesmo com a CAIXA fora do ar) e o botão **Sincronizar agora** fecham todo concurso aberto cujo prazo (cutoff) já passou.
+- A migração `0008` fecha de uma vez os vencidos que já estavam no banco.
+- A vitrine pública e a lista **Concursos → Em aberto** mostram apenas concursos com prazo no futuro, do mais próximo ao mais distante. O restante fica em **Concursos → Histórico** (do mais recente ao mais antigo, paginado).

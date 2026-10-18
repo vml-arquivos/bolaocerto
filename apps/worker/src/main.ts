@@ -69,7 +69,18 @@ async function apurarConcurso(concursoId: string, numbers: number[], tiers: Caix
   }
 }
 
+/** Concursos cujo prazo (cutoff) já passou nunca ficam "abertos", mesmo que a CAIXA esteja fora do ar. */
+async function closeExpiredContests(): Promise<void> {
+  try {
+    const closed = await prisma.concurso.updateMany({ where: { status: 'aberto', cutoffAt: { lte: new Date() } }, data: { status: 'fechado' } });
+    if (closed.count > 0) console.log(JSON.stringify({ event: 'concursos.vencidos_fechados', total: closed.count }));
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'concursos.fechamento_falhou', error: error instanceof Error ? error.message : String(error) }));
+  }
+}
+
 async function syncOnce(): Promise<void> {
+  await closeExpiredContests();
   for (const modality of modalities) {
     try {
       const config = await prisma.configLoteria.findUnique({ where: { modalidade: modality } });
@@ -130,7 +141,7 @@ async function syncOnce(): Promise<void> {
             cutoffAt: nextCutoffAt,
             valorEstimadoPremio: nextEstimatedPrize,
             acumulado: Boolean(payload.acumulado),
-            status: 'aberto',
+            status: nextCutoffAt.getTime() > Date.now() ? 'aberto' : 'fechado',
             fonteSincronizacao: source,
           },
           update: {
@@ -155,6 +166,7 @@ async function syncOnce(): Promise<void> {
       }));
     }
   }
+  await closeExpiredContests();
 }
 
 console.log(JSON.stringify({ event: 'worker.iniciado', fontes: sources.map((source) => ({ tipo: source.kind, url: source.template })), timeoutMs, intervaloMs: intervalMs }));

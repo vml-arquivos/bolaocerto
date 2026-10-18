@@ -16,6 +16,7 @@ function build(env: Record<string, string> = {}) {
   };
   const prisma = {
     configLoteria: { findUnique: jest.fn(async () => ({ horarioCorteLocal: '19:00' })) },
+    concurso: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
   };
   const config = { get: (key: string, def?: string) => env[key] ?? def } as unknown as ConfigService;
@@ -78,5 +79,45 @@ describe('LotteriesService.sync (CAIXA)', () => {
     const quina = result.resultados.find((row) => row.modalidade === 'quina');
     expect(quina).toMatchObject({ ok: false });
     expect(quina?.dica).toMatch(/Azion/);
+  });
+});
+
+describe('LotteriesService — concursos vencidos', () => {
+  function withContestMock() {
+    const updateMany = jest.fn(async () => ({ count: 3 }));
+    const findMany = jest.fn(async () => []);
+    const prisma = { concurso: { updateMany, findMany }, configLoteria: { findUnique: jest.fn(async () => null) } };
+    const service = new LotteriesService(prisma as never, { get: () => undefined } as unknown as ConfigService);
+    return { service, updateMany, findMany };
+  }
+
+  it('closeExpired fecha só abertos com prazo vencido', async () => {
+    const { service, updateMany } = withContestMock();
+    expect(await service.closeExpired()).toBe(3);
+    const args = (updateMany.mock.calls[0] as unknown as [{ where: { status: string; cutoffAt: { lte: Date } }; data: { status: string } }])[0];
+    expect(args.where.status).toBe('aberto');
+    expect(args.where.cutoffAt.lte).toBeInstanceOf(Date);
+    expect(args.data).toEqual({ status: 'fechado' });
+  });
+
+  it('lista pública padrão só traz abertos com prazo no futuro; histórico vem do mais recente', async () => {
+    const { service, findMany } = withContestMock();
+    await service.list();
+    const open = (findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown>; orderBy: Array<Record<string, string>> }])[0];
+    expect(open.where).toMatchObject({ status: 'aberto' });
+    expect((open.where.cutoffAt as { gt: Date }).gt).toBeInstanceOf(Date);
+    expect(open.orderBy[0]).toEqual({ dataSorteio: 'asc' });
+    await service.list(undefined, 'apurado');
+    const history = (findMany.mock.calls[1] as unknown as [{ where: Record<string, unknown>; orderBy: Array<Record<string, string>> }])[0];
+    expect(history.where).toEqual({ status: 'apurado' });
+    expect(history.orderBy[0]).toEqual({ dataSorteio: 'desc' });
+  });
+
+  it('sincronizar fecha os vencidos mesmo quando a CAIXA falha', async () => {
+    jest.spyOn(globalThis, 'fetch').mockImplementation((async () => new Response('Azion', { status: 403 })) as never);
+    const { service, updateMany } = withContestMock();
+    (service as unknown as { prisma: { configLoteria: { findUnique: jest.Mock } } }).prisma.configLoteria.findUnique.mockResolvedValue({ horarioCorteLocal: '19:00' });
+    await expect(service.sync('megasena')).rejects.toThrow(ServiceUnavailableException);
+    expect(updateMany).toHaveBeenCalled();
   });
 });

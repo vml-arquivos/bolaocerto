@@ -126,6 +126,8 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   const [period, setPeriod] = useState('30d');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [contestScope, setContestScope] = useState<'aberto' | 'historico'>('aberto');
+  const [page, setPage] = useState(1);
   const [selectedCommissions, setSelectedCommissions] = useState<string[]>([]);
   const [editingPool, setEditingPool] = useState<RecordValue | null>(null);
 
@@ -134,9 +136,10 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     setToast(null);
     try {
       if (view === 'relatorios' || view === 'notas-fiscais') { setLoading(false); return; }
-      const query = new URLSearchParams({ page: '1', pageSize: '50' });
+      const query = new URLSearchParams({ page: String(view === 'concursos' ? page : 1), pageSize: view === 'concursos' ? '30' : '50' });
       if (search) query.set('busca', search);
-      if (statusFilter) query.set('status', statusFilter);
+      if (view === 'concursos') query.set('status', contestScope);
+      else if (statusFilter) query.set('status', statusFilter);
       if (view === 'visao-geral') query.set('periodo', period);
       const endpointView = view === 'participantes' ? 'cotas' : view === 'pagamentos' ? 'recebimentos' : view === 'jogos' ? 'boloes' : view === 'comprovantes' ? 'operacao' : view === 'rede' ? 'afiliados' : view;
       const endpoint = view === 'visao-geral' ? `/api/v1/admin/dashboard?${query.toString()}` : `/api/v1/admin/${endpointView}?${query.toString()}`;
@@ -144,7 +147,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
       if (view === 'visao-geral') setDashboard(result);
       else setPayload(result);
       if (view === 'visao-geral' || view === 'boloes') {
-        const [contestPayload, group] = await Promise.all([fetchAdmin('/api/v1/admin/concursos?page=1&pageSize=100'), fetch('/api/v1/grupos/bl-oficial').then((response) => response.ok ? response.json() : null)]);
+        const [contestPayload, group] = await Promise.all([fetchAdmin('/api/v1/admin/concursos?page=1&pageSize=100&status=aberto'), fetch('/api/v1/grupos/bl-oficial').then((response) => response.ok ? response.json() : null)]);
         setContests(contestPayload.items ?? []);
         setGroupId(group?.id ?? null);
       }
@@ -157,8 +160,9 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [period, search, statusFilter, view]);
+  }, [contestScope, page, period, search, statusFilter, view]);
 
+  useEffect(() => { setPage(1); }, [view, contestScope, statusFilter, search]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (!toast) return; const timeout = window.setTimeout(() => setToast(null), 5000); return () => window.clearTimeout(timeout); }, [toast]);
 
@@ -211,7 +215,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   }
 
   function ContestsView() {
-    return <><SectionHeading eyebrow="Operação" title="Concursos" description="Concursos sincronizados, prêmios estimados e bolões vinculados." action={<button className="admin-button admin-button-primary" onClick={syncContests} disabled={busy}>Sincronizar agora</button>} /><div style={{ marginBottom: 16 }}><CaixaDiagnosticsPanel /></div><div style={{ marginBottom: 16 }}><ManualContestForm onDone={load} notify={notify} /></div><Panel title="Concursos cadastrados" description={`${payload.pagination?.total ?? items.length} registros encontrados`}><Table minWidth={980}><thead><tr><th>Modalidade</th><th>Concurso</th><th>Sorteio</th><th>Prêmio estimado</th><th>Status</th><th>Bolões</th><th>Sincronizado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{modalityNames[item.modalidade] ?? item.modalidade}</strong></td><td>#{item.numeroConcurso}</td><td>{dateOnly(item.dataSorteio)}</td><td>{money(item.valorEstimadoPremio)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item._count?.boloes ?? 0}</td><td>{dateTime(item.sincronizadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum concurso encontrado" description="Sincronize a base da CAIXA ou ajuste os filtros." />}</Panel></>;
+    return <><SectionHeading eyebrow="Operação" title="Concursos" description="Concursos sincronizados, prêmios estimados e bolões vinculados." action={<button className="admin-button admin-button-primary" onClick={syncContests} disabled={busy}>Sincronizar agora</button>} /><div style={{ marginBottom: 16 }}><CaixaDiagnosticsPanel /></div><div style={{ marginBottom: 16 }}><ManualContestForm onDone={load} notify={notify} /></div><div className="report-tabs" role="tablist" aria-label="Escopo dos concursos"><button role="tab" aria-selected={contestScope === 'aberto'} className={`report-tab ${contestScope === 'aberto' ? 'is-current' : ''}`} onClick={() => setContestScope('aberto')}>Em aberto</button><button role="tab" aria-selected={contestScope === 'historico'} className={`report-tab ${contestScope === 'historico' ? 'is-current' : ''}`} onClick={() => setContestScope('historico')}>Histórico</button></div><Panel title={contestScope === 'aberto' ? 'Concursos em aberto' : 'Histórico de concursos'} description={`${payload.pagination?.total ?? items.length} registros — ${contestScope === 'aberto' ? 'apenas concursos com prazo de apostas no futuro, do mais próximo ao mais distante' : 'concursos encerrados, do mais recente ao mais antigo'}`}><Table minWidth={980}><thead><tr><th>Modalidade</th><th>Concurso</th><th>Sorteio</th><th>Prêmio estimado</th><th>Status</th><th>Bolões</th><th>Sincronizado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{modalityNames[item.modalidade] ?? item.modalidade}</strong></td><td>#{item.numeroConcurso}</td><td>{dateOnly(item.dataSorteio)}</td><td>{money(item.valorEstimadoPremio)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item._count?.boloes ?? 0}</td><td>{dateTime(item.sincronizadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum concurso encontrado" description={contestScope === 'aberto' ? 'Sincronize a base da CAIXA ou cadastre o concurso manualmente.' : 'Ainda não há concursos encerrados.'} />}{(payload.pagination?.pages ?? 1) > 1 && <div className="admin-heading-actions" style={{ justifyContent: 'space-between', marginTop: 14 }}><button className="admin-button admin-button-ghost" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>← Mais recentes</button><span style={{ opacity: .75, fontSize: 13 }}>Página {payload.pagination?.page} de {payload.pagination?.pages}</span><button className="admin-button admin-button-ghost" disabled={page >= (payload.pagination?.pages ?? 1)} onClick={() => setPage((current) => current + 1)}>Mais antigos →</button></div>}</Panel></>;
   }
 
   function PoolsView() {
@@ -312,7 +316,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     return <DashboardView />;
   }
 
-  return <AdminShell testMode={testMode}>{viewsWithTables.has(view) && <div className="admin-toolbar"><div className="admin-toolbar-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Buscar neste módulo…" aria-label="Buscar" /></div><div className="admin-toolbar-filters"><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">Todos os status</option><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="pendente">Pendente</option><option value="paga">Paga</option><option value="confirmado">Confirmado</option><option value="aprovado">Aprovado</option></select><button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button></div></div>}{toast && <div className={`admin-toast ${toast.type === 'error' ? 'admin-toast-error' : ''}`}>{toast.text}</div>}{loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando dados do centro de gestão…</p></div> : renderView()}</AdminShell>;
+  return <AdminShell testMode={testMode}>{viewsWithTables.has(view) && <div className="admin-toolbar"><div className="admin-toolbar-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Buscar neste módulo…" aria-label="Buscar" /></div><div className="admin-toolbar-filters">{view !== 'concursos' && <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">Todos os status</option><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="pendente">Pendente</option><option value="paga">Paga</option><option value="confirmado">Confirmado</option><option value="aprovado">Aprovado</option></select>}<button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button></div></div>}{toast && <div className={`admin-toast ${toast.type === 'error' ? 'admin-toast-error' : ''}`}>{toast.text}</div>}{loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando dados do centro de gestão…</p></div> : renderView()}</AdminShell>;
 }
 
 function PoolWizard({ contests, groupId, onSuccess }: { contests: RecordValue[]; groupId: string | null; onSuccess: () => Promise<void> | void }) {
