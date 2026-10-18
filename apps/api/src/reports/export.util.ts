@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 
 export type CellValue = string | number | boolean | Date | null | undefined;
 export type Row = Record<string, CellValue>;
-export interface Column { key: string; header: string; width?: number; type?: 'money' | 'date' | 'int' | 'text' }
+export interface Column { key: string; header: string; width?: number; type?: 'money' | 'date' | 'int' | 'text'; /** Soma a coluna na linha de totais do PDF. */ sum?: boolean }
 export interface Sheet { name: string; columns: Column[]; rows: Row[] }
 
 const brDate = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });

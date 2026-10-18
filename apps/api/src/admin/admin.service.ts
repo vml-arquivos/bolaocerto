@@ -1,3 +1,4 @@
+import { evaluateReleaseGate } from '../pools/release-gate';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -187,6 +188,8 @@ export class AdminService {
         valorCota: pool.valorCota.toFixed(2),
         taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
         cotas: undefined,
+        premioMinimoLiberacao: pool.premioMinimoLiberacao === null ? null : pool.premioMinimoLiberacao.toFixed(2),
+        liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso.valorEstimadoPremio }),
         indicadores: {
           jogos: pool.jogos.length || (pool.numerosApostados.length ? 1 : 0),
           reservadas: pool.cotas.filter((share) => share.status === StatusCota.reservada).reduce((sum, share) => sum + share.quantidade, 0),

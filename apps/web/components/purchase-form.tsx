@@ -1,20 +1,22 @@
 'use client';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
-import { money } from '../lib/domain';
+import { money, PoolRelease } from '../lib/domain';
+import { ReleaseMeter } from './release-meter';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito', pix_automatico: 'Pix Automático (recorrente)' };
 
-export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled }: { poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean }) {
+export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled, release }: { poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean; release?: PoolRelease }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
   const [created, setCreated] = useState<{ shareId: string; payment: PaymentView } | null>(null);
   const unlimited = available === null;
-  const enabled = status === 'aberto' && (unlimited || available > 0) && paymentsEnabled;
+  const locked = Boolean(release?.condicional && !release.liberado);
+  const enabled = status === 'aberto' && (unlimited || available > 0) && paymentsEnabled && !locked;
 
   useEffect(() => {
     if (!paymentsEnabled) return;
@@ -44,6 +46,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   }
 
   return <aside className="purchase-card"><span className="overline">Participar agora</span><p className="price">{money(unitPrice)}</p><p className="muted">por cota · {unlimited ? 'cotas ilimitadas' : `${available} disponíveis`}</p>
+    {release?.condicional && <ReleaseMeter release={release} />}
     {!paymentsEnabled ? <div className="notice payment-disabled"><strong>Reservas temporariamente indisponíveis</strong><span>As reservas deste bolão estão pausadas no momento. Tente novamente em alguns instantes.</span></div>
       : enabled ? <form onSubmit={submit}>
         <div className="field"><label htmlFor="quantidade">Quantidade de cotas</label><input id="quantidade" name="quantidade" type="number" min={1} {...(unlimited ? {} : { max: available ?? undefined })} defaultValue={1} required /></div>
@@ -52,7 +55,8 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
         {methods.length > 1 && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
         <label className="check-line"><input type="checkbox" required /><span>Li e aceito os <Link href="/termos" target="_blank"><u>termos de participação</u></Link>, confirmo ser maior de 18 anos e autorizo o registro.</span></label>
         <button className="button button-primary" disabled={loading}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : 'Reservar e gerar Pix'}</button>
-      </form> : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}
+      </form> : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
+        : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}
     {message && <div className={`form-message ${created ? 'form-success' : 'form-error'}`}>{message}</div>}
     {created && <><PaymentInstructions shareId={created.shareId} payment={created.payment} /><Link className="button button-secondary" href="/minha-conta">Ver Minhas Cotas</Link></>}
   </aside>;

@@ -19,11 +19,13 @@ const groups = [
       ['boloes', 'Bolões', 'BO'],
       ['jogos', 'Jogos / apostas', 'JG'],
       ['cotas', 'Cotas', 'CT'],
+      ['controle', 'Controle por bolão', 'CB'],
     ],
   },
   {
     label: 'Clientes',
     items: [
+      ['crm', 'CRM de apostadores', 'CR'],
       ['participantes', 'Participantes', 'PA'],
       ['grupos', 'Grupos', 'GR'],
     ],

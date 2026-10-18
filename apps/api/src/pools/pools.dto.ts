@@ -62,6 +62,13 @@ export class CreatePoolDto {
   @IsEnum(['mandato', 'loterica_parceira'])
   modeloOperacional!: 'mandato' | 'loterica_parceira';
 
+  /** Bolão condicional: cotas só são liberadas quando o prêmio estimado atingir este valor (R$). */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  @Max(100_000_000_000)
+  premioMinimoLiberacao?: number;
+
   @IsOptional()
   @IsUUID()
   lotericaParceiraId?: string;
@@ -100,4 +107,12 @@ export class UpdatePoolDto {
   @Min(0)
   @Max(35)
   taxaAdministracaoPct?: number;
+
+  /** Use null para remover a condição de liberação. */
+  @IsOptional()
+  @ValidateIf((_dto: UpdatePoolDto, value: unknown) => value !== null)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  @Max(100_000_000_000)
+  premioMinimoLiberacao?: number | null;
 }

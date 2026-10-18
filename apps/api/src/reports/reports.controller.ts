@@ -23,10 +23,15 @@ export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 
   @Get('resumo')
-  summary(@Query() query: ReportQueryDto) { return this.reports.summary(query); }
+  async summary(@Query() query: ReportQueryDto, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {
+    return respond(await this.reports.summary(query, admin), response);
+  }
 
   @Get('boloes')
-  pools(@Query() query: ReportQueryDto) { return this.reports.pools(query); }
+  async pools(@Query() query: ReportQueryDto, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {
+    const result = await this.reports.pools(query, admin);
+    return Array.isArray(result) ? result : respond(result, response);
+  }
 
   @Get('vendas')
   async sales(@Query() query: ReportQueryDto, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {

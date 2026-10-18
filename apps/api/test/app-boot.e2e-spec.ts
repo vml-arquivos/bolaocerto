@@ -62,6 +62,21 @@ describe('Inicialização completa da API (AppModule)', () => {
     await request(app.getHttpServer()).put('/api/v1/usuarios/me/endereco').send({}).expect(401);
   });
 
+  it('protege CRM, controle por bolão, liberação e recibo (401 sem login) e valida o PDF', async () => {
+    const id = '6f1c1b9e-8f0a-4a3e-9d1b-2f6f4f4d9a11';
+    for (const path of ['/api/v1/admin/crm/resumo', '/api/v1/admin/crm/apostadores', '/api/v1/admin/crm/apostadores?formato=csv', `/api/v1/admin/crm/apostadores/${id}`, '/api/v1/admin/relatorios/boloes?formato=pdf', `/api/v1/admin/relatorios/boloes/${id}?formato=pdf`, '/api/v1/admin/relatorios/vendas?formato=pdf', `/api/v1/cotas/${id}/recibo`, `/api/v1/cotas/${id}/recibo?formato=pdf`]) {
+      await request(app.getHttpServer()).get(path).expect(401);
+    }
+    for (const path of [`/api/v1/admin/crm/apostadores/${id}/notas`, `/api/v1/admin/boloes/${id}/liberar`]) await request(app.getHttpServer()).post(path).send({}).expect(401);
+    await request(app.getHttpServer()).patch(`/api/v1/admin/crm/apostadores/${id}`).send({}).expect(401);
+  });
+
+  it('verificação pública do recibo não exige login e nunca confirma código inválido', async () => {
+    const { body } = await request(app.getHttpServer()).get('/api/v1/recibos/6f1c1b9e-8f0a-4a3e-9d1b-2f6f4f4d9a11/verificar?codigo=0000-0000-0000-0000').expect(200);
+    expect(body).toEqual({ valido: false });
+    await request(app.getHttpServer()).get('/api/v1/recibos/nao-e-uuid/verificar').expect(400);
+  });
+
   it('webhook da Cora exige o token configurado', async () => {
     await request(app.getHttpServer()).post('/api/v1/webhooks/pagamento/cora').set('webhook-resource-id', 'inv_x').set('webhook-event-type', 'invoice.paid').expect(401);
     await request(app.getHttpServer()).post('/api/v1/webhooks/pagamento/cora?token=segredo-webhook').expect(201).expect(({ body }) => expect(body).toEqual({ ignorado: true }));

@@ -97,13 +97,14 @@ export function ReportsView() {
   }, [tab, query]);
   useEffect(() => { void load(); }, [load]);
 
-  async function exportFile(path: string, format: 'csv' | 'xlsx', key: string) {
+  async function exportFile(path: string, format: 'csv' | 'xlsx' | 'pdf', key: string) {
     setExporting(`${key}-${format}`); setError('');
     try { await download(`${path}${path.includes('?') ? '&' : '?'}${query({ formato: format })}`); }
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Falha ao exportar.'); }
     finally { setExporting(''); }
   }
   const ExportButtons = ({ path, id }: { path: string; id: string }) => <div className="admin-row-actions">
+    <button className="admin-button admin-button-small admin-button-secondary" disabled={Boolean(exporting)} onClick={() => void exportFile(path, 'pdf', id)}>{exporting === `${id}-pdf` ? 'Gerando…' : 'PDF'}</button>
     <button className="admin-button admin-button-small" disabled={Boolean(exporting)} onClick={() => void exportFile(path, 'xlsx', id)}>{exporting === `${id}-xlsx` ? 'Gerando…' : 'Baixar planilha (XLSX)'}</button>
     <button className="admin-button admin-button-small admin-button-ghost" disabled={Boolean(exporting)} onClick={() => void exportFile(path, 'csv', id)}>{exporting === `${id}-csv` ? 'Gerando…' : 'CSV'}</button>
   </div>;
@@ -124,6 +125,7 @@ export function ReportsView() {
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
 
     {!loading && summary && <>
+      <Panel title="Resumo executivo" description="Receita, o que fica com a plataforma, comissões e valores a receber. Baixe o resumo para prestar contas." action={<ExportButtons path="/api/v1/admin/relatorios/resumo" id="resumo" />}><p className="muted" style={{ margin: 0 }}>Use o filtro de datas acima para escolher o período do relatório.</p></Panel>
       {Number(summary.pagamentosSemCotaParaEstorno) > 0 && <div className="admin-toast admin-toast-error" role="alert"><strong>{summary.pagamentosSemCotaParaEstorno} pagamento(s) recebido(s) sem cota</strong> (reserva expirou e o bolão lotou). Devolva o valor ao participante e registre o estorno em “Quem não pagou”.</div>}
       <div className="admin-kpi-grid">
         <Kpi label="Receita bruta" value={brl(summary.receitaBruta)} hint={`${summary.pagamentosConfirmados} pagamentos confirmados`} tone="green" />
@@ -171,7 +173,7 @@ export function ReportsView() {
       {!rows.length && <Empty text="Nenhuma nota fiscal no período" />}
     </Panel>}
 
-    {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" description="Baixe a ficha completa de cada bolão: participantes, pagamentos, jogos e totais.">
+    {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" description="Baixe a ficha completa de cada bolão (participantes, pagamentos, jogos e totais) ou o quadro geral de todos os bolões. Para ver quem comprou e quem pagou na tela, use Loterias → Controle por bolão." action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
       <Table minWidth={1100}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Status</th><th>Cotas pagas</th><th>Aguardando</th><th>Canceladas</th><th>Receita</th><th>Ficha</th></tr></thead><tbody>{list.map((pool) => <tr key={pool.id}><td><strong>{label(pool.modalidade)} #{pool.concurso}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td>{dateTime(pool.sorteio)}</td><td><span className="status-chip">{label(pool.status)}</span></td><td>{pool.cotasPagas}{pool.totalCotas ? ` / ${pool.totalCotas}` : ' (ilimitadas)'}</td><td>{pool.cotasAguardando}</td><td>{pool.cotasCanceladas}</td><td>{brl(pool.receita)}</td><td><ExportButtons path={`/api/v1/admin/relatorios/boloes/${pool.id}`} id={pool.id} /></td></tr>)}</tbody></Table>
       {!list.length && <Empty text="Nenhum bolão no período" />}
     </Panel>}

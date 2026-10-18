@@ -68,4 +68,27 @@ describe('SharesService stock safety', () => {
     expect(results).toHaveLength(2);
     expect(pool.cotasVendidas).toBe(2);
   });
+  it('bloqueia reservas de bolão condicional até o prêmio atingir o gatilho e libera depois', async () => {
+    const pool: any = { id: 'pool-cond', concursoId: 'c1', status: 'aberto', cotasVendidas: 0, totalCotas: 10, cotasIlimitadas: false, premioMinimoLiberacao: '100000000.00', liberadoEm: null };
+    let estimate: string | null = '80000000.00';
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      bolao: {
+        findUnique: jest.fn().mockImplementation(async () => pool),
+        update: jest.fn().mockImplementation(async ({ data }: any) => { if (data.liberadoEm) pool.liberadoEm = data.liberadoEm; if (data.cotasVendidas) pool.cotasVendidas += data.cotasVendidas.increment; return pool; }),
+      },
+      concurso: { findUnique: jest.fn().mockImplementation(async () => ({ valorEstimadoPremio: estimate })) },
+      cota: { create: jest.fn().mockResolvedValue({ id: 'share-c', bolaoId: 'pool-cond', status: 'reservada', quantidade: 1, expiraReservaEm: new Date() }) },
+    };
+    const prisma = { afiliado: { findFirst: jest.fn() }, $transaction: serializedTransaction(tx) };
+    const service = new SharesService(prisma as any, { record: jest.fn() } as any);
+    const dto = { bolaoId: 'pool-cond', titularCpf: '52998224725', titularNome: 'Pessoa', quantidade: 1, termoMandatoHash: 'hash' };
+    await expect(service.reserve(dto as any, { id: 'u1', papel: 'cotista' } as any, { ip: '1' })).rejects.toThrow(/ainda não liberadas/);
+    expect(tx.cota.create).not.toHaveBeenCalled();
+    estimate = '100000000.00';
+    await expect(service.reserve(dto as any, { id: 'u1', papel: 'cotista' } as any, { ip: '1' })).resolves.toMatchObject({ id: 'share-c' });
+    expect(pool.liberadoEm).toBeInstanceOf(Date);
+    estimate = '70000000.00'; // oscilou para baixo: continua liberado
+    await expect(service.reserve(dto as any, { id: 'u2', papel: 'cotista' } as any, { ip: '2' })).resolves.toMatchObject({ id: 'share-c' });
+  });
 });

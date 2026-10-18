@@ -1,8 +1,10 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
+import { Prisma, StatusBolao, StatusCota, StatusPagamento } from '@prisma/client';
 import { AuthUser, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
+import { evaluateReleaseGate } from '../pools/release-gate';
+import { buildReceiptData, buildReceiptPdf, MODALITY_NAMES, receiptCode, receiptCodeMatches, ReceiptData } from './receipt';
 import { ReserveShareDto } from './shares.dto';
 
 @Injectable()
@@ -26,6 +28,15 @@ export class SharesService {
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
       if (pool.status !== StatusBolao.aberto || (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas))) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');
+      if (pool.premioMinimoLiberacao !== null && pool.premioMinimoLiberacao !== undefined) {
+        const contest = await tx.concurso.findUnique({ where: { id: pool.concursoId }, select: { valorEstimadoPremio: true } });
+        const gate = evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: contest?.valorEstimadoPremio });
+        if (!gate.liberado) throw new ConflictException(gate.mensagem ?? 'As cotas deste bolão ainda não foram liberadas.');
+        if (!pool.liberadoEm) {
+          await tx.bolao.update({ where: { id: pool.id }, data: { liberadoEm: new Date() } });
+          await this.audit.record(tx, { entidade: 'bolao', entidadeId: pool.id, evento: 'bolao.liberado_por_premio', payloadDepois: { gatilho: gate.gatilho, premioAtual: gate.premioAtual } });
+        }
+      }
       const share = await tx.cota.create({
         data: {
           bolaoId: pool.id,
@@ -89,6 +100,42 @@ export class SharesService {
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.compradorId !== user.id && !['admin', 'operacao'].includes(user.papel)) throw new ForbiddenException('A cota não pertence ao usuário autenticado.');
     return this.toPrivate(share, true);
+  }
+
+  /** Recibo completo (valores, comissão, parte da plataforma). Só existe depois da confirmação do pagamento. */
+  async getReceipt(id: string, user: AuthUser): Promise<ReceiptData> {
+    const share = await this.prisma.cota.findUnique({
+      where: { id },
+      include: { comprador: { select: { email: true } }, pagamento: { include: { notaFiscal: true } }, comissao: true, afiliadoReferencia: { select: { codigoAfiliado: true } }, mandato: true, bolao: { include: { concurso: true, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
+    });
+    if (!share) throw new NotFoundException('Cota não encontrada.');
+    if (share.compradorId !== user.id && !['admin', 'operacao'].includes(user.papel)) throw new ForbiddenException('A cota não pertence ao usuário autenticado.');
+    if (!share.pagamento || share.pagamento.status !== StatusPagamento.confirmado) throw new ConflictException('O recibo fica disponível assim que o pagamento for confirmado.');
+    return buildReceiptData(share as never);
+  }
+
+  async getReceiptPdf(id: string, user: AuthUser): Promise<{ filename: string; buffer: Buffer }> {
+    const data = await this.getReceipt(id, user);
+    const site = (process.env.WEB_ORIGIN ?? process.env.PUBLIC_API_URL ?? '').split(',')[0]!.trim().replace(/\/$/, '');
+    const verifyUrl = site.startsWith('http') && !site.includes('localhost') ? `${site}/verificar-recibo?cota=${id}&codigo=${data.codigoVerificacao}` : null;
+    return { filename: `recibo-${data.numero}.pdf`, buffer: await buildReceiptPdf(data, verifyUrl) };
+  }
+
+  /** Verificação pública de autenticidade: não expõe dados pessoais além do primeiro nome. */
+  async verifyReceipt(id: string, code: string) {
+    const share = await this.prisma.cota.findUnique({ where: { id }, include: { pagamento: true, bolao: { include: { concurso: true } } } }).catch(() => null);
+    if (!share?.pagamento || share.pagamento.status !== StatusPagamento.confirmado) return { valido: false };
+    const expected = receiptCode(share.id, share.pagamento.id, share.pagamento.valorBruto.toString());
+    if (!receiptCodeMatches(expected, code ?? '')) return { valido: false };
+    return {
+      valido: true,
+      numero: `BL-${share.id.slice(0, 8).toUpperCase()}`,
+      titular: `${share.titularNome.trim().split(/\s+/)[0]} ***`,
+      bolao: `${MODALITY_NAMES[share.bolao.concurso.modalidade] ?? share.bolao.concurso.modalidade} · concurso ${share.bolao.concurso.numeroConcurso}`,
+      cotas: share.quantidade,
+      valorPago: share.pagamento.valorBruto.toFixed(2),
+      confirmadoEm: share.pagamento.confirmadoEm,
+    };
   }
 
   async getPrize(id: string, user: AuthUser) {

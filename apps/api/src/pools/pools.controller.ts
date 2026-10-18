@@ -67,6 +67,13 @@ export class PoolsController {
     return this.pools.publish(id, user);
   }
 
+  @Post('admin/boloes/:id/liberar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  release(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.release(id, user);
+  }
+
   @Post('afiliados/me/boloes/:id/fechar')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('afiliado')

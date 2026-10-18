@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { modalityNames, money, shortDate } from '../lib/domain';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
+import { ReceiptPanel } from './receipt-panel';
 
 type User = { id: string; nome: string; email: string; papel: string; statusKyc: string };
 type Share = {
@@ -28,7 +29,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
   const expired = share.status === 'reservada' && share.expiraReservaEm ? new Date(share.expiraReservaEm) < new Date() : false;
   const pending = share.status === 'reservada' && !expired && share.pagamento && share.pagamento.status === 'pendente';
   const title = share.bolao ? `${modalityNames[share.bolao.modalidade] ?? share.bolao.modalidade} · concurso ${share.bolao.numeroConcurso}` : `Bolão ${share.bolaoId.slice(0, 8)}`;
-  return <div className="share-item" style={{ display: 'grid', gap: 12 }}>
+  return <div className="share-item share-stack" style={{ display: 'grid', gap: 12 }}>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between', alignItems: 'flex-start' }}>
       <div><strong>{title}</strong><small style={{ display: 'block' }}>{share.bolao ? `Sorteio: ${shortDate(share.bolao.dataSorteio)} · ${share.bolao.grupo}` : ''}</small><small>Titular: {share.titularNome} · cota {share.id.slice(0, 8)}</small></div>
       <div><small>Quantidade</small><strong style={{ display: 'block' }}>{share.quantidade}</strong></div>
@@ -37,6 +38,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
     </div>
     {share.bolao && share.bolao.jogos.length > 0 && <details><summary>Ver jogos ({share.bolao.jogos.length})</summary><ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'grid', gap: 4 }}>{share.bolao.jogos.map((game) => <li key={game.ordem}><small>Jogo {game.ordem}:</small> <code>{game.numeros.map((n) => String(n).padStart(2, '0')).join(' ')}</code></li>)}</ul></details>}
     {share.pagamento?.notaFiscal && <small className="muted">Nota fiscal de serviço: {NOTE_TEXT[share.pagamento.notaFiscal.status] ?? share.pagamento.notaFiscal.status}{share.pagamento.notaFiscal.numero ? ` · nº ${share.pagamento.notaFiscal.numero}` : ''} {share.pagamento.notaFiscal.pdfUrl && <a className="text-link" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar PDF</a>}</small>}
+    {share.pagamento?.status === 'confirmado' && <ReceiptPanel shareId={share.id} />}
     {share.status === 'premiada' && <div className="form-message form-success">Cota premiada{share.faixaPremio ? ` (${share.faixaPremio})` : ''}: {money(share.valorPremio)}. Resgate com o comprovante individual vinculado ao seu CPF.</div>}
     {pending && share.pagamento && <div>
       <button type="button" className="button button-secondary" onClick={() => setShowPayment((value) => !value)}>{showPayment ? 'Ocultar pagamento' : share.pagamento.metodo === 'boleto' ? 'Ver boleto / Pix' : 'Pagar com Pix'}</button>

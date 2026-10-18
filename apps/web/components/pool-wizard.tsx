@@ -69,6 +69,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [taxa, setTaxa] = useState('10');
   const [custo, setCusto] = useState('0');
   const [description, setDescription] = useState('');
+  const [conditional, setConditional] = useState(false);
+  const [trigger, setTrigger] = useState('100000000');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -84,6 +86,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setTaxa('10');
       setCusto('0');
       setDescription('');
+      setConditional(false);
+      setTrigger('100000000');
       return;
     }
     const existingModality = String(editPool.concurso?.modalidade ?? editPool.modalidade ?? 'megasena');
@@ -98,6 +102,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setTaxa(String(editPool.taxaAdministracaoPct ?? '10'));
     setCusto(String(editPool.jogos?.[0]?.custo ?? '0'));
     setDescription(String(editPool.grupo?.descricao ?? ''));
+    setConditional(Boolean(editPool.liberacao?.condicional));
+    setTrigger(editPool.liberacao?.gatilho ? String(editPool.liberacao.gatilho) : '100000000');
     setMessage('');
   }, [editPool, groupId]);
 
@@ -121,6 +127,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setTaxa('10');
     setCusto('0');
     setDescription('');
+    setConditional(false);
+    setTrigger('100000000');
     setMessage('');
   }
 
@@ -144,6 +152,11 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       return;
     }
 
+    if (conditional && !(Number(trigger) > 0)) {
+      setMessage('Informe o valor de prêmio que libera as cotas (ex.: 100000000 para R$ 100 milhões).');
+      return;
+    }
+
     setSaving(true);
     try {
       const body = {
@@ -153,6 +166,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         ...(unlimited ? { cotasIlimitadas: true, totalCotas: undefined } : { cotasIlimitadas: false, totalCotas: Number(totalCotas) }),
         valorCota: Number(valorCota),
         taxaAdministracaoPct: Number(taxa),
+        ...(conditional ? { premioMinimoLiberacao: Number(trigger) } : editing && editPool?.liberacao?.condicional ? { premioMinimoLiberacao: null } : {}),
         ...(description.trim() ? { descricao: description.trim() } : {}),
         ...(editing ? {} : { modeloOperacional: 'mandato' }),
       };
@@ -187,6 +201,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       <label className="admin-field"><span>Custo do jogo (R$)</span><input type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>
     <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. A receita será apurada conforme as vendas.</small></span></label>
+    <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
+    {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
     <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? `#${selectedContest.numeroConcurso}` : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
     <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>

@@ -10,6 +10,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
 import { AdminModule } from './admin/admin.module';
+import { CrmModule } from './crm/crm.module';
 import { OperationModule } from './operation/operation.module';
 import { HealthController } from './health.controller';
 
@@ -26,6 +27,7 @@ import { HealthController } from './health.controller';
     FiscalModule,
     ReportsModule,
     AdminModule,
+    CrmModule,
     OperationModule,
   ],
   controllers: [HealthController],

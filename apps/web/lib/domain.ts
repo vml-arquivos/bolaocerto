@@ -3,10 +3,13 @@ export type PublicContest = {
   valorEstimadoPremio: string | number | null; acumulado: boolean;
 };
 
+export type PoolRelease = { condicional: boolean; liberado: boolean; gatilho: number | null; premioAtual: number | null; faltam: number | null; progressoPct: number | null; mensagem: string | null };
+
 export type PublicPool = {
   id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number | null;
   cotasIlimitadas: boolean; cotasVendidas?: number; cotasDisponiveis: number | null; valorCota: string; taxaAdministracaoPct: string; modeloOperacional: string;
   status: string; teveGanhador: boolean; concurso?: Omit<PublicContest, 'id'>;
+  liberacao?: PoolRelease;
   grupo?: { nome: string; slug: string; descricao: string | null };
 };
 

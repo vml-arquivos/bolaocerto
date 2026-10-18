@@ -125,6 +125,9 @@ model Usuario {
   convitesUsados        Convite[]    @relation("usuario_convite_usado")
   repassesCriados       RepasseLote[] @relation("criador_repasse")
   comissoesPagas        Comissao[]   @relation("pagador_comissao")
+  crmPerfil             CrmPerfil?
+  crmNotas              CrmNota[]    @relation("crm_nota_usuario")
+  crmNotasEscritas      CrmNota[]    @relation("crm_nota_autor")
 
   @@map("usuarios")
 }
@@ -286,6 +289,8 @@ model Bolao {
   comprovanteUrl        String?             @map("comprovante_url")
   registradoEm          DateTime?           @map("registrado_em")
   teveGanhador          Boolean             @default(false) @map("teve_ganhador")
+  premioMinimoLiberacao Decimal?            @map("premio_minimo_liberacao") @db.Decimal(16,2)
+  liberadoEm            DateTime?           @map("liberado_em")
   editadoPor            String?             @map("editado_por") @db.Uuid
   editadoEm             DateTime?           @map("editado_em")
   criadoEm              DateTime            @default(now()) @map("criado_em")
@@ -489,4 +494,30 @@ model AuditoriaEvento {
 
   @@index([entidade, entidadeId])
   @@map("auditoria_eventos")
+}
+
+/// CRM: etiquetas e acompanhamento comercial de cada apostador.
+model CrmPerfil {
+  usuarioId        String    @id @map("usuario_id") @db.Uuid
+  etiquetas        String[]  @default([])
+  proximoContatoEm DateTime? @map("proximo_contato_em")
+  atualizadoEm     DateTime  @default(now()) @updatedAt @map("atualizado_em")
+  usuario          Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([proximoContatoEm])
+  @@map("crm_perfis")
+}
+
+/// CRM: notas internas sobre o apostador (histórico de contato).
+model CrmNota {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId String   @map("usuario_id") @db.Uuid
+  autorId   String   @map("autor_id") @db.Uuid
+  texto     String
+  criadoEm  DateTime @default(now()) @map("criado_em")
+  usuario   Usuario  @relation("crm_nota_usuario", fields: [usuarioId], references: [id], onDelete: Cascade)
+  autor     Usuario  @relation("crm_nota_autor", fields: [autorId], references: [id])
+
+  @@index([usuarioId, criadoEm])
+  @@map("crm_notas")
 }

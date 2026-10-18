@@ -4,8 +4,15 @@ import { AuthUser } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { endOfBrazilDay, round2 } from '../common/brazil-time';
 import { PrismaService } from '../common/prisma.service';
-import { buildCsv, buildXlsx, Column, formatCpf, maskCpf, Row, Sheet } from './export.util';
+import { evaluateReleaseGate } from '../pools/release-gate';
+import { buildCsv, buildXlsx, Column, formatCpf, formatDateBr, maskCpf, Row, Sheet } from './export.util';
+import { brl, buildPdfReport, PdfKpi, PdfSection } from './pdf.util';
 import { ReportQueryDto } from './reports.dto';
+
+/** Conteúdo do PDF: títulos, indicadores e tabelas (colunas escolhidas para caber na página). */
+export interface PdfSpec { title: string; subtitle?: string; kpis?: PdfKpi[]; sections: PdfSection[] }
+const NAMES: Record<string, string> = { pix: 'Pix', boleto: 'Boleto', cartao: 'Cartão', pix_automatico: 'Pix Automático', manual: 'Manual' };
+const pick = (columns: Column[], keys: string[], sums: string[] = []): Column[] => keys.map((key) => { const column = columns.find((item) => item.key === key); if (!column) throw new Error(`coluna ${key} inexistente`); return sums.includes(key) ? { ...column, sum: true } : column; });
 
 export interface ReportFile { filename: string; contentType: string; buffer: Buffer }
 const PAID_STATUSES: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
@@ -100,12 +107,17 @@ export class ReportsService {
     };
   }
 
-  private async deliver(admin: AuthUser, tipo: string, query: ReportQueryDto, base: string, sheets: Sheet[]): Promise<ReportFile | { json: true }> {
+  private async deliver(admin: AuthUser, tipo: string, query: ReportQueryDto, base: string, sheets: Sheet[], pdf?: PdfSpec): Promise<ReportFile | { json: true }> {
     const format = query.formato ?? 'json';
     if (format === 'json') return { json: true };
     const stamp = new Date().toISOString().slice(0, 10);
     const total = sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0);
     await this.audit.record(this.prisma, { entidade: 'relatorio', entidadeId: admin.id, evento: 'relatorio.exportado', atorId: admin.id, payloadDepois: { tipo, formato: format, filtros: { ...query }, linhas: total } as unknown as Prisma.InputJsonValue });
+    if (format === 'pdf') {
+      const spec: PdfSpec = pdf ?? { title: base, sections: sheets.map((sheet) => ({ title: sheet.name, columns: sheet.columns.slice(0, 10), rows: sheet.rows })) };
+      const filters = this.describeFilters(query);
+      return { filename: `${base}-${stamp}.pdf`, contentType: 'application/pdf', buffer: await buildPdfReport({ ...spec, filters, generatedBy: admin.email ?? admin.id }) };
+    }
     if (format === 'csv') {
       const main = sheets[0] as Sheet;
       return { filename: `${base}-${stamp}.csv`, contentType: 'text/csv; charset=utf-8', buffer: buildCsv(main.columns, main.rows) };
@@ -113,8 +125,26 @@ export class ReportsService {
     return { filename: `${base}-${stamp}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: await buildXlsx(sheets, base) };
   }
 
+  private limit(query: ReportQueryDto): number {
+    return query.formato === 'csv' || query.formato === 'xlsx' ? 20000 : query.formato === 'pdf' ? 3000 : 500;
+  }
+
+  private describeFilters(query: ReportQueryDto): string[] {
+    const out: string[] = [];
+    const brDate = (value: string) => value.split('-').reverse().join('/');
+    if (query.de || query.ate) out.push(`Período: ${query.de ? brDate(query.de) : 'início'} a ${query.ate ? brDate(query.ate) : 'hoje'}`);
+    if (query.status) out.push(`Cota: ${query.status}`);
+    if (query.statusPagamento) out.push(`Pagamento: ${query.statusPagamento.replace('_', ' ')}`);
+    if (query.metodo) out.push(`Forma: ${NAMES[query.metodo] ?? query.metodo}`);
+    if (query.origem) out.push(`Origem: ${query.origem}`);
+    if (query.statusNota) out.push(`Nota: ${query.statusNota}`);
+    if (query.bolaoId) out.push(`Bolão: ${query.bolaoId.slice(0, 8)}`);
+    if (query.afiliadoId) out.push(`Afiliado: ${query.afiliadoId.slice(0, 8)}`);
+    return out;
+  }
+
   /** Resumo executivo: receita, taxa, comissões, inadimplência e pendências. */
-  async summary(query: ReportQueryDto) {
+  async summary(query: ReportQueryDto, admin?: AuthUser) {
     const range = this.range(query);
     const paymentWhere: Prisma.PagamentoWhereInput = { status: StatusPagamento.confirmado, ...(range ? { confirmadoEm: range } : {}) };
     const [totals, byMethod, sharesByStatus, commissions, orphans, waiting] = await Promise.all([
@@ -132,7 +162,7 @@ export class ReportsService {
     const gross = Number(totals._sum.valorBruto ?? 0);
     const fees = Number(totals._sum.valorTaxaAdmin ?? 0);
     const commissionTotal = (commissionMap[StatusComissao.pendente] ?? 0) + (commissionMap[StatusComissao.paga] ?? 0);
-    return {
+    const result = {
       periodo: { de: query.de ?? null, ate: query.ate ?? null },
       receitaBruta: round2(gross),
       custoJogos: round2(Number(totals._sum.valorCustoBilhete ?? 0)),
@@ -146,26 +176,122 @@ export class ReportsService {
       porMetodo: byMethod.map((row) => ({ metodo: row.metodo, pagamentos: row._count, valor: round2(Number(row._sum.valorBruto ?? 0)) })),
       cotasPorStatus: sharesByStatus.map((row) => ({ status: row.status, registros: row._count, cotas: row._sum.quantidade ?? 0 })),
     };
+    if (!admin || !query.formato || query.formato === 'json') return result;
+    const indicators: Row[] = [
+      { indicador: 'Receita bruta (pagamentos confirmados)', valor: result.receitaBruta },
+      { indicador: 'Custo dos jogos (vai para a CAIXA)', valor: result.custoJogos },
+      { indicador: 'Taxa de administração (receita da plataforma)', valor: result.taxaAdministracao },
+      { indicador: 'Comissões de afiliados (a pagar)', valor: result.comissoes.pendente },
+      { indicador: 'Comissões de afiliados (pagas)', valor: result.comissoes.paga },
+      { indicador: 'Resultado líquido da plataforma', valor: result.resultadoLiquidoPlataforma },
+      { indicador: 'Pagamentos confirmados', valor: result.pagamentosConfirmados },
+      { indicador: 'Ticket médio', valor: result.ticketMedio },
+      { indicador: 'A receber (reservas dentro do prazo)', valor: result.aReceber.valorAguardando },
+      { indicador: 'Vencido (reservas expiradas)', valor: result.aReceber.valorVencido },
+      { indicador: 'Pagamentos sem cota (estornar)', valor: result.pagamentosSemCotaParaEstorno },
+    ];
+    const indicatorColumns: Column[] = [{ key: 'indicador', header: 'Indicador', width: 50 }, { key: 'valor', header: 'Valor', type: 'text', width: 22 }];
+    const display: Row[] = indicators.map((row, index) => ({ indicador: row.indicador, valor: index === 6 || index === 10 ? String(row.valor) : brl(Number(row.valor)) }));
+    const methodRows: Row[] = result.porMetodo.map((row) => ({ metodo: NAMES[row.metodo] ?? row.metodo, pagamentos: row.pagamentos, valor: row.valor }));
+    const methodColumns: Column[] = [{ key: 'metodo', header: 'Forma de pagamento', width: 30 }, { key: 'pagamentos', header: 'Pagamentos', type: 'int', sum: true }, { key: 'valor', header: 'Valor', type: 'money', sum: true }];
+    const statusRows: Row[] = result.cotasPorStatus.map((row) => ({ status: row.status, registros: row.registros, cotas: row.cotas }));
+    const statusColumns: Column[] = [{ key: 'status', header: 'Situação da cota', width: 30 }, { key: 'registros', header: 'Reservas/vendas', type: 'int', sum: true }, { key: 'cotas', header: 'Cotas', type: 'int', sum: true }];
+    const pdf: PdfSpec = {
+      title: 'Resumo executivo',
+      subtitle: 'Receita, o que fica com a plataforma, comissões, valores a receber e pendências do período.',
+      kpis: [
+        { label: 'Receita bruta', value: brl(result.receitaBruta), hint: `${result.pagamentosConfirmados} pagamentos` },
+        { label: 'Custo dos jogos', value: brl(result.custoJogos) },
+        { label: 'Taxa de administração', value: brl(result.taxaAdministracao) },
+        { label: 'Comissões', value: brl(result.comissoes.total) },
+        { label: 'Resultado da plataforma', value: brl(result.resultadoLiquidoPlataforma) },
+      ],
+      sections: [
+        { title: 'Indicadores', columns: indicatorColumns, rows: display },
+        { title: 'Por forma de pagamento', columns: methodColumns, rows: methodRows },
+        { title: 'Cotas por situação', columns: statusColumns, rows: statusRows },
+      ],
+    };
+    return this.deliver(admin, 'resumo', query, 'resumo-bolao-livre', [
+      { name: 'Indicadores', columns: [{ key: 'indicador', header: 'Indicador', width: 50 }, { key: 'valor', header: 'Valor', type: 'text', width: 22 }], rows: indicators.map((row) => ({ indicador: row.indicador, valor: typeof row.valor === 'number' ? row.valor : String(row.valor) })) },
+      { name: 'Por forma', columns: methodColumns, rows: methodRows },
+      { name: 'Cotas por situação', columns: statusColumns, rows: statusRows },
+    ], pdf);
+
   }
 
-  /** Visão por bolão: vendidas, pagas, pendentes, receita. */
-  async pools(query: ReportQueryDto) {
+  /** Controle de cotas por bolão: vendidas, pagas, aguardando, livres, participantes e receita. */
+  async pools(query: ReportQueryDto, admin?: AuthUser): Promise<Row[] | ReportFile | { json: true }> {
     const range = this.range(query);
-    const pools = await this.prisma.bolao.findMany({ where: { ...(range ? { criadoEm: range } : {}) }, include: { concurso: true, grupo: { select: { nome: true } } }, orderBy: { criadoEm: 'desc' }, take: 300 });
-    const grouped = await this.prisma.cota.groupBy({ by: ['bolaoId', 'status'], where: { bolaoId: { in: pools.map((pool) => pool.id) } }, _sum: { quantidade: true, valorPago: true } });
-    return pools.map((pool) => {
-      const rows = grouped.filter((row) => row.bolaoId === pool.id);
-      const qty = (statuses: StatusCota[]) => rows.filter((row) => statuses.includes(row.status)).reduce((sum, row) => sum + (row._sum.quantidade ?? 0), 0);
-      const paidValue = rows.filter((row) => PAID_STATUSES.includes(row.status)).reduce((sum, row) => sum + Number(row._sum.valorPago ?? 0), 0);
-      return { id: pool.id, status: pool.status, modalidade: pool.concurso.modalidade, concurso: pool.concurso.numeroConcurso, sorteio: pool.concurso.dataSorteio, grupo: pool.grupo.nome, valorCota: Number(pool.valorCota), totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, cotasPagas: qty(PAID_STATUSES), cotasAguardando: qty([StatusCota.reservada]), cotasCanceladas: qty([StatusCota.cancelada, StatusCota.estornada]), receita: round2(paidValue) };
+    const pools = await this.prisma.bolao.findMany({ where: { ...(range ? { criadoEm: range } : {}) }, include: { concurso: true, grupo: { select: { nome: true } } }, orderBy: { criadoEm: 'desc' }, take: this.limit(query) > 500 ? 3000 : 300 });
+    const ids = pools.map((pool) => pool.id);
+    const grouped = await this.prisma.cota.groupBy({ by: ['bolaoId', 'status'], where: { bolaoId: { in: ids } }, _sum: { quantidade: true, valorPago: true } });
+    const buyers = await this.prisma.cota.findMany({ where: { bolaoId: { in: ids }, status: { in: PAID_STATUSES } }, select: { bolaoId: true, compradorId: true } });
+    const buyersByPool = new Map<string, Set<string>>();
+    for (const buyer of buyers) buyersByPool.set(buyer.bolaoId, (buyersByPool.get(buyer.bolaoId) ?? new Set()).add(buyer.compradorId));
+    const rows: Row[] = pools.map((pool) => {
+      const own = grouped.filter((row) => row.bolaoId === pool.id);
+      const qty = (statuses: StatusCota[]) => own.filter((row) => statuses.includes(row.status)).reduce((sum, row) => sum + (row._sum.quantidade ?? 0), 0);
+      const paidValue = own.filter((row) => PAID_STATUSES.includes(row.status)).reduce((sum, row) => sum + Number(row._sum.valorPago ?? 0), 0);
+      const paid = qty(PAID_STATUSES);
+      const waiting = qty([StatusCota.reservada]);
+      const unlimited = pool.cotasIlimitadas || pool.totalCotas === null;
+      return {
+        id: pool.id, status: pool.status, modalidade: pool.concurso.modalidade, concurso: pool.concurso.numeroConcurso, sorteio: pool.concurso.dataSorteio, grupo: pool.grupo.nome,
+        valorCota: Number(pool.valorCota), totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas,
+        cotasPagas: paid, cotasAguardando: waiting, cotasCanceladas: qty([StatusCota.cancelada, StatusCota.estornada]),
+        cotasLivres: unlimited ? null : Math.max((pool.totalCotas ?? 0) - paid - waiting, 0),
+        percentualVendido: unlimited || !pool.totalCotas ? null : Math.round((paid / pool.totalCotas) * 1000) / 10,
+        participantes: buyersByPool.get(pool.id)?.size ?? 0,
+        aReceber: round2(waiting * Number(pool.valorCota)),
+        receita: round2(paidValue),
+        gatilhoLiberacao: pool.premioMinimoLiberacao === null ? null : Number(pool.premioMinimoLiberacao),
+        liberado: pool.premioMinimoLiberacao === null ? null : Boolean(pool.liberadoEm) || Number(pool.concurso.valorEstimadoPremio ?? 0) >= Number(pool.premioMinimoLiberacao),
+      };
     });
+    if (!admin || !query.formato || query.formato === 'json') return rows;
+    const columns: Column[] = [
+      { key: 'modalidade', header: 'Modalidade' }, { key: 'concurso', header: 'Concurso', type: 'int', width: 11 }, { key: 'sorteio', header: 'Sorteio', type: 'date' }, { key: 'grupo', header: 'Grupo', width: 22 },
+      { key: 'status', header: 'Situação' }, { key: 'valorCota', header: 'Valor da cota', type: 'money' }, { key: 'totalCotas', header: 'Total de cotas', type: 'int', width: 12 },
+      { key: 'cotasPagas', header: 'Cotas pagas', type: 'int', width: 12, sum: true }, { key: 'cotasAguardando', header: 'Aguardando pgto.', type: 'int', width: 14, sum: true }, { key: 'cotasCanceladas', header: 'Canceladas', type: 'int', width: 12, sum: true },
+      { key: 'cotasLivres', header: 'Cotas livres', type: 'int', width: 12 }, { key: 'percentualVendido', header: '% vendido', width: 10 }, { key: 'participantes', header: 'Participantes', type: 'int', width: 13, sum: true },
+      { key: 'aReceber', header: 'A receber', type: 'money', sum: true }, { key: 'receita', header: 'Receita paga', type: 'money', sum: true },
+      { key: 'gatilhoLiberacao', header: 'Gatilho de liberação', type: 'money' }, { key: 'liberado', header: 'Liberado?' }, { key: 'id', header: 'ID do bolão', width: 38 },
+    ];
+    const pdf: PdfSpec = {
+      title: 'Controle de cotas por bolão',
+      subtitle: 'Para cada bolão: cotas pagas, aguardando pagamento, livres, quantidade de participantes e receita.',
+      kpis: [
+        { label: 'Bolões', value: String(rows.length) },
+        { label: 'Cotas pagas', value: String(rows.reduce((sum, row) => sum + Number(row.cotasPagas ?? 0), 0)) },
+        { label: 'Aguardando pagamento', value: String(rows.reduce((sum, row) => sum + Number(row.cotasAguardando ?? 0), 0)) },
+        { label: 'A receber', value: brl(rows.reduce((sum, row) => sum + Number(row.aReceber ?? 0), 0)) },
+        { label: 'Receita paga', value: brl(rows.reduce((sum, row) => sum + Number(row.receita ?? 0), 0)) },
+      ],
+      sections: [{ title: 'Bolões', columns: pick(columns, ['modalidade', 'concurso', 'sorteio', 'grupo', 'status', 'valorCota', 'totalCotas', 'cotasPagas', 'cotasAguardando', 'cotasLivres', 'percentualVendido', 'participantes', 'receita'], ['cotasPagas', 'cotasAguardando', 'participantes', 'receita']), rows: rows.map((row) => ({ ...row, percentualVendido: row.percentualVendido === null ? 'ilimitadas' : `${String(row.percentualVendido).replace('.', ',')}%`, cotasLivres: row.cotasLivres === null ? 'ilimitadas' : row.cotasLivres })) }],
+    };
+    const exportRows = rows.map((row) => ({ ...row, liberado: row.liberado === null ? null : row.liberado ? 'Sim' : 'Não', percentualVendido: row.percentualVendido === null ? 'ilimitadas' : `${String(row.percentualVendido).replace('.', ',')}%`, cotasLivres: row.cotasLivres === null ? 'ilimitadas' : row.cotasLivres }));
+    return this.deliver(admin, 'boloes', query, 'controle-cotas-bolao-livre', [{ name: 'Bolões', columns, rows: exportRows }], pdf);
   }
 
   async sales(query: ReportQueryDto, admin: AuthUser) {
     const full = query.formato === 'csv' || query.formato === 'xlsx';
-    const shares = await this.prisma.cota.findMany({ where: this.salesWhere(query), include: SHARE_INCLUDE, orderBy: { criadoEm: 'desc' }, take: full ? 20000 : 500 });
+    const shares = await this.prisma.cota.findMany({ where: this.salesWhere(query), include: SHARE_INCLUDE, orderBy: { criadoEm: 'desc' }, take: this.limit(query) });
     const rows = shares.map((share) => this.shareRow(share, full));
-    const delivered = await this.deliver(admin, 'vendas', query, 'vendas-bolao-livre', [{ name: 'Vendas', columns: SALES_COLUMNS, rows }]);
+    const paidRows = rows.filter((row) => row.statusPagamento === 'confirmado');
+    const pdf: PdfSpec = {
+      title: 'Relatório de vendas de cotas',
+      subtitle: 'Quem comprou, quantas cotas, quanto pagou e a situação de cada pagamento.',
+      kpis: [
+        { label: 'Vendas listadas', value: String(rows.length) },
+        { label: 'Cotas vendidas', value: String(rows.reduce((sum, row) => sum + Number(row.quantidade ?? 0), 0)) },
+        { label: 'Valor total', value: brl(rows.reduce((sum, row) => sum + Number(row.valorTotal ?? 0), 0)) },
+        { label: 'Recebido (pago)', value: brl(paidRows.reduce((sum, row) => sum + Number(row.valorTotal ?? 0), 0)), hint: `${paidRows.length} pagamentos confirmados` },
+        { label: 'Taxa da plataforma', value: brl(paidRows.reduce((sum, row) => sum + Number(row.taxaAdmin ?? 0), 0)) },
+      ],
+      sections: [{ title: 'Vendas', columns: pick(SALES_COLUMNS, ['criadoEm', 'modalidade', 'concurso', 'participante', 'cpf', 'quantidade', 'valorTotal', 'statusCota', 'statusPagamento', 'metodo', 'pagoEm', 'taxaAdmin', 'afiliado'], ['quantidade', 'valorTotal', 'taxaAdmin']), rows }],
+    };
+    const delivered = await this.deliver(admin, 'vendas', query, 'vendas-bolao-livre', [{ name: 'Vendas', columns: SALES_COLUMNS, rows }], pdf);
     return 'json' in delivered ? { colunas: SALES_COLUMNS, linhas: rows, total: rows.length } : delivered;
   }
 
@@ -177,16 +303,29 @@ export class ReportsService {
       where: { ...(range ? { criadoEm: range } : {}), ...(query.bolaoId ? { bolaoId: query.bolaoId } : {}), OR: [{ status: StatusCota.reservada }, { status: StatusCota.cancelada, OR: [{ pagamento: null }, { pagamento: { status: { not: StatusPagamento.confirmado } } }] }] },
       include: SHARE_INCLUDE,
       orderBy: { criadoEm: 'desc' },
-      take: full ? 20000 : 500,
+      take: this.limit(query),
     });
     const orphans = await this.prisma.cota.findMany({ where: { status: { in: [StatusCota.cancelada, StatusCota.estornada] }, pagamento: { status: StatusPagamento.confirmado } }, include: SHARE_INCLUDE, orderBy: { criadoEm: 'desc' }, take: 500 });
     const rows = shares.map((share) => this.shareRow(share, full));
     const orphanRows = orphans.map((share) => ({ ...this.shareRow(share, full), situacao: 'Pago sem cota — estornar ao participante' }));
     const columns: Column[] = [...SALES_COLUMNS.slice(0, 25)];
+    const pdf: PdfSpec = {
+      title: 'Relatório de cotas não pagas (inadimplência)',
+      subtitle: 'Reservas aguardando pagamento ou vencidas, para cobrança. Pagamentos recebidos sem cota aparecem na segunda tabela e devem ser estornados.',
+      kpis: [
+        { label: 'Reservas em aberto', value: String(rows.length) },
+        { label: 'Valor a receber', value: brl(rows.reduce((sum, row) => sum + Number(row.valorTotal ?? 0), 0)) },
+        { label: 'Pagos sem cota (estornar)', value: String(orphanRows.length) },
+      ],
+      sections: [
+        { title: 'Aguardando pagamento / vencidas', columns: pick(SALES_COLUMNS, ['criadoEm', 'modalidade', 'concurso', 'participante', 'telefone', 'email', 'quantidade', 'valorTotal', 'statusCota', 'metodo', 'vencimento'], ['quantidade', 'valorTotal']), rows },
+        { title: 'Pagamentos recebidos sem cota (estornar ao participante)', columns: pick(SALES_COLUMNS, ['criadoEm', 'concurso', 'participante', 'telefone', 'email', 'valorTotal', 'metodo', 'pagoEm'], ['valorTotal']), rows: orphanRows, emptyText: 'Nenhum pagamento órfão. Tudo conciliado.' },
+      ],
+    };
     const delivered = await this.deliver(admin, 'inadimplencia', query, 'nao-pagos-bolao-livre', [
       { name: 'Não pagos', columns, rows },
       { name: 'Pagos sem cota (estornar)', columns: [...columns, { key: 'situacao', header: 'Situação', width: 40 }], rows: orphanRows },
-    ]);
+    ], pdf);
     return 'json' in delivered ? { colunas: columns, linhas: rows, pagosSemCota: orphanRows, total: rows.length } : delivered;
   }
 
@@ -217,14 +356,42 @@ export class ReportsService {
       taxaAdministracao: sum((share) => Number(share.pagamento?.valorTaxaAdmin ?? 0)),
       comissoes: round2(shares.filter((share) => share.comissao && share.comissao.status !== StatusComissao.cancelada).reduce((total, share) => total + Number(share.comissao?.valor ?? 0), 0)),
     };
+    const unlimited = pool.cotasIlimitadas || pool.totalCotas === null;
+    const free = unlimited ? null : Math.max((pool.totalCotas ?? 0) - summary.cotasPagas - summary.cotasAguardando, 0);
+    const soldPct = unlimited || !pool.totalCotas ? null : Math.round((summary.cotasPagas / pool.totalCotas) * 1000) / 10;
+    const gate = evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso.valorEstimadoPremio });
+    const text = (value: string | number | null | Date): string => (value instanceof Date ? formatDateBr(value) : value === null ? '—' : String(value));
+    const summaryRows: Row[] = [
+      ['Modalidade', summary.modalidade], ['Concurso', summary.concurso], ['Data do sorteio', formatDateBr(summary.sorteio)], ['Grupo', summary.grupo], ['Situação do bolão', summary.status],
+      ['Valor da cota', brl(summary.valorCota)], ['Taxa de administração', `${summary.taxaAdministracaoPct}%`], ['Total de cotas', unlimited ? 'ilimitadas' : summary.totalCotas],
+      ['Cotas pagas', summary.cotasPagas], ['Cotas aguardando pagamento', summary.cotasAguardando], ['Cotas livres', free === null ? 'ilimitadas' : free], ['% vendido', soldPct === null ? '—' : `${soldPct}%`],
+      ['Participantes (pagos)', summary.participantesPagos], ['Receita bruta (paga)', brl(summary.receitaBruta)], ['Custo dos jogos', brl(summary.custoJogos)],
+      ['Taxa de administração (plataforma)', brl(summary.taxaAdministracao)], ['Comissões de afiliados', brl(summary.comissoes)], ['Fica com a plataforma', brl(round2(summary.taxaAdministracao - summary.comissoes))],
+      ...(gate.condicional ? [['Gatilho de liberação (prêmio)', brl(gate.gatilho ?? 0)], ['Prêmio estimado atual', gate.premioAtual === null ? '—' : brl(gate.premioAtual)], ['Cotas liberadas?', gate.liberado ? 'Sim' : 'Não']] : []),
+    ].map(([campo, valor]) => ({ campo: String(campo), valor: text(valor as string | number) }));
     const games = pool.jogos.map((game) => ({ ordem: game.ordem, dezenas: game.numeros.map((n) => String(n).padStart(2, '0')).join(' '), quantidade: game.quantidadeDezenas, custo: Number(game.custo) }));
-    const summaryRows: Row[] = Object.entries(summary).map(([campo, valor]) => ({ campo, valor: valor instanceof Date ? valor : (valor as string | number | null) }));
+    const totalCotas = unlimited ? 'ilimitadas' : String(pool.totalCotas);
+    const pdf: PdfSpec = {
+      title: `Ficha do bolão — ${pool.concurso.modalidade} concurso ${pool.concurso.numeroConcurso}`,
+      subtitle: `Grupo ${pool.grupo.nome} · situação: ${pool.status} · cota de ${brl(Number(pool.valorCota))} · taxa de administração ${Number(pool.taxaAdministracaoPct)}%`,
+      kpis: [
+        { label: 'Cotas pagas', value: String(summary.cotasPagas), hint: `de ${totalCotas}` },
+        { label: 'Aguardando pagamento', value: String(summary.cotasAguardando) },
+        { label: 'Participantes (pagos)', value: String(summary.participantesPagos) },
+        { label: 'Receita bruta', value: brl(summary.receitaBruta) },
+        { label: 'Fica com a plataforma', value: brl(round2(summary.taxaAdministracao - summary.comissoes)), hint: `taxa ${brl(summary.taxaAdministracao)} - comissões ${brl(summary.comissoes)}` },
+      ],
+      sections: [
+        { title: 'Participantes: quem comprou, quantas cotas e quem pagou', columns: pick(SALES_COLUMNS, ['participante', 'cpf', 'telefone', 'quantidade', 'valorTotal', 'statusCota', 'statusPagamento', 'metodo', 'pagoEm', 'afiliado'], ['quantidade', 'valorTotal']), rows },
+        { title: 'Jogos do bolão', columns: [{ key: 'ordem', header: 'Jogo', type: 'int', width: 6 }, { key: 'dezenas', header: 'Dezenas', width: 60 }, { key: 'quantidade', header: 'Qtd. dezenas', type: 'int', width: 10 }, { key: 'custo', header: 'Custo', type: 'money', width: 12, sum: true }], rows: games },
+      ],
+    };
     const delivered = await this.deliver(admin, 'bolao', query, `bolao-${pool.concurso.modalidade}-${pool.concurso.numeroConcurso}-${id.slice(0, 8)}`, [
       { name: 'Participantes', columns: SALES_COLUMNS, rows },
       { name: 'Resumo', columns: [{ key: 'campo', header: 'Indicador', width: 28 }, { key: 'valor', header: 'Valor', width: 30 }], rows: summaryRows },
       { name: 'Jogos', columns: [{ key: 'ordem', header: 'Jogo', type: 'int', width: 8 }, { key: 'dezenas', header: 'Dezenas', width: 50 }, { key: 'quantidade', header: 'Qtd. dezenas', type: 'int' }, { key: 'custo', header: 'Custo', type: 'money' }], rows: games },
-    ]);
-    return 'json' in delivered ? { resumo: summary, jogos: games, colunas: SALES_COLUMNS, linhas: rows } : delivered;
+    ], pdf);
+    return 'json' in delivered ? { resumo: { ...summary, cotasLivres: free, percentualVendido: soldPct }, liberacao: gate, jogos: games, colunas: SALES_COLUMNS, linhas: rows } : delivered;
   }
 
   /** Comissões por afiliado, com pendente/paga/cancelada. */
@@ -246,7 +413,18 @@ export class ReportsService {
       { key: 'percentual', header: '% padrão', width: 10 }, { key: 'vendas', header: 'Vendas', type: 'int', width: 10 }, { key: 'base', header: 'Base (taxa adm.)', type: 'money' },
       { key: 'pendente', header: 'A pagar', type: 'money' }, { key: 'paga', header: 'Paga', type: 'money' }, { key: 'cancelada', header: 'Cancelada', type: 'money' }, { key: 'total', header: 'Total devido+pago', type: 'money' },
     ];
-    const delivered = await this.deliver(admin, 'comissoes', query, 'comissoes-bolao-livre', [{ name: 'Comissões', columns, rows }]);
+    const pdf: PdfSpec = {
+      title: 'Relatório de comissões de afiliados',
+      subtitle: 'Valores a pagar, pagos e cancelados por afiliado, calculados sobre a taxa de administração.',
+      kpis: [
+        { label: 'Afiliados', value: String(rows.length) },
+        { label: 'A pagar', value: brl(rows.reduce((sum, row) => sum + Number(row.pendente ?? 0), 0)) },
+        { label: 'Já pago', value: brl(rows.reduce((sum, row) => sum + Number(row.paga ?? 0), 0)) },
+        { label: 'Total devido + pago', value: brl(rows.reduce((sum, row) => sum + Number(row.total ?? 0), 0)) },
+      ],
+      sections: [{ title: 'Comissões por afiliado', columns: pick(columns, ['afiliado', 'codigo', 'chavePix', 'percentual', 'vendas', 'base', 'pendente', 'paga', 'cancelada', 'total'], ['vendas', 'base', 'pendente', 'paga', 'cancelada', 'total']), rows }],
+    };
+    const delivered = await this.deliver(admin, 'comissoes', query, 'comissoes-bolao-livre', [{ name: 'Comissões', columns, rows }], pdf);
     return 'json' in delivered ? { colunas: columns, linhas: rows, total: rows.length } : delivered;
   }
 
@@ -263,7 +441,7 @@ export class ReportsService {
       },
       include: { notaFiscal: true, cota: { include: { comprador: true, bolao: { include: { concurso: true } }, afiliadoReferencia: true, comissao: true } } },
       orderBy: { criadoEm: 'desc' },
-      take: full ? 20000 : 500,
+      take: this.limit(query),
     });
     const rows: Row[] = items.map((item) => {
       const confirmed = item.status === StatusPagamento.confirmado;
@@ -306,7 +484,21 @@ export class ReportsService {
       { key: 'comissao', header: 'Comissão', type: 'money' }, { key: 'resultadoPlataforma', header: 'Resultado da plataforma', type: 'money' },
       { key: 'vencimento', header: 'Vencimento', type: 'date' }, { key: 'notaFiscal', header: 'Nota fiscal' }, { key: 'numeroNota', header: 'Nº da nota', width: 14 }, { key: 'observacao', header: 'Observação', width: 30 },
     ];
-    const delivered = await this.deliver(admin, 'pagamentos', query, 'pagamentos-bolao-livre', [{ name: 'Pagamentos', columns, rows }]);
+    const confirmedRows = rows.filter((row) => row.status === 'confirmado');
+    const sumOf = (list: Row[], key: string) => list.reduce((sum, row) => sum + Number(row[key] ?? 0), 0);
+    const pdf: PdfSpec = {
+      title: 'Conciliação financeira de pagamentos',
+      subtitle: 'Para cada pagamento: quanto foi pago, quanto vai para os jogos, quanto fica com a plataforma e quanto vai para o afiliado.',
+      kpis: [
+        { label: 'Pagamentos confirmados', value: String(confirmedRows.length), hint: `de ${rows.length} listados` },
+        { label: 'Valor bruto recebido', value: brl(sumOf(confirmedRows, 'valorBruto')) },
+        { label: 'Custo dos jogos', value: brl(sumOf(confirmedRows, 'custoBilhete')) },
+        { label: 'Taxa de administração', value: brl(sumOf(confirmedRows, 'taxaAdmin')) },
+        { label: 'Resultado da plataforma', value: brl(sumOf(confirmedRows, 'resultadoPlataforma')), hint: 'taxa menos comissões' },
+      ],
+      sections: [{ title: 'Pagamentos', columns: pick(columns, ['confirmadoEm', 'participante', 'modalidade', 'concurso', 'metodo', 'status', 'valorBruto', 'custoBilhete', 'taxaAdmin', 'comissao', 'resultadoPlataforma', 'notaFiscal'], ['valorBruto', 'custoBilhete', 'taxaAdmin', 'comissao', 'resultadoPlataforma']), rows }],
+    };
+    const delivered = await this.deliver(admin, 'pagamentos', query, 'pagamentos-bolao-livre', [{ name: 'Pagamentos', columns, rows }], pdf);
     return 'json' in delivered ? { colunas: columns, linhas: rows, total: rows.length } : delivered;
   }
 
@@ -318,7 +510,7 @@ export class ReportsService {
       where: { ...(range ? { criadoEm: range } : {}), ...(query.statusNota ? { status: query.statusNota as StatusNotaFiscal } : {}) },
       include: { pagamento: { include: { cota: { include: { comprador: true, bolao: { include: { concurso: true } } } } } } },
       orderBy: { criadoEm: 'desc' },
-      take: full ? 20000 : 500,
+      take: this.limit(query),
     });
     const rows: Row[] = notes.map((note) => {
       const iss = note.issPct ? round2(Number(note.valor) * Number(note.issPct) / 100) : null;
@@ -338,7 +530,18 @@ export class ReportsService {
       { key: 'cobranca', header: 'ID da cobrança', width: 28 }, { key: 'notaId', header: 'ID da nota (Cora)', width: 28 }, { key: 'pdf', header: 'PDF', width: 40 }, { key: 'erro', header: 'Erro', width: 40 }, { key: 'observacao', header: 'Observação', width: 30 },
     ];
     const pendingCount = await this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, notaFiscal: null, ...(range ? { confirmadoEm: range } : {}) } });
-    const delivered = await this.deliver(admin, 'notas-fiscais', query, 'notas-fiscais-bolao-livre', [{ name: 'Notas fiscais', columns, rows }]);
+    const pdf: PdfSpec = {
+      title: 'Relatório de notas fiscais de serviço',
+      subtitle: 'Notas emitidas sobre a taxa de administração da plataforma.',
+      kpis: [
+        { label: 'Notas listadas', value: String(rows.length) },
+        { label: 'Valor das notas', value: brl(rows.reduce((sum, row) => sum + Number(row.valorNota ?? 0), 0)) },
+        { label: 'ISS estimado', value: brl(rows.reduce((sum, row) => sum + Number(row.issEstimado ?? 0), 0)) },
+        { label: 'Pagamentos sem nota', value: String(pendingCount) },
+      ],
+      sections: [{ title: 'Notas fiscais', columns: pick(columns, ['criadoEm', 'emitidaEm', 'status', 'numero', 'participante', 'modalidade', 'concurso', 'valorNota', 'issEstimado'], ['valorNota', 'issEstimado']), rows }],
+    };
+    const delivered = await this.deliver(admin, 'notas-fiscais', query, 'notas-fiscais-bolao-livre', [{ name: 'Notas fiscais', columns, rows }], pdf);
     return 'json' in delivered ? { colunas: columns, linhas: rows, total: rows.length, pagamentosSemNota: pendingCount } : delivered;
   }
 }
