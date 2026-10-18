@@ -182,6 +182,11 @@ export class AdminService {
       this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
     ]);
+    const interested = new Map<string, number>();
+    try {
+      const rows = await this.prisma.bolaoInteresse.groupBy({ by: ['bolaoId'], where: { bolaoId: { in: items.map((pool) => pool.id) } }, _count: { _all: true } });
+      for (const row of rows) interested.set(row.bolaoId, row._count._all);
+    } catch { /* contagem de "avise-me" é informativa */ }
     return {
       items: items.map((pool) => ({
         ...pool,
@@ -191,6 +196,7 @@ export class AdminService {
         premioMinimoLiberacao: pool.premioMinimoLiberacao === null ? null : pool.premioMinimoLiberacao.toFixed(2),
         liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso.valorEstimadoPremio }),
         indicadores: {
+          interessados: interested.get(pool.id) ?? 0,
           jogos: pool.jogos.length || (pool.numerosApostados.length ? 1 : 0),
           reservadas: pool.cotas.filter((share) => share.status === StatusCota.reservada).reduce((sum, share) => sum + share.quantidade, 0),
           pagas: pool.cotas.filter((share) => share.status === StatusCota.paga).reduce((sum, share) => sum + share.quantidade, 0),

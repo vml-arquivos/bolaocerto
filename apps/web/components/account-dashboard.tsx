@@ -2,8 +2,10 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { modalityNames, money, shortDate } from '../lib/domain';
+import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { ReceiptPanel } from './receipt-panel';
+import { NotificationsCard, PasswordCard, PrivacyCard } from './account-extras';
 
 type User = { id: string; nome: string; email: string; papel: string; statusKyc: string };
 type Share = {
@@ -18,11 +20,6 @@ const NOTE_TEXT: Record<string, string> = { aguardando: 'em processamento', agua
 const PAID = ['paga', 'registrada', 'apurada', 'premiada'];
 const STATUS_TEXT: Record<string, string> = { reservada: 'Aguardando pagamento', paga: 'Paga', registrada: 'Registrada na loteria', apurada: 'Apurada', premiada: 'Premiada', cancelada: 'Cancelada', estornada: 'Estornada' };
 
-async function authenticatedFetch(path: string, options?: RequestInit) {
-  let response = await fetch(path, { ...options, credentials: 'include' });
-  if (response.status === 401) { const refresh = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'include' }); if (refresh.ok) response = await fetch(path, { ...options, credentials: 'include' }); }
-  return response;
-}
 
 function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
   const [showPayment, setShowPayment] = useState(false);
@@ -113,10 +110,13 @@ export function AccountDashboard() {
       <article className="dashboard-card"><span className="overline">Prêmios</span><strong className="stat-value">{money(prizes)}</strong><small className="muted">em cotas premiadas</small></article>
       <article className="dashboard-card"><span className="overline">Verificação</span><strong className="stat-value stat-text">{user?.statusKyc?.replace('_', ' ')}</strong><small className="muted">situação cadastral</small></article>
       {address?.nfseAtiva && paidShares.length > 0 && <AddressCard address={address} onSaved={() => void load()} />}
+      <NotificationsCard />
       <article className="dashboard-card wide"><h2>Minhas cotas</h2>
         {shares.length ? <div className="share-list">{shares.map((share) => <ShareCard key={share.id} share={share} onPaid={() => void load()} />)}</div>
           : <div className="empty-state compact"><h3>Você ainda não possui cotas</h3><p>Escolha um bolão disponível para iniciar sua participação.</p><Link className="button button-primary" href="/#boloes">Ver bolões</Link></div>}
       </article>
+      <PasswordCard />
+      <PrivacyCard />
     </div>
   </>;
 }

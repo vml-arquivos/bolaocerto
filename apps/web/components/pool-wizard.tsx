@@ -63,6 +63,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [contestId, setContestId] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? '');
   const [numbers, setNumbers] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
   const [totalCotas, setTotalCotas] = useState('10');
   const [unlimited, setUnlimited] = useState(false);
   const [valorCota, setValorCota] = useState('20');
@@ -112,6 +113,15 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const selectedContest = contests.find((contest) => contest.id === contestId) ?? (editPool?.concursoId === contestId ? editPool.concurso : null);
   const parsedNumbers = numbers.split(/[\s,;]+/).map(Number).filter((number) => Number.isInteger(number) && number >= 1 && number <= limits.max);
   const uniqueNumbers = Array.from(new Set(parsedNumbers)).sort((a, b) => a - b);
+  async function suggestGame() {
+    setSuggesting(true);
+    try {
+      const response = await fetch(`/api/v1/estatisticas/${modality}/sugestoes?jogos=1&dezenas=${limits.min}`);
+      const body = await response.json() as { games?: Array<{ numbers: number[] }> };
+      const game = body.games?.[0];
+      if (response.ok && game) setNumbers(game.numbers.map((n) => String(n).padStart(2, '0')).join(' '));
+    } finally { setSuggesting(false); }
+  }
   const finiteRevenue = unlimited ? null : Number(totalCotas || 0) * Number(valorCota || 0);
 
   useEffect(() => {
@@ -192,7 +202,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
       <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
       <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>#{contest.numeroConcurso} · {dateOnly(contest.dataSorteio)} · prêmio {money(contest.valorEstimadoPremio)}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
-      <label className="admin-field admin-field-wide"><span>Números do jogo</span><input value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small></label>
+      <label className="admin-field admin-field-wide"><span>Números do jogo</span><input value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
     </div>
     <div className="admin-form-grid admin-form-grid-four">
       <label className="admin-field"><span>Valor da cota (R$)</span><input type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>

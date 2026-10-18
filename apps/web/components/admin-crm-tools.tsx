@@ -98,6 +98,7 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
   const [tags, setTags] = useState('');
   const [next, setNext] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resetLink, setResetLink] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +112,12 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
     event.preventDefault(); if (note.trim().length < 2) return; setBusy(true);
     try { await api(`/api/v1/admin/crm/apostadores/${id}/notas`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texto: note }) }); setNote(''); notify('success', 'Nota registrada.'); await load(); }
     catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível salvar a nota.'); } finally { setBusy(false); }
+  }
+  async function generateResetLink() {
+    if (!window.confirm('Gerar um link de redefinição de senha para este apostador? O link vale por 1 hora e a ação fica registrada na auditoria.')) return;
+    setBusy(true);
+    try { const result = await api(`/api/v1/admin/usuarios/${id}/redefinicao-senha`, { method: 'POST' }); setResetLink(String(result.link ?? '')); notify('success', 'Link gerado. Envie ao apostador por um canal seguro.'); }
+    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível gerar o link.'); } finally { setBusy(false); }
   }
   async function saveProfile(event: FormEvent) {
     event.preventDefault(); setBusy(true);
@@ -131,6 +138,9 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
       <Kpi label="Pendente" value={brl(metrics.valorPendente)} hint={`${metrics.cotasPendentes ?? 0} cota(s) aguardando`} tone="rose" />
     </div>
     <p className="admin-help">Cadastrado em {dateOnly(profile.cadastradoEm)}{profile.afiliadoOrigem ? ` · indicado por ${profile.afiliadoOrigem.nome} (${profile.afiliadoOrigem.codigo})` : ' · cadastro direto'} · KYC: {label(profile.statusKyc)}{Number(metrics.premiosGanhos) > 0 ? ` · prêmios: ${brl(metrics.premiosGanhos)}` : ''}</p>
+    {profile.exclusaoSolicitadaEm && <div className="admin-callout admin-callout-warning"><strong>Pediu a exclusão da conta (LGPD)</strong> em {dateOnly(profile.exclusaoSolicitadaEm)}. Analise o pedido: cotas em andamento e dados fiscais precisam ser mantidos pelo prazo legal.</div>}
+    <div className="admin-row-actions" style={{ margin: '4px 0 12px' }}><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void generateResetLink()}>Gerar link de redefinição de senha</button></div>
+    {resetLink && <div className="admin-callout"><strong>Link de redefinição (vale 1 hora, uso único):</strong><br /><input readOnly value={resetLink} onFocus={(event) => event.currentTarget.select()} style={{ width: '100%', marginTop: 6 }} aria-label="Link de redefinição" /><button type="button" className="admin-button admin-button-small" style={{ marginTop: 8 }} onClick={() => void navigator.clipboard?.writeText(resetLink).then(() => notify('success', 'Link copiado.')).catch(() => undefined)}>Copiar link</button></div>}
     <div className="admin-two-col">
       <div>
         <h3 style={{ margin: '0 0 8px', fontSize: 13 }}>Acompanhamento</h3>

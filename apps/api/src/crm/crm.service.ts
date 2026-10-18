@@ -167,7 +167,7 @@ export class CrmService {
     const user = await this.prisma.usuario.findUnique({
       where: { id },
       select: {
-        id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true, enderecoCidade: true, enderecoUf: true,
+        id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true, enderecoCidade: true, enderecoUf: true, exclusaoSolicitadaEm: true,
         indicadoPorAfiliado: { select: { codigoAfiliado: true, usuario: { select: { nome: true } } } },
         crmPerfil: true,
         crmNotas: { orderBy: { criadoEm: 'desc' }, take: 50, select: { id: true, texto: true, criadoEm: true, autor: { select: { nome: true } } } },
@@ -190,7 +190,7 @@ export class CrmService {
       byModality.set(key, entry);
     }
     return {
-      perfil: { id: user.id, nome: user.nome, cpf: maskCpf(user.cpf), email: user.email, telefone: user.telefone, papel: user.papel, statusKyc: user.statusKyc, cadastradoEm: user.criadoEm, cidade: user.enderecoCidade, uf: user.enderecoUf, afiliadoOrigem: user.indicadoPorAfiliado ? { codigo: user.indicadoPorAfiliado.codigoAfiliado, nome: user.indicadoPorAfiliado.usuario.nome } : null },
+      perfil: { id: user.id, nome: user.nome, cpf: maskCpf(user.cpf), email: user.email, telefone: user.telefone, papel: user.papel, statusKyc: user.statusKyc, cadastradoEm: user.criadoEm, cidade: user.enderecoCidade, uf: user.enderecoUf, exclusaoSolicitadaEm: user.exclusaoSolicitadaEm, afiliadoOrigem: user.indicadoPorAfiliado ? { codigo: user.indicadoPorAfiliado.codigoAfiliado, nome: user.indicadoPorAfiliado.usuario.nome } : null },
       metricas: row ?? null,
       etiquetas: user.crmPerfil?.etiquetas ?? [],
       proximoContatoEm: user.crmPerfil?.proximoContatoEm ?? null,

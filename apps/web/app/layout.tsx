@@ -1,5 +1,7 @@
+import '@fontsource-variable/figtree';
 import './globals.css';
 import './details.css';
+import './stats.css';
 import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {

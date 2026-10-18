@@ -96,6 +96,8 @@ export interface CaixaContestPayload {
   valorEstimadoProximoConcurso?: number;
   acumulado?: boolean;
   listaDezenas?: string[];
+  /** Dupla Sena: dezenas do 2º sorteio. */
+  listaDezenasSegundoSorteio?: string[];
   dezenasSorteadasOrdemSorteio?: string[];
   listaRateioPremio?: CaixaPrizeTier[];
 }
@@ -151,6 +153,7 @@ export function normalizeCaixaContestPayload(value: unknown): CaixaContestPayloa
     valorEstimadoProximoConcurso: optionalFiniteNumber(value.valorEstimadoProximoConcurso),
     acumulado: typeof value.acumulado === 'boolean' ? value.acumulado : typeof value.acumulou === 'boolean' ? value.acumulou : undefined,
     listaDezenas: optionalStringArray(value.listaDezenas ?? value.dezenas),
+    listaDezenasSegundoSorteio: optionalStringArray(value.listaDezenasSegundoSorteio ?? value.dezenasSegundoSorteio),
     dezenasSorteadasOrdemSorteio: optionalStringArray(value.dezenasSorteadasOrdemSorteio ?? value.dezenasOrdemSorteio),
     listaRateioPremio: optionalPrizeTiers(value.listaRateioPremio ?? value.premiacoes),
   };
@@ -236,3 +239,4 @@ export function calculateBrazilCutoff(drawDate: Date, localTime: string): Date {
 }
 
 export * from './caixa-client';
+export * from './lottery-stats';

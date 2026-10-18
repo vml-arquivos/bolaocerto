@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { money, PoolRelease } from '../lib/domain';
 import { ReleaseMeter } from './release-meter';
+import { NotifyMe } from './notify-me';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
@@ -57,6 +58,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
         <button className="button button-primary" disabled={loading}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : 'Reservar e gerar Pix'}</button>
       </form> : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
         : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}
+    {locked && <NotifyMe poolId={poolId} />}
     {message && <div className={`form-message ${created ? 'form-success' : 'form-error'}`}>{message}</div>}
     {created && <><PaymentInstructions shareId={created.shareId} payment={created.payment} /><Link className="button button-secondary" href="/minha-conta">Ver Minhas Cotas</Link></>}
   </aside>;

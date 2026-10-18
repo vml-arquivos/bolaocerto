@@ -128,6 +128,9 @@ model Usuario {
   crmPerfil             CrmPerfil?
   crmNotas              CrmNota[]    @relation("crm_nota_usuario")
   crmNotasEscritas      CrmNota[]    @relation("crm_nota_autor")
+  exclusaoSolicitadaEm  DateTime?    @map("exclusao_solicitada_em")
+  tokensSenha           TokenSenha[]
+  bolaoInteresses       BolaoInteresse[]
 
   @@map("usuarios")
 }
@@ -201,6 +204,8 @@ model Resultado {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   concursoId        String   @unique @map("concurso_id") @db.Uuid
   numerosSorteados  Int[]    @map("numeros_sorteados")
+  /// Dupla Sena: dezenas do 2º sorteio do concurso (vazio nas demais modalidades).
+  numerosSegundoSorteio Int[] @default([]) @map("numeros_segundo_sorteio")
   listaRateioPremio Json     @map("lista_rateio_premio")
   apuradoEm         DateTime @default(now()) @map("apurado_em")
   concurso          Concurso @relation(fields: [concursoId], references: [id], onDelete: Cascade)
@@ -301,6 +306,7 @@ model Bolao {
   editor                Usuario?           @relation("editor_bolao", fields: [editadoPor], references: [id])
   cotas                 Cota[]
   jogos                 JogoBolao[]
+  interesses            BolaoInteresse[]
 
   @@index([concursoId, status])
   @@index([criadoPor, status])
@@ -478,6 +484,7 @@ model Notificacao {
   criadoEm   DateTime @default(now()) @map("criado_em")
   usuario    Usuario @relation(fields: [usuarioId], references: [id])
 
+  @@index([usuarioId, lidoEm, criadoEm])
   @@map("notificacoes")
 }
 
@@ -520,4 +527,33 @@ model CrmNota {
 
   @@index([usuarioId, criadoEm])
   @@map("crm_notas")
+}
+
+/// Recuperação de senha: guarda apenas o hash (SHA-256) do token enviado por e-mail.
+model TokenSenha {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId String    @map("usuario_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiraEm  DateTime  @map("expira_em")
+  usadoEm   DateTime? @map("usado_em")
+  criadoEm  DateTime  @default(now()) @map("criado_em")
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, criadoEm])
+  @@map("tokens_senha")
+}
+
+/// "Avise-me": quem quer ser avisado quando um bolão condicional liberar as cotas.
+model BolaoInteresse {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bolaoId     String    @map("bolao_id") @db.Uuid
+  usuarioId   String    @map("usuario_id") @db.Uuid
+  criadoEm    DateTime  @default(now()) @map("criado_em")
+  notificadoEm DateTime? @map("notificado_em")
+  bolao       Bolao     @relation(fields: [bolaoId], references: [id], onDelete: Cascade)
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([bolaoId, usuarioId])
+  @@index([usuarioId])
+  @@map("bolao_interesses")
 }

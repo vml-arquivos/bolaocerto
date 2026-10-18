@@ -151,10 +151,11 @@ export class LotteriesService {
       });
 
       if (numbers.length > 0) {
+        const secondDraw = modalidade === 'duplasena' ? (payload.listaDezenasSegundoSorteio ?? []).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0) : [];
         await tx.resultado.upsert({
           where: { concursoId: currentContest.id },
-          create: { concursoId: currentContest.id, numerosSorteados: numbers, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue },
-          update: { numerosSorteados: numbers, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue, apuradoEm: new Date() },
+          create: { concursoId: currentContest.id, numerosSorteados: numbers, numerosSegundoSorteio: secondDraw, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue },
+          update: { numerosSorteados: numbers, numerosSegundoSorteio: secondDraw, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue, apuradoEm: new Date() },
         });
       }
 

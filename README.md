@@ -53,3 +53,8 @@ Consulte [docs/deploy-production.md](docs/deploy-production.md) para o checklist
 ## Cora, vendas e relatórios
 
 Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a Cora (boleto + Pix + nota fiscal de serviço), operar vendas e usar os relatórios.
+
+## Documentação adicional
+
+- [Estatísticas, avisos, recuperação de senha e LGPD](docs/estatisticas-avisos-conta.md)
+- [Bolão condicional, relatórios, CRM e recibo](docs/profissionalizacao-crm-relatorios.md)

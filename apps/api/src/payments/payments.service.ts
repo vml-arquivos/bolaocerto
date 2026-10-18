@@ -203,9 +203,11 @@ export class PaymentsService {
     await this.lockBolao(tx, (await tx.cota.findUniqueOrThrow({ where: { id: payment.cotaId }, select: { bolaoId: true } })).bolaoId);
     const cota = await tx.cota.findUniqueOrThrow({ where: { id: payment.cotaId }, include: { bolao: true } });
     let settled = false;
+    let transitioned = false;
     if (cota.status === StatusCota.reservada) {
       await tx.cota.update({ where: { id: cota.id }, data: { status: StatusCota.paga, valorPago: payment.valorBruto, expiraReservaEm: null } });
       settled = true;
+      transitioned = true;
     } else if (cota.status === StatusCota.cancelada) {
       const hasStock = cota.bolao.status === StatusBolao.aberto && (cota.bolao.cotasIlimitadas || (cota.bolao.totalCotas !== null && cota.bolao.cotasVendidas + cota.quantidade <= cota.bolao.totalCotas));
       if (hasStock) {
@@ -213,12 +215,20 @@ export class PaymentsService {
         await tx.bolao.update({ where: { id: cota.bolaoId }, data: { cotasVendidas: { increment: cota.quantidade } } });
         await this.audit.record(tx, { entidade: 'cota', entidadeId: cota.id, evento: 'cota.reativada_pagamento_tardio', atorId: actorId, payloadDepois: { pagamentoId: payment.id } as unknown as Prisma.InputJsonValue });
         settled = true;
+        transitioned = true;
       }
     } else {
       settled = ([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(cota.status);
     }
     const updatedPayment = await tx.pagamento.update({ where: { id: payment.id }, data: { status: StatusPagamento.confirmado, confirmadoEm: payment.confirmadoEm ?? new Date(), ...extra } });
     await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: settled ? evento : 'pagamento.sem_cota', atorId: actorId, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: updatedPayment as unknown as Prisma.InputJsonValue });
+    if (transitioned) {
+      // Aviso na conta do cliente (o e-mail sai pela rotina de avisos). Opcional: nunca impede a baixa do pagamento.
+      try {
+        const valor = Number(payment.valorBruto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'pagamento.confirmado', payload: { titulo: 'Pagamento confirmado', mensagem: `Recebemos o pagamento de ${valor} da sua cota. O recibo com todos os valores já está disponível em Minha conta.`, link: '/minha-conta', cotaId: cota.id } } });
+      } catch { /* aviso é opcional */ }
+    }
     if (settled && cota.afiliadoReferenciaId && Number(payment.valorComissaoAfiliado) > 0) {
       const fee = Number(payment.valorTaxaAdmin);
       await tx.comissao.upsert({

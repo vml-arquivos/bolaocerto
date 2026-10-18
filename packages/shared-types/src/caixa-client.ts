@@ -56,6 +56,8 @@ export interface CaixaFetchOptions {
   retries?: number;
   retryDelayMs?: number;
   userAgent?: string;
+  /** Consulta um concurso específico (histórico) em vez do mais recente. */
+  contestNumber?: number;
   fetchImpl?: FetchLike;
   health?: CaixaSourceHealth;
 }
@@ -130,8 +132,17 @@ function resolveFetch(options: CaixaFetchOptions): FetchLike {
   return candidate;
 }
 
+/** URL da consulta: modelo da fonte + (opcionalmente) número do concurso. `/latest` dos espelhos vira `/<número>`. */
+export function resolveSourceUrl(source: CaixaSource, modalidade: string, contestNumber?: number): string {
+  const base = source.template.replace('{modalidade}', encodeURIComponent(modalidade));
+  if (contestNumber === undefined) return base;
+  const number = String(Math.trunc(contestNumber));
+  if (/\/latest\/?$/.test(base)) return base.replace(/\/latest\/?$/, `/${number}`);
+  return `${base.replace(/\/+$/, '')}/${number}`;
+}
+
 async function attemptOnce(source: CaixaSource, modalidade: string, options: CaixaFetchOptions): Promise<{ attempt: CaixaAttempt; payload?: CaixaContestPayload }> {
-  const url = source.template.replace('{modalidade}', encodeURIComponent(modalidade));
+  const url = resolveSourceUrl(source, modalidade, options.contestNumber);
   const timeoutMs = options.timeoutMs ?? CAIXA_DEFAULT_TIMEOUT_MS;
   const Controller = (globalThis as unknown as { AbortController: new () => { signal: unknown; abort(): void } }).AbortController;
   const controller = new Controller();

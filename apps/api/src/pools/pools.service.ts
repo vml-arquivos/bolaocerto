@@ -1,14 +1,15 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreatePoolDto, PoolGameDto, UpdatePoolDto } from './pools.dto';
 import { evaluateReleaseGate } from './release-gate';
 
 @Injectable()
 export class PoolsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly notifications?: NotificationsService) {}
 
   async listPublic() {
     const pools = await this.prisma.bolao.findMany({
@@ -136,6 +137,7 @@ export class PoolsService {
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.liberado_manualmente', atorId: user.id, payloadDepois: { gatilho: Number(pool.premioMinimoLiberacao), premioAtual: pool.concurso.valorEstimadoPremio === null ? null : Number(pool.concurso.valorEstimadoPremio) } });
       return result;
     });
+    await this.notifications?.notifyPoolReleased(id);
     return { id: released.id, liberadoEm: released.liberadoEm };
   }
 

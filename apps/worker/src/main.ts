@@ -12,12 +12,14 @@ import {
   parseCaixaDate,
   resolveCaixaTimeout,
 } from '@bolaocerto/shared-types';
+import { backfillHistory, readHistoryOptions } from './history';
 
 const prisma = new PrismaClient();
 const modalities = [...MODALIDADES_LOTERIA];
 const sources = buildCaixaSources(process.env);
 const timeoutMs = resolveCaixaTimeout(process.env.CAIXA_API_TIMEOUT_MS);
 const sourceHealth = new CaixaSourceHealth();
+const historyOptions = readHistoryOptions(process.env, { sources, timeoutMs, userAgent: process.env.CAIXA_USER_AGENT, health: sourceHealth });
 const configuredInterval = Number(process.env.WORKER_POLL_MS ?? 300_000);
 const intervalMs = Number.isFinite(configuredInterval) && configuredInterval >= 300_000 ? configuredInterval : 300_000;
 
@@ -125,10 +127,11 @@ async function syncOnce(): Promise<void> {
         currentContestId = currentContest.id;
 
         if (numbers.length > 0) {
+          const secondDraw = modality === 'duplasena' ? (payload.listaDezenasSegundoSorteio ?? []).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0) : [];
           await tx.resultado.upsert({
             where: { concursoId: currentContest.id },
-            create: { concursoId: currentContest.id, numerosSorteados: numbers, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue },
-            update: { numerosSorteados: numbers, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue, apuradoEm: new Date() },
+            create: { concursoId: currentContest.id, numerosSorteados: numbers, numerosSegundoSorteio: secondDraw, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue },
+            update: { numerosSorteados: numbers, numerosSegundoSorteio: secondDraw, listaRateioPremio: prizeTiers as unknown as Prisma.InputJsonValue, apuradoEm: new Date() },
           });
         }
 
@@ -167,9 +170,21 @@ async function syncOnce(): Promise<void> {
     }
   }
   await closeExpiredContests();
+  await syncHistory();
 }
 
-console.log(JSON.stringify({ event: 'worker.iniciado', fontes: sources.map((source) => ({ tipo: source.kind, url: source.template })), timeoutMs, intervaloMs: intervalMs }));
+/** Completa aos poucos o histórico usado nas estatísticas. Falhas aqui nunca interrompem a sincronização principal. */
+async function syncHistory(): Promise<void> {
+  for (const modality of modalities) {
+    try {
+      await backfillHistory(prisma, modality, historyOptions);
+    } catch (error) {
+      console.error(JSON.stringify({ event: 'historico.erro', modalidade: modality, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+}
+
+console.log(JSON.stringify({ event: 'worker.iniciado', fontes: sources.map((source) => ({ tipo: source.kind, url: source.template })), timeoutMs, intervaloMs: intervalMs, historico: { profundidade: historyOptions.depth, lote: historyOptions.batch } }));
 
 let running = false;
 let shuttingDown = false;

@@ -77,6 +77,18 @@ describe('Inicialização completa da API (AppModule)', () => {
     await request(app.getHttpServer()).get('/api/v1/recibos/nao-e-uuid/verificar').expect(400);
   });
 
+  it('protege avisos, troca de senha, exportação LGPD e link administrativo (401 sem login)', async () => {
+    const id = '6f1c1b9e-8f0a-4a3e-9d1b-2f6f4f4d9a11';
+    for (const path of ['/api/v1/notificacoes', '/api/v1/usuarios/me/dados']) await request(app.getHttpServer()).get(path).expect(401);
+    for (const path of ['/api/v1/notificacoes/lidas', `/api/v1/boloes/${id}/avise-me`, '/api/v1/usuarios/me/senha', '/api/v1/usuarios/me/exclusao', `/api/v1/admin/usuarios/${id}/redefinicao-senha`]) await request(app.getHttpServer()).post(path).send({}).expect(401);
+    await request(app.getHttpServer()).delete(`/api/v1/boloes/${id}/avise-me`).expect(401);
+  });
+
+  it('recuperação de senha é pública e valida a entrada', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/esqueci-senha').send({ email: 'isto-nao-e-email' }).expect(400);
+    await request(app.getHttpServer()).post('/api/v1/auth/redefinir-senha').send({ token: 'curto', novaSenha: 'curta' }).expect(400);
+  });
+
   it('webhook da Cora exige o token configurado', async () => {
     await request(app.getHttpServer()).post('/api/v1/webhooks/pagamento/cora').set('webhook-resource-id', 'inv_x').set('webhook-event-type', 'invoice.paid').expect(401);
     await request(app.getHttpServer()).post('/api/v1/webhooks/pagamento/cora?token=segredo-webhook').expect(201).expect(({ body }) => expect(body).toEqual({ ignorado: true }));

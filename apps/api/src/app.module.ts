@@ -11,6 +11,9 @@ import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
 import { AdminModule } from './admin/admin.module';
 import { CrmModule } from './crm/crm.module';
+import { StatisticsModule } from './statistics/statistics.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AccountModule } from './account/account.module';
 import { OperationModule } from './operation/operation.module';
 import { HealthController } from './health.controller';
 
@@ -28,6 +31,9 @@ import { HealthController } from './health.controller';
     ReportsModule,
     AdminModule,
     CrmModule,
+    StatisticsModule,
+    NotificationsModule,
+    AccountModule,
     OperationModule,
   ],
   controllers: [HealthController],

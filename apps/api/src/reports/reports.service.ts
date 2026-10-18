@@ -360,6 +360,8 @@ export class ReportsService {
     const free = unlimited ? null : Math.max((pool.totalCotas ?? 0) - summary.cotasPagas - summary.cotasAguardando, 0);
     const soldPct = unlimited || !pool.totalCotas ? null : Math.round((summary.cotasPagas / pool.totalCotas) * 1000) / 10;
     const gate = evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso.valorEstimadoPremio });
+    let interested = 0;
+    if (gate.condicional) { try { interested = await this.prisma.bolaoInteresse.count({ where: { bolaoId: pool.id } }); } catch { /* informativo */ } }
     const text = (value: string | number | null | Date): string => (value instanceof Date ? formatDateBr(value) : value === null ? '—' : String(value));
     const summaryRows: Row[] = [
       ['Modalidade', summary.modalidade], ['Concurso', summary.concurso], ['Data do sorteio', formatDateBr(summary.sorteio)], ['Grupo', summary.grupo], ['Situação do bolão', summary.status],
@@ -367,7 +369,7 @@ export class ReportsService {
       ['Cotas pagas', summary.cotasPagas], ['Cotas aguardando pagamento', summary.cotasAguardando], ['Cotas livres', free === null ? 'ilimitadas' : free], ['% vendido', soldPct === null ? '—' : `${soldPct}%`],
       ['Participantes (pagos)', summary.participantesPagos], ['Receita bruta (paga)', brl(summary.receitaBruta)], ['Custo dos jogos', brl(summary.custoJogos)],
       ['Taxa de administração (plataforma)', brl(summary.taxaAdministracao)], ['Comissões de afiliados', brl(summary.comissoes)], ['Fica com a plataforma', brl(round2(summary.taxaAdministracao - summary.comissoes))],
-      ...(gate.condicional ? [['Gatilho de liberação (prêmio)', brl(gate.gatilho ?? 0)], ['Prêmio estimado atual', gate.premioAtual === null ? '—' : brl(gate.premioAtual)], ['Cotas liberadas?', gate.liberado ? 'Sim' : 'Não']] : []),
+      ...(gate.condicional ? [['Gatilho de liberação (prêmio)', brl(gate.gatilho ?? 0)], ['Prêmio estimado atual', gate.premioAtual === null ? '—' : brl(gate.premioAtual)], ['Cotas liberadas?', gate.liberado ? 'Sim' : 'Não'], ['Pessoas que pediram aviso (avise-me)', interested]] : []),
     ].map(([campo, valor]) => ({ campo: String(campo), valor: text(valor as string | number) }));
     const games = pool.jogos.map((game) => ({ ordem: game.ordem, dezenas: game.numeros.map((n) => String(n).padStart(2, '0')).join(' '), quantidade: game.quantidadeDezenas, custo: Number(game.custo) }));
     const totalCotas = unlimited ? 'ilimitadas' : String(pool.totalCotas);
@@ -391,7 +393,7 @@ export class ReportsService {
       { name: 'Resumo', columns: [{ key: 'campo', header: 'Indicador', width: 28 }, { key: 'valor', header: 'Valor', width: 30 }], rows: summaryRows },
       { name: 'Jogos', columns: [{ key: 'ordem', header: 'Jogo', type: 'int', width: 8 }, { key: 'dezenas', header: 'Dezenas', width: 50 }, { key: 'quantidade', header: 'Qtd. dezenas', type: 'int' }, { key: 'custo', header: 'Custo', type: 'money' }], rows: games },
     ], pdf);
-    return 'json' in delivered ? { resumo: { ...summary, cotasLivres: free, percentualVendido: soldPct }, liberacao: gate, jogos: games, colunas: SALES_COLUMNS, linhas: rows } : delivered;
+    return 'json' in delivered ? { resumo: { ...summary, cotasLivres: free, percentualVendido: soldPct }, liberacao: { ...gate, interessados: interested }, jogos: games, colunas: SALES_COLUMNS, linhas: rows } : delivered;
   }
 
   /** Comissões por afiliado, com pendente/paga/cancelada. */
