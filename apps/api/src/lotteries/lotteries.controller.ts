@@ -31,6 +31,13 @@ export class LotteriesController {
     return this.lotteries.sync(modalidade);
   }
 
+  @Get('admin/concursos/diagnostico')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  diagnostics() {
+    return this.lotteries.diagnostics();
+  }
+
   @Post('admin/concursos')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

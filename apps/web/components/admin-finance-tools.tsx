@@ -447,3 +447,39 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
     </>}
   </>;
 }
+
+/** Testa a conexão com a CAIXA (sem gravar nada) e mostra a causa exata de cada falha. */
+export function CaixaDiagnosticsPanel() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<Rec | null>(null);
+  async function run() {
+    setBusy(true); setError('');
+    try {
+      const response = await authFetch('/api/v1/admin/concursos/diagnostico');
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(Array.isArray(payload?.message) ? payload.message.join(' ') : payload?.message || 'Falha ao testar a conexão.');
+      setData(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao testar a conexão.');
+    } finally { setBusy(false); }
+  }
+  const results: Rec[] = data?.resultados ?? [];
+  const okCount = results.filter((row) => row.ok).length;
+  return <Panel title="Conexão com a CAIXA" description="Testa a atualização automática dos concursos sem gravar nada e mostra o motivo exato de cada falha." action={<button className="admin-button" onClick={run} disabled={busy}>{busy ? 'Testando…' : 'Testar conexão com a CAIXA'}</button>}>
+    {error && <div className="admin-toast admin-toast-error" role="alert">{error}</div>}
+    {data && <>
+      <p style={{ opacity: .75, fontSize: 13 }}>{okCount} de {results.length} modalidades responderam. Tempo limite: {data.timeoutMs} ms. Fontes: {(data.fontes ?? []).map((source: Rec) => `${source.tipo === 'caixa' ? 'CAIXA' : 'Alternativa'} (${source.url})`).join(' · ')}</p>
+      <Table minWidth={760}><thead><tr><th>Modalidade</th><th>Situação</th><th>Fonte</th><th>Concurso</th><th>Tempo</th><th>Detalhe</th></tr></thead><tbody>
+        {results.map((row) => <tr key={row.modalidade}>
+          <td><strong>{row.modalidade}</strong></td>
+          <td><span className={row.ok ? 'status-chip status-success' : 'status-chip status-danger'}>{row.ok ? 'OK' : 'Falhou'}</span></td>
+          <td>{row.fonte === 'caixa' ? 'CAIXA' : row.fonte === 'fallback' ? 'Alternativa' : '—'}</td>
+          <td>{row.numero ? `#${row.numero}${row.proximo ? ` → #${row.proximo}` : ''}` : '—'}</td>
+          <td>{row.latenciaMs} ms</td>
+          <td style={{ whiteSpace: 'normal', minWidth: 260 }}>{row.ok ? '—' : <><strong>{row.erro}</strong>{row.dica && <small style={{ display: 'block', opacity: .8 }}>{row.dica}</small>}</>}</td>
+        </tr>)}
+      </tbody></Table>
+    </>}
+  </Panel>;
+}

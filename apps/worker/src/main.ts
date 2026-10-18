@@ -1,39 +1,29 @@
 import 'dotenv/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
+  buildCaixaSources,
   calculateBrazilCutoff,
   CaixaContestPayload,
+  CaixaFetchError,
   CaixaPrizeTier,
+  CaixaSourceHealth,
+  fetchCaixaContest,
   MODALIDADES_LOTERIA,
-  normalizeCaixaContestPayload,
   parseCaixaDate,
+  resolveCaixaTimeout,
 } from '@bolaocerto/shared-types';
 
 const prisma = new PrismaClient();
 const modalities = [...MODALIDADES_LOTERIA];
-const baseUrl = (process.env.CAIXA_API_BASE_URL ?? 'https://servicebus2.caixa.gov.br/portaldeloterias/api').replace(/\/$/, '');
-const fallbackBase = process.env.CAIXA_FALLBACK_BASE_URL?.replace(/\/$/, '');
-const configuredTimeout = Number(process.env.CAIXA_API_TIMEOUT_MS ?? 8000);
-const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? Math.min(configuredTimeout, 60_000) : 8_000;
+const sources = buildCaixaSources(process.env);
+const timeoutMs = resolveCaixaTimeout(process.env.CAIXA_API_TIMEOUT_MS);
+const sourceHealth = new CaixaSourceHealth();
 const configuredInterval = Number(process.env.WORKER_POLL_MS ?? 300_000);
 const intervalMs = Number.isFinite(configuredInterval) && configuredInterval >= 300_000 ? configuredInterval : 300_000;
 
 async function fetchPayload(modality: string): Promise<{ payload: CaixaContestPayload; source: string }> {
-  let lastError = 'erro desconhecido';
-  for (const [source, origin] of [['caixa', baseUrl], ...(fallbackBase ? [['fallback', fallbackBase] as const] : [])] as const) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(`${origin}/${modality}`, { signal: controller.signal, headers: { accept: 'application/json', 'user-agent': 'BL-Bolao-Livre-worker/0.3' } });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return { payload: normalizeCaixaContestPayload(await response.json()), source };
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : 'erro desconhecido';
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw new Error(`${modality}: ${lastError}`);
+  const result = await fetchCaixaContest(modality, sources, { timeoutMs, retries: 1, userAgent: process.env.CAIXA_USER_AGENT, health: sourceHealth });
+  return { payload: result.payload, source: result.source };
 }
 
 function parseDrawnNumbers(payload: CaixaContestPayload): number[] {
@@ -51,7 +41,9 @@ function hitsFor(numbers: number[], drawn: number[]): number {
 function findPrizeTier(tiers: CaixaPrizeTier[], hits: number): CaixaPrizeTier | undefined {
   return tiers.find((tier) => {
     const description = (tier.descricaoFaixa ?? '').toLowerCase();
-    const numeric = Number(description.match(/\d+/)?.[0] ?? 0);
+    const digits = description.match(/\d+/)?.[0];
+    if (digits === undefined) return false; // faixas sem número de acertos (ex.: "Time do Coração") não casam com 0 acertos
+    const numeric = Number(digits);
     return numeric === hits && Number(tier.numeroDeGanhadores ?? 0) > 0 && Number(tier.valorPremio ?? 0) > 0;
   });
 }
@@ -155,10 +147,17 @@ async function syncOnce(): Promise<void> {
       if (numbers.length > 0) await apurarConcurso(currentContestId!, numbers, prizeTiers);
       console.log(JSON.stringify({ event: 'concursos.sincronizados', modalidade: modality, numero: payload.numero, proximo: payload.numeroConcursoProximo, fonte: source }));
     } catch (error) {
-      console.error(JSON.stringify({ event: 'concursos.sincronizacao_falhou', modalidade: modality, error: error instanceof Error ? error.message : String(error) }));
+      console.error(JSON.stringify({
+        event: 'concursos.sincronizacao_falhou',
+        modalidade: modality,
+        error: error instanceof Error ? error.message : String(error),
+        ...(error instanceof CaixaFetchError ? { tentativas: error.attempts.map((attempt) => ({ fonte: attempt.source, status: attempt.status, codigo: attempt.code, erro: attempt.error, ms: attempt.latencyMs, pulada: attempt.skipped })) } : {}),
+      }));
     }
   }
 }
+
+console.log(JSON.stringify({ event: 'worker.iniciado', fontes: sources.map((source) => ({ tipo: source.kind, url: source.template })), timeoutMs, intervaloMs: intervalMs }));
 
 let running = false;
 let shuttingDown = false;

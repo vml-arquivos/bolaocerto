@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { AdminShell } from './admin-shell';
 import { AdminGroupForm, AffiliateNetworkTable, InviteManager, ManagedUserForm } from './admin-people-tools';
 import { PoolWizard as SimplePoolWizard } from './pool-wizard';
-import { InvoicesView, ManualContestForm, ManualSaleForm, PaymentSettingsPanel, ReportsView, ShareActions } from './admin-finance-tools';
+import { CaixaDiagnosticsPanel, InvoicesView, ManualContestForm, ManualSaleForm, PaymentSettingsPanel, ReportsView, ShareActions } from './admin-finance-tools';
 
 type RecordValue = Record<string, any>;
 type PagePayload = { items?: RecordValue[]; pagination?: { page: number; pageSize: number; total: number; pages: number } };
@@ -183,7 +183,19 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   function notify(type: 'success' | 'error', text: string) { setToast({ type, text }); }
 
   async function syncContests() {
-    await execute('/api/v1/admin/concursos/sincronizar', { method: 'POST' }, 'Concursos sincronizados com sucesso.');
+    setBusy(true);
+    try {
+      const result = await fetchAdmin('/api/v1/admin/concursos/sincronizar', { method: 'POST' });
+      const falhas: Array<{ modalidade: string }> = Array.isArray(result?.falhas) ? result.falhas : [];
+      setToast(falhas.length
+        ? { type: 'error', text: `${result?.sincronizados ?? 0} modalidade(s) sincronizada(s); falhou: ${falhas.map((item) => item.modalidade).join(', ')}. Use “Testar conexão com a CAIXA” para ver o motivo.` }
+        : { type: 'success', text: 'Concursos sincronizados com sucesso.' });
+      await load();
+    } catch (error) {
+      setToast({ type: 'error', text: error instanceof Error ? error.message : 'Não foi possível concluir a operação.' });
+    } finally {
+      setBusy(false);
+    }
   }
 
   function DashboardView() {
@@ -199,7 +211,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   }
 
   function ContestsView() {
-    return <><SectionHeading eyebrow="Operação" title="Concursos" description="Concursos sincronizados, prêmios estimados e bolões vinculados." action={<button className="admin-button admin-button-primary" onClick={syncContests} disabled={busy}>Sincronizar agora</button>} /><div style={{ marginBottom: 16 }}><ManualContestForm onDone={load} notify={notify} /></div><Panel title="Concursos cadastrados" description={`${payload.pagination?.total ?? items.length} registros encontrados`}><Table minWidth={980}><thead><tr><th>Modalidade</th><th>Concurso</th><th>Sorteio</th><th>Prêmio estimado</th><th>Status</th><th>Bolões</th><th>Sincronizado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{modalityNames[item.modalidade] ?? item.modalidade}</strong></td><td>#{item.numeroConcurso}</td><td>{dateOnly(item.dataSorteio)}</td><td>{money(item.valorEstimadoPremio)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item._count?.boloes ?? 0}</td><td>{dateTime(item.sincronizadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum concurso encontrado" description="Sincronize a base da CAIXA ou ajuste os filtros." />}</Panel></>;
+    return <><SectionHeading eyebrow="Operação" title="Concursos" description="Concursos sincronizados, prêmios estimados e bolões vinculados." action={<button className="admin-button admin-button-primary" onClick={syncContests} disabled={busy}>Sincronizar agora</button>} /><div style={{ marginBottom: 16 }}><CaixaDiagnosticsPanel /></div><div style={{ marginBottom: 16 }}><ManualContestForm onDone={load} notify={notify} /></div><Panel title="Concursos cadastrados" description={`${payload.pagination?.total ?? items.length} registros encontrados`}><Table minWidth={980}><thead><tr><th>Modalidade</th><th>Concurso</th><th>Sorteio</th><th>Prêmio estimado</th><th>Status</th><th>Bolões</th><th>Sincronizado</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{modalityNames[item.modalidade] ?? item.modalidade}</strong></td><td>#{item.numeroConcurso}</td><td>{dateOnly(item.dataSorteio)}</td><td>{money(item.valorEstimadoPremio)}</td><td><span className={statusClass(item.status)}>{statusLabel(item.status)}</span></td><td>{item._count?.boloes ?? 0}</td><td>{dateTime(item.sincronizadoEm)}</td></tr>)}</tbody></Table>{!items.length && <Empty title="Nenhum concurso encontrado" description="Sincronize a base da CAIXA ou ajuste os filtros." />}</Panel></>;
   }
 
   function PoolsView() {

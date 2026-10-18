@@ -2,18 +2,26 @@ import { BadRequestException, ConflictException, Injectable, ServiceUnavailableE
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import {
+  buildCaixaSources,
   calculateBrazilCutoff,
+  CaixaAttempt,
   CaixaContestPayload,
+  CaixaFetchError,
+  CaixaSourceHealth,
+  fetchCaixaContest,
   MODALIDADES_LOTERIA,
   ModalidadeLoteria,
   normalizeCaixaContestPayload,
   parseCaixaDate,
+  resolveCaixaTimeout,
 } from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
 import { CreateManualContestDto } from './lotteries.dto';
 
 @Injectable()
 export class LotteriesService {
+  private readonly health = new CaixaSourceHealth();
+
   constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
 
   async list(modalidade?: string, status?: string) {
@@ -43,25 +51,52 @@ export class LotteriesService {
     };
   }
 
-  async sync(modalidade?: string): Promise<{ sincronizados: number; fontes: string[] }> {
+  async sync(modalidade?: string): Promise<{ sincronizados: number; fontes: string[]; falhas: Array<{ modalidade: string; erro: string }> }> {
     const modalities = modalidade ? [this.assertModalidade(modalidade)] : [...MODALIDADES_LOTERIA];
     const fontes = new Set<string>();
+    const falhas: Array<{ modalidade: string; erro: string }> = [];
     let sincronizados = 0;
 
     for (const current of modalities) {
       const config = await this.prisma.configLoteria.findUnique({ where: { modalidade: current } });
       if (!config) continue;
-      const payload = await this.fetchFromCaixa(current);
-      const persisted = await this.persistContestPayload(current, config.horarioCorteLocal, payload);
-      if (!persisted) continue;
-      fontes.add('caixa');
-      sincronizados += 1;
+      try {
+        const { payload, source } = await this.fetchFromCaixa(current);
+        await this.persistContestPayload(current, config.horarioCorteLocal, payload, source);
+        fontes.add(source);
+        sincronizados += 1;
+      } catch (error) {
+        falhas.push({ modalidade: current, erro: error instanceof Error ? error.message : 'falha desconhecida' });
+      }
     }
 
-    return { sincronizados, fontes: [...fontes] };
+    // Uma modalidade com problema não derruba as demais; só falha por inteiro se nada foi sincronizado.
+    if (sincronizados === 0 && falhas.length > 0) {
+      const first = falhas[0]!;
+      throw new ServiceUnavailableException(`Não foi possível sincronizar: ${first.erro}${falhas.length > 1 ? ` (+${falhas.length - 1} modalidade(s) com falha)` : ''}. Use "Testar conexão com a CAIXA" para ver o diagnóstico.`);
+    }
+    return { sincronizados, fontes: [...fontes], falhas };
   }
 
-  private async persistContestPayload(modalidade: ModalidadeLoteria, horarioCorteLocal: string, rawPayload: unknown): Promise<boolean> {
+  /** Testa a conexão com cada modalidade sem gravar nada. Usado pelo painel do admin. */
+  async diagnostics(): Promise<{ fontes: Array<{ tipo: string; url: string }>; timeoutMs: number; resultados: Array<{ modalidade: string; ok: boolean; fonte: string | null; latenciaMs: number; numero: number | null; proximo: number | null; erro: string | null; dica: string | null; tentativas: CaixaAttempt[] }> }> {
+    const sources = this.caixaSources();
+    const timeoutMs = resolveCaixaTimeout(this.config.get<string>('CAIXA_API_TIMEOUT_MS'));
+    const resultados = await Promise.all([...MODALIDADES_LOTERIA].map(async (modalidade) => {
+      const started = Date.now();
+      try {
+        const result = await fetchCaixaContest(modalidade, sources, { timeoutMs, retries: 0, userAgent: this.config.get<string>('CAIXA_USER_AGENT') });
+        return { modalidade, ok: true, fonte: result.source, latenciaMs: Date.now() - started, numero: result.payload.numero ?? null, proximo: result.payload.numeroConcursoProximo ?? null, erro: null, dica: null, tentativas: result.attempts };
+      } catch (error) {
+        const attempts = error instanceof CaixaFetchError ? error.attempts : [];
+        const last = [...attempts].reverse().find((attempt) => !attempt.skipped);
+        return { modalidade, ok: false, fonte: null, latenciaMs: Date.now() - started, numero: null, proximo: null, erro: last?.error ?? (error instanceof Error ? error.message : 'falha desconhecida'), dica: last?.hint ?? null, tentativas: attempts };
+      }
+    }));
+    return { fontes: sources.map((source) => ({ tipo: source.kind, url: source.template })), timeoutMs, resultados };
+  }
+
+  private async persistContestPayload(modalidade: ModalidadeLoteria, horarioCorteLocal: string, rawPayload: unknown, source: string = 'caixa'): Promise<boolean> {
     const payload = normalizeCaixaContestPayload(rawPayload);
     const currentDrawDate = parseCaixaDate(payload.dataApuracao);
     const nextDrawDate = parseCaixaDate(payload.dataProximoConcurso);
@@ -86,14 +121,14 @@ export class LotteriesService {
           valorEstimadoPremio: null,
           acumulado: Boolean(payload.acumulado),
           status: numbers.length > 0 ? 'apurado' : 'fechado',
-          fonteSincronizacao: 'caixa',
+          fonteSincronizacao: source,
         },
         update: {
           dataSorteio: currentDrawDate,
           cutoffAt: currentCutoffAt,
           acumulado: Boolean(payload.acumulado),
           ...(numbers.length > 0 ? { status: 'apurado' } : {}),
-          fonteSincronizacao: 'caixa',
+          fonteSincronizacao: source,
           sincronizadoEm: new Date(),
         },
       });
@@ -116,14 +151,14 @@ export class LotteriesService {
           valorEstimadoPremio: nextEstimatedPrize,
           acumulado: Boolean(payload.acumulado),
           status: 'aberto',
-          fonteSincronizacao: 'caixa',
+          fonteSincronizacao: source,
         },
         update: {
           dataSorteio: nextDrawDate,
           cutoffAt: nextCutoffAt,
           valorEstimadoPremio: nextEstimatedPrize,
           acumulado: Boolean(payload.acumulado),
-          fonteSincronizacao: 'caixa',
+          fonteSincronizacao: source,
           sincronizadoEm: new Date(),
         },
       });
@@ -141,21 +176,21 @@ export class LotteriesService {
     return numbers;
   }
 
-  private async fetchFromCaixa(modalidade: ModalidadeLoteria): Promise<unknown> {
-    const base = this.config.get<string>('CAIXA_API_BASE_URL', 'https://servicebus2.caixa.gov.br/portaldeloterias/api').replace(/\/$/, '');
-    const configuredTimeout = Number(this.config.get<string>('CAIXA_API_TIMEOUT_MS', '8000'));
-    const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? Math.min(configuredTimeout, 60_000) : 8_000;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
+  private caixaSources() {
+    return buildCaixaSources({
+      CAIXA_API_BASE_URL: this.config.get<string>('CAIXA_API_BASE_URL'),
+      CAIXA_FALLBACK_BASE_URL: this.config.get<string>('CAIXA_FALLBACK_BASE_URL'),
+    });
+  }
+
+  private async fetchFromCaixa(modalidade: ModalidadeLoteria): Promise<{ payload: CaixaContestPayload; source: string }> {
+    const sources = this.caixaSources();
+    const timeoutMs = resolveCaixaTimeout(this.config.get<string>('CAIXA_API_TIMEOUT_MS'));
     try {
-      const response = await fetch(`${base}/${modalidade}`, { signal: controller.signal, headers: { accept: 'application/json', 'user-agent': 'BL-Bolao-Livre/0.3' } });
-      if (!response.ok) throw new Error(`Caixa respondeu HTTP ${response.status}`);
-      return await response.json();
+      const result = await fetchCaixaContest(modalidade, sources, { timeoutMs, retries: 1, userAgent: this.config.get<string>('CAIXA_USER_AGENT'), health: this.health });
+      return { payload: result.payload, source: result.source };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'falha desconhecida';
-      throw new ServiceUnavailableException(`Não foi possível sincronizar ${modalidade}: ${message}`);
-    } finally {
-      clearTimeout(timer);
+      throw new ServiceUnavailableException(error instanceof Error ? error.message : `Não foi possível sincronizar ${modalidade}.`);
     }
   }
 

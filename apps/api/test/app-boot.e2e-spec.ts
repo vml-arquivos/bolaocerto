@@ -53,7 +53,7 @@ describe('Inicialização completa da API (AppModule)', () => {
   });
 
   it('protege as rotas de NFS-e, endereço do participante e os relatórios novos (401 sem login)', async () => {
-    for (const path of ['/api/v1/admin/nfse/configuracao', '/api/v1/admin/nfse/diagnostico', '/api/v1/admin/notas-fiscais', '/api/v1/admin/relatorios/pagamentos', '/api/v1/admin/relatorios/notas-fiscais?formato=xlsx', '/api/v1/usuarios/me/endereco']) {
+    for (const path of ['/api/v1/admin/nfse/configuracao', '/api/v1/admin/nfse/diagnostico', '/api/v1/admin/notas-fiscais', '/api/v1/admin/relatorios/pagamentos', '/api/v1/admin/relatorios/notas-fiscais?formato=xlsx', '/api/v1/usuarios/me/endereco', '/api/v1/admin/concursos/diagnostico']) {
       await request(app.getHttpServer()).get(path).expect(401);
     }
     for (const path of ['/api/v1/admin/nfse/emissor', '/api/v1/admin/nfse/sincronizar', '/api/v1/admin/notas-fiscais/pagamento/6f1c1b9e-8f0a-4a3e-9d1b-2f6f4f4d9a11/emitir', '/api/v1/admin/notas-fiscais/6f1c1b9e-8f0a-4a3e-9d1b-2f6f4f4d9a11/cancelar']) {

@@ -130,25 +130,29 @@ function optionalPrizeTiers(value: unknown): CaixaPrizeTier[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter(isRecord).map((tier) => ({
     faixa: optionalPositiveInteger(tier.faixa),
-    descricaoFaixa: optionalString(tier.descricaoFaixa),
-    numeroDeGanhadores: optionalFiniteNumber(tier.numeroDeGanhadores),
+    descricaoFaixa: optionalString(tier.descricaoFaixa) ?? optionalString(tier.descricao),
+    numeroDeGanhadores: optionalFiniteNumber(tier.numeroDeGanhadores) ?? optionalFiniteNumber(tier.ganhadores),
     valorPremio: optionalFiniteNumber(tier.valorPremio),
   }));
 }
 
+/**
+ * Aceita o formato oficial da CAIXA e o formato dos espelhos públicos (ex.: loteriascaixa-api):
+ * concurso/data/dezenas/dezenasOrdemSorteio/premiacoes/acumulou/proximoConcurso.
+ */
 export function normalizeCaixaContestPayload(value: unknown): CaixaContestPayload {
   if (!isRecord(value)) throw new Error('Resposta da CAIXA não é um objeto JSON.');
   return {
-    numero: optionalPositiveInteger(value.numero),
-    numeroConcursoProximo: optionalPositiveInteger(value.numeroConcursoProximo),
-    dataApuracao: optionalString(value.dataApuracao),
+    numero: optionalPositiveInteger(value.numero ?? value.concurso),
+    numeroConcursoProximo: optionalPositiveInteger(value.numeroConcursoProximo ?? value.proximoConcurso),
+    dataApuracao: optionalString(value.dataApuracao ?? value.data),
     dataProximoConcurso: optionalString(value.dataProximoConcurso),
     valorAcumuladoProximoConcurso: optionalFiniteNumber(value.valorAcumuladoProximoConcurso),
     valorEstimadoProximoConcurso: optionalFiniteNumber(value.valorEstimadoProximoConcurso),
-    acumulado: typeof value.acumulado === 'boolean' ? value.acumulado : undefined,
-    listaDezenas: optionalStringArray(value.listaDezenas),
-    dezenasSorteadasOrdemSorteio: optionalStringArray(value.dezenasSorteadasOrdemSorteio),
-    listaRateioPremio: optionalPrizeTiers(value.listaRateioPremio),
+    acumulado: typeof value.acumulado === 'boolean' ? value.acumulado : typeof value.acumulou === 'boolean' ? value.acumulou : undefined,
+    listaDezenas: optionalStringArray(value.listaDezenas ?? value.dezenas),
+    dezenasSorteadasOrdemSorteio: optionalStringArray(value.dezenasSorteadasOrdemSorteio ?? value.dezenasOrdemSorteio),
+    listaRateioPremio: optionalPrizeTiers(value.listaRateioPremio ?? value.premiacoes),
   };
 }
 
@@ -230,3 +234,5 @@ export function calculateBrazilCutoff(drawDate: Date, localTime: string): Date {
   if (!cutoff) throw new Error('Não foi possível calcular o corte do concurso.');
   return cutoff;
 }
+
+export * from './caixa-client';

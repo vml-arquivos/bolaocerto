@@ -15,3 +15,8 @@ No Coolify, a aplicação `bolaolivre` está no ambiente `production`, servidor 
 URL do deployment: https://coolifycar.casadf.com.br/project/m0lm8noh2uairxrxmhflazfl/environment/n6r05mgih5vsfzjxoephq5at/application/suneq7c8jbdzc5xpet0vjeov/deployment/uhdlu1tbsrjo6ahovi71gohu
 
 A configuração do Coolify ainda exibe o indicador visual de alterações pendentes durante a tela de histórico, mas o deployment correto foi criado com o SHA completo e finalizado com sucesso; isso não impediu a publicação da imagem validada.
+
+
+## Atualização — 18/10/2026
+
+A integração foi reforçada (cabeçalhos de navegador, repetição, fontes alternativas, diagnóstico no admin). Veja `docs/integracao-caixa.md`. O recurso de teste de conexão e o cadastro manual de concursos continuam disponíveis para os casos em que o firewall da CAIXA bloquear o servidor.
