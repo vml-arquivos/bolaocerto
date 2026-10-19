@@ -43,6 +43,8 @@ const modalityLimits: Record<string, { max: number; min: number; pick: number }>
   loteca: { max: 14, min: 1, pick: 1 },
 };
 
+// Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
+const selfLoadingViews = new Set(['relatorios', 'notas-fiscais', 'conexoes', 'crm', 'controle', 'configuracoes']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'participantes', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'rede', 'convites']);
 
 function money(value: unknown) {
@@ -140,7 +142,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     setLoading(true);
     setToast(null);
     try {
-      if (view === 'relatorios' || view === 'notas-fiscais' || view === 'conexoes') { setLoading(false); return; }
+      if (selfLoadingViews.has(view)) { setLoading(false); return; }
       // A Visão geral só aceita o período; as listas aceitam paginação, busca e status (a API recusa parâmetros desconhecidos).
       const query = view === 'visao-geral' ? new URLSearchParams({ periodo: period }) : new URLSearchParams({ page: String(view === 'concursos' ? page : 1), pageSize: view === 'concursos' ? '30' : '50' });
       if (view !== 'visao-geral') {
