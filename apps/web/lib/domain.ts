@@ -8,6 +8,8 @@ export type PoolRelease = { condicional: boolean; liberado: boolean; gatilho: nu
 export type PoolGameResult = { ordem: number; numeros: number[]; acertos: number; acertosSegundoSorteio: number | null; premios: Array<{ faixa: string; sorteio: number; acertos: number; valor: number }>; total: number };
 export type PoolTransparency = {
   registradoEm: string | null; codigoBilhete: string | null; comprovanteUrl: string | null; apuradoEm: string | null; premioTotal: string | null;
+  prazoResgateAte?: string | null;
+  anexos?: Array<{ id: string; tipo: string; nome: string; mime: string; tamanho: number; sha256: string; enviadoEm: string }>;
   apuracao: { concurso: number; sorteados: number[]; segundoSorteio: number[]; melhorFaixa: string | null; jogos: PoolGameResult[] } | null;
 };
 

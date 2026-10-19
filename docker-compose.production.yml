@@ -29,6 +29,7 @@ services:
       ALERT_ENV_LABEL: ${ALERT_ENV_LABEL:-BL}
     volumes:
       - backup_data:/backups
+      - uploads_data:/uploads:ro
       - ./infra/backup:/scripts:ro
     depends_on:
       postgres:
@@ -97,6 +98,8 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
       TOTP_ENC_KEY: ${TOTP_ENC_KEY:-}
+      UPLOAD_DIR: /data/uploads
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-10}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
       ALERT_ENV_LABEL: ${ALERT_ENV_LABEL:-BL}
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
@@ -107,6 +110,8 @@ services:
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:?ADMIN_BOOTSTRAP_EMAIL obrigatoria}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?ADMIN_BOOTSTRAP_PASSWORD obrigatoria}
       ADMIN_BOOTSTRAP_CPF: ${ADMIN_BOOTSTRAP_CPF:?ADMIN_BOOTSTRAP_CPF obrigatoria}
+    volumes:
+      - uploads_data:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -164,3 +169,4 @@ services:
 volumes:
   postgres_data:
   backup_data:
+  uploads_data:

@@ -15,6 +15,7 @@ export const NOTIFICATION_TITLES: Record<string, string> = {
   'pagamento.confirmado': 'Pagamento confirmado',
   'bolao.liberado': 'Cotas liberadas',
   'bolao.apurado': 'Seu bolão foi apurado',
+  'cota.recibo': 'Recibo da sua cota disponível',
   'conta.exclusao_solicitada': 'Pedido de exclusão registrado',
 };
 
@@ -23,7 +24,7 @@ export function describeNotification(tipo: string, payload: NotificationPayload)
   const titulo = payload.titulo || NOTIFICATION_TITLES[tipo] || 'Aviso do BL';
   const mensagem = payload.mensagem || 'Você tem uma novidade na sua conta.';
   const poolLink = tipo === 'bolao.apurado' && typeof payload.bolaoId === 'string' && /^[0-9a-f-]{36}$/i.test(payload.bolaoId) ? `/boloes/${payload.bolaoId}` : null;
-  const link = typeof payload.link === 'string' ? payload.link : poolLink ?? (tipo === 'cota.premiada' || tipo === 'pagamento.confirmado' ? '/minha-conta' : null);
+  const link = typeof payload.link === 'string' ? payload.link : poolLink ?? (tipo === 'cota.premiada' || tipo === 'pagamento.confirmado' || tipo === 'cota.recibo' ? '/minha-conta' : null);
   return { titulo, mensagem, link };
 }
 

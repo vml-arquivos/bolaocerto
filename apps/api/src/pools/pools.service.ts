@@ -22,7 +22,7 @@ export class PoolsService {
   }
 
   async getPublicById(id: string) {
-    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } } });
+    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, anexos: { where: { removidoEm: null, cotaId: null, visivelParticipantes: true }, orderBy: { criadoEm: 'asc' } } } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     return this.toPublic(pool);
   }
@@ -231,6 +231,10 @@ export class PoolsService {
         apuradoEm: pool.apuradoEm ?? null,
         premioTotal: pool.premioTotal === null || pool.premioTotal === undefined ? null : Number(pool.premioTotal).toFixed(2),
         apuracao: pool.apuracao ?? null,
+        /** Prazo legal para resgatar prêmios na CAIXA: 90 dias após o sorteio. */
+        prazoResgateAte: pool.apuradoEm ? new Date(new Date(pool.apuradoEm).getTime() + 90 * 86_400_000).toISOString() : null,
+        /** Só dados do arquivo; o conteúdo só abre para quem participa (login). */
+        anexos: (pool.anexos ?? []).map((file: any) => ({ id: file.id, tipo: file.tipo, nome: file.nomeOriginal, mime: file.mime, tamanho: file.tamanho, sha256: file.sha256, enviadoEm: file.criadoEm })),
       } : null,
       liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso?.valorEstimadoPremio }),
       financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista === null ? null : receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista === null ? null : taxaPrevista.toFixed(2), margemOperacionalPrevista: taxaPrevista === null ? null : (taxaPrevista - custoJogos).toFixed(2) },

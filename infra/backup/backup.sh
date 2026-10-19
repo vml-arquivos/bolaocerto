@@ -25,5 +25,15 @@ gzip -9 < "$TMP.sql" > "$TMP"; rm -f "$TMP.sql"
 if ! gzip -t "$TMP" 2>/dev/null || [ "$(wc -c < "$TMP")" -lt 2000 ]; then rm -f "$TMP"; notify_failure "arquivo gerado inválido ou vazio"; exit 1; fi
 mv "$TMP" "$OUT"
 echo "[backup] ok: $OUT ($(wc -c < "$OUT") bytes)"
+# Arquivos enviados (comprovantes/recibos), se a pasta estiver montada em /uploads.
+UPLOADS="${UPLOADS_DIR:-/uploads}"
+if [ -d "$UPLOADS" ] && [ -n "$(ls -A "$UPLOADS" 2>/dev/null)" ]; then
+  FILES_OUT="$DIR/bl-arquivos-$STAMP.tar.gz"
+  if tar -czf "$FILES_OUT.partial" -C "$UPLOADS" . 2>/dev/null && gzip -t "$FILES_OUT.partial" 2>/dev/null; then
+    mv "$FILES_OUT.partial" "$FILES_OUT"; echo "[backup] ok: $FILES_OUT ($(wc -c < "$FILES_OUT") bytes)"
+  else
+    rm -f "$FILES_OUT.partial"; notify_failure "não foi possível copiar os arquivos enviados (comprovantes)"
+  fi
+fi
 # Retenção
-find "$DIR" -name 'bl-*.sql.gz' -mtime +"$KEEP" -print -delete 2>/dev/null || true
+find "$DIR" \( -name 'bl-*.sql.gz' -o -name 'bl-arquivos-*.tar.gz' \) -mtime +"$KEEP" -print -delete 2>/dev/null || true

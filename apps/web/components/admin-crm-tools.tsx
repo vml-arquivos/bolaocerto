@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, brl, chip, dateOnly, dateTime, Empty, ExportBar, Kpi, label, modalityNames, Notify, Panel, Progress, Rec, ReleaseBadge, Table } from './admin-ui';
+import { AttachmentsPanel } from './admin-attachments';
 
 /* -------------------------------------------------------------------------- */
 /* CRM de clientes                                                         */
@@ -251,6 +252,8 @@ function PoolDetail({ id, onClose, onChanged, notify }: { id: string; onClose: (
     <div className="admin-chip-row" role="tablist" aria-label="Filtro de participantes">{FILTERS.map(([key, title]) => <button key={key} role="tab" aria-selected={filter === key} className={`admin-chip-button ${filter === key ? 'is-current' : ''}`} onClick={() => setFilter(key)}>{title}</button>)}</div>
     <Table minWidth={1100}><thead><tr><th>Participante</th><th>CPF</th><th>Contato</th><th>Cotas</th><th>Valor</th><th>Cota</th><th>Pagamento</th><th>Forma</th><th>Pago em</th><th>Afiliado</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td><strong>{row.participante}</strong></td><td>{row.cpf}</td><td>{row.telefone ?? '—'}<small>{row.email}</small></td><td>{row.quantidade}</td><td>{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td><span className={chip(row.statusPagamento)}>{label(row.statusPagamento)}</span></td><td>{label(row.metodo)}</td><td>{dateTime(row.pagoEm)}</td><td>{row.afiliado ?? '—'}</td></tr>)}</tbody></Table>
     {!rows.length && <Empty text="Nenhum participante neste filtro" />}
+    <h3 className="admin-subtitle">Comprovantes e jogos registrados</h3>
+    <AttachmentsPanel poolId={id} notify={notify} />
     <p className="admin-help" style={{ marginTop: 12 }}>O PDF é uma ficha pronta para imprimir (CPF protegido). A planilha e o CSV trazem todos os campos, inclusive o CPF completo, e cada exportação fica registrada na auditoria.</p>
   </Panel>;
 }

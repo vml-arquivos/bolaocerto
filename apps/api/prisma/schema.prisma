@@ -35,6 +35,12 @@ enum StatusBolao {
   apurado
   cancelado
 }
+enum TipoAnexo {
+  comprovante_aposta
+  jogos_registrados
+  recibo_cota
+  outro
+}
 enum StatusCota {
   reservada
   paga
@@ -135,8 +141,14 @@ model Usuario {
   crmNotas              CrmNota[]    @relation("crm_nota_usuario")
   crmNotasEscritas      CrmNota[]    @relation("crm_nota_autor")
   exclusaoSolicitadaEm  DateTime?    @map("exclusao_solicitada_em")
+  pausaAte              DateTime?    @map("pausa_ate")
+  pausaPermanente       Boolean      @default(false) @map("pausa_permanente")
+  limiteMensal          Decimal?     @map("limite_mensal") @db.Decimal(10,2)
+  limiteMensalPendente  Decimal?     @map("limite_mensal_pendente") @db.Decimal(10,2)
+  limiteMensalPendenteEm DateTime?   @map("limite_mensal_pendente_em")
   tokensSenha           TokenSenha[]
   bolaoInteresses       BolaoInteresse[]
+  anexosEnviados        Anexo[]          @relation("anexo_enviado_por")
 
   @@map("usuarios")
 }
@@ -317,6 +329,7 @@ model Bolao {
   cotas                 Cota[]
   jogos                 JogoBolao[]
   interesses            BolaoInteresse[]
+  anexos                Anexo[]
 
   @@index([concursoId, status])
   @@index([criadoPor, status])
@@ -363,6 +376,7 @@ model Cota {
   mandato               Mandato?
   pagamento             Pagamento?
   comissao              Comissao?
+  anexos                Anexo[]
 
   @@index([bolaoId, status])
   @@index([compradorId, status])
@@ -566,4 +580,30 @@ model BolaoInteresse {
   @@unique([bolaoId, usuarioId])
   @@index([usuarioId])
   @@map("bolao_interesses")
+}
+
+model Anexo {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bolaoId              String    @map("bolao_id") @db.Uuid
+  cotaId               String?   @map("cota_id") @db.Uuid
+  tipo                 TipoAnexo
+  nomeOriginal         String    @map("nome_original") @db.VarChar(200)
+  mime                 String    @db.VarChar(80)
+  tamanho              Int
+  sha256               String    @db.VarChar(64)
+  caminho              String    @db.VarChar(300)
+  descricao            String?   @db.VarChar(200)
+  visivelParticipantes Boolean   @default(true) @map("visivel_participantes")
+  enviadoPor           String    @map("enviado_por") @db.Uuid
+  criadoEm             DateTime  @default(now()) @map("criado_em")
+  removidoEm           DateTime? @map("removido_em")
+  removidoPor          String?   @map("removido_por") @db.Uuid
+  bolao                Bolao     @relation(fields: [bolaoId], references: [id])
+  cota                 Cota?     @relation(fields: [cotaId], references: [id])
+  autor                Usuario   @relation("anexo_enviado_por", fields: [enviadoPor], references: [id])
+
+  @@index([bolaoId, removidoEm])
+  @@index([cotaId])
+  @@index([sha256])
+  @@map("anexos")
 }

@@ -5,7 +5,7 @@ import { modalityNames, money, shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { ReceiptPanel } from './receipt-panel';
-import { NotificationsCard, PasswordCard, PrivacyCard, TwoFactorCard } from './account-extras';
+import { NotificationsCard, PasswordCard, PrivacyCard, ReceiptsCard, ResponsiblePlayCard, TwoFactorCard } from './account-extras';
 
 type User = { id: string; nome: string; email: string; papel: string; statusKyc: string };
 type Share = {
@@ -115,6 +115,8 @@ export function AccountDashboard() {
         {shares.length ? <div className="share-list">{shares.map((share) => <ShareCard key={share.id} share={share} onPaid={() => void load()} />)}</div>
           : <div className="empty-state compact"><h3>Você ainda não possui cotas</h3><p>Escolha um bolão disponível para iniciar sua participação.</p><Link className="button button-primary" href="/#boloes">Ver bolões</Link></div>}
       </article>
+      <ReceiptsCard />
+      <ResponsiblePlayCard />
       <PasswordCard />
       <TwoFactorCard role={user?.papel} />
       <PrivacyCard />

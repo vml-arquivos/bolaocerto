@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -7,11 +7,12 @@ import { RolesGuard } from '../auth/roles.guard';
 import { AuthService } from '../auth/auth.service';
 import { setAuthCookies } from '../auth/cookies';
 import { AccountService } from './account.service';
-import { ChangePasswordDto, DeletionRequestDto, ForgotPasswordDto, ResetPasswordDto } from './account.dto';
+import { ResponsiblePlayService } from '../common/responsible-play.service';
+import { ChangePasswordDto, DeletionRequestDto, ForgotPasswordDto, MonthlyLimitDto, PauseDto, ResetPasswordDto } from './account.dto';
 
 @Controller()
 export class AccountController {
-  constructor(private readonly account: AccountService, private readonly auth: AuthService) {}
+  constructor(private readonly account: AccountService, private readonly auth: AuthService, private readonly responsible: ResponsiblePlayService) {}
 
   @Post('auth/esqueci-senha')
   @HttpCode(200)
@@ -44,6 +45,19 @@ export class AccountController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   requestDeletion(@CurrentUser() user: AuthUser, @Body() dto: DeletionRequestDto) { return this.account.requestDeletion(user.id, dto.motivo); }
+
+  @Get('usuarios/me/jogo-responsavel')
+  @UseGuards(JwtAuthGuard)
+  responsibleStatus(@CurrentUser() user: AuthUser) { return this.responsible.status(user.id); }
+
+  @Post('usuarios/me/jogo-responsavel/pausa')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  pause(@CurrentUser() user: AuthUser, @Body() dto: PauseDto) { return this.responsible.pause(user.id, dto); }
+
+  @Put('usuarios/me/jogo-responsavel/limite')
+  @UseGuards(JwtAuthGuard)
+  setLimit(@CurrentUser() user: AuthUser, @Body() dto: MonthlyLimitDto) { return this.responsible.setLimit(user.id, dto.valor); }
 
   @Post('admin/usuarios/:id/redefinicao-senha')
   @HttpCode(200)

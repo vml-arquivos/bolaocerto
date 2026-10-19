@@ -50,6 +50,57 @@ export class MailService {
     return this.transporter;
   }
 
+  /** Dados do SMTP para o painel — nunca a senha. */
+  describe() {
+    const user = this.config.get<string>('SMTP_USER')?.trim() ?? '';
+    const port = Number(this.config.get<string>('SMTP_PORT', '587')) || 587;
+    const secureRaw = this.config.get<string>('SMTP_SECURE');
+    const masked = user ? (user.includes('@') ? `${user.slice(0, 2)}***${user.slice(user.indexOf('@'))}` : `${user.slice(0, 2)}***`) : null;
+    return {
+      configurado: this.isConfigured(),
+      servidor: this.config.get<string>('SMTP_HOST')?.trim() || null,
+      porta: port,
+      seguro: secureRaw !== undefined && secureRaw !== '' ? secureRaw === 'true' : port === 465,
+      usuario: masked,
+      temSenha: Boolean(this.config.get<string>('SMTP_PASS')),
+      remetente: this.config.get<string>('MAIL_FROM') || null,
+      enderecoDoSite: this.publicUrl(),
+    };
+  }
+
+  /** Traduz o erro técnico do SMTP para uma frase que a equipe entende. */
+  explainError(error: unknown): string {
+    const code = (error as { code?: string; responseCode?: number })?.code ?? '';
+    const responseCode = (error as { responseCode?: number })?.responseCode ?? 0;
+    if (code === 'EAUTH' || responseCode === 535 || responseCode === 534) return 'O servidor recusou o usuário ou a senha do e-mail. Confira SMTP_USER e SMTP_PASS (em Gmail/Google Workspace use uma "senha de app").';
+    if (code === 'ENOTFOUND') return 'Não encontrei o servidor de e-mail. Confira o endereço em SMTP_HOST.';
+    if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ESOCKET' || code === 'ECONNECTION') return 'Não consegui conectar ao servidor de e-mail. Confira SMTP_HOST, SMTP_PORT e SMTP_SECURE (587 costuma ser "false", 465 costuma ser "true") e se o servidor libera a porta.';
+    if (code === 'EENVELOPE' || responseCode === 550 || responseCode === 553) return 'O servidor aceitou a conexão, mas recusou o remetente ou o destinatário. Confira MAIL_FROM (precisa ser um endereço do seu domínio autorizado).';
+    return `Falha ao enviar: ${error instanceof Error ? error.message.slice(0, 160) : 'erro desconhecido'}.`;
+  }
+
+  /** Testa a conexão e envia um e-mail de verdade. Diferente de send(), devolve o motivo da falha. */
+  async sendTest(to: string): Promise<{ ok: boolean; detalhe: string }> {
+    const transporter = this.getTransporter();
+    if (!transporter) return { ok: false, detalhe: 'O e-mail ainda não foi ligado: falta preencher SMTP_HOST nas variáveis do servidor.' };
+    try {
+      await transporter.verify();
+    } catch (error) {
+      return { ok: false, detalhe: this.explainError(error) };
+    }
+    try {
+      await transporter.sendMail({
+        from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', to,
+        subject: 'Teste de e-mail — BL Bolão Livre',
+        text: 'Se você recebeu esta mensagem, o envio de e-mails do BL está funcionando.',
+        html: wrapEmailHtml('O e-mail está funcionando', '<p>Se você recebeu esta mensagem, o envio de e-mails do BL está funcionando. Avisos de pagamento, recibos e recuperação de senha vão sair por aqui.</p>'),
+      });
+      return { ok: true, detalhe: `E-mail de teste enviado para ${to}. Confira a caixa de entrada (e o spam).` };
+    } catch (error) {
+      return { ok: false, detalhe: this.explainError(error) };
+    }
+  }
+
   /** Envia o e-mail. Nunca lança: devolve false se o SMTP não estiver configurado ou falhar. */
   async send(message: MailMessage): Promise<boolean> {
     const transporter = this.getTransporter();

@@ -1,15 +1,16 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota, StatusPagamento } from '@prisma/client';
 import { AuthUser, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
+import { ResponsiblePlayService } from '../common/responsible-play.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { buildReceiptData, buildReceiptPdf, MODALITY_NAMES, receiptCode, receiptCodeMatches, ReceiptData } from './receipt';
 import { ReserveShareDto } from './shares.dto';
 
 @Injectable()
 export class SharesService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly responsible?: ResponsiblePlayService) {}
 
   async reserve(dto: ReserveShareDto, user: AuthUser, requestMeta: { ip: string; userAgent?: string }) {
     if (process.env.PAYMENTS_ENABLED !== 'true') throw new ServiceUnavailableException('As reservas estão temporariamente indisponíveis. Tente novamente em instantes.');
@@ -18,6 +19,7 @@ export class SharesService {
     const expectedHash = process.env.MANDATO_TERM_HASH;
     if (!expectedHash) throw new ServiceUnavailableException('Termo de mandato ainda não configurado pelo operador.');
     if (dto.termoMandatoHash !== expectedHash) throw new ConflictException('Versão do termo de mandato inválida.');
+    await this.responsible?.assertCanBuy(user.id, dto.bolaoId, dto.quantidade);
     const expirationMinutes = Number(process.env.SHARE_RESERVATION_MINUTES ?? 15);
     const expiresAt = new Date(Date.now() + expirationMinutes * 60_000);
     const affiliate = dto.codigoAfiliado

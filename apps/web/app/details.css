@@ -139,3 +139,40 @@
 /* Banner de instalação do app (PWA) */
 .install-banner{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:16px;background:var(--surface-2,#111a3a);border:1px solid color-mix(in srgb,currentColor 14%,transparent);box-shadow:0 12px 40px rgba(0,0,0,.35);font-size:.92rem}
 @media (min-width:720px){.install-banner{left:auto;max-width:460px}}
+
+/* ---------- Arquivos anexados (comprovantes) ---------- */
+.attach-panel { display: grid; gap: 16px; }
+.attach-check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); margin: 0 0 12px; }
+.attach-drop { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 22px 16px; border: 2px dashed color-mix(in srgb, currentColor 22%, transparent); border-radius: 16px; cursor: pointer; transition: border-color .15s, background .15s; }
+.attach-drop:hover, .attach-drop.is-over { border-color: var(--primary, #2f5bff); background: color-mix(in srgb, var(--primary, #2f5bff) 7%, transparent); }
+.attach-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.attach-drop:focus-within { outline: 2px solid var(--primary, #2f5bff); outline-offset: 2px; }
+.attach-drop small { color: var(--text-muted); }
+.attach-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.attach-list li { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 12px 14px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 14px; }
+.attach-info { display: grid; gap: 2px; min-width: 0; flex: 1 1 260px; }
+.attach-info strong { overflow-wrap: anywhere; font-weight: 560; }
+.attach-info small { color: var(--text-muted); }
+.attach-hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.attach-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.attach-confirm { margin-top: 20px; padding-top: 16px; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.attach-confirm h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.open-file { display: inline-flex; flex-direction: column; gap: 2px; }
+.open-file-error { color: #c2362b; }
+.admin-modal-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(6, 12, 36, .55); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
+.admin-modal { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; background: var(--surface, #fff); color: var(--text, inherit); border-radius: 20px; padding: 20px; box-shadow: 0 24px 80px rgba(0, 0, 0, .35); }
+.admin-modal header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.admin-modal header h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.transparency-files { margin-top: 14px; display: grid; gap: 8px; }
+.transparency-files ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.transparency-files li { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 12px; }
+.transparency-files small { color: var(--text-muted); display: block; }
+
+/* Conexões */
+.connections-test { margin-top: 14px; }
+.connections-code { margin: 8px 0; padding: 12px; border-radius: 12px; background: color-mix(in srgb, currentColor 7%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; overflow-x: auto; white-space: pre; }
+.form-error { color: #c2362b; }
+.receipt-files { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.receipt-files li { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 12px; }
+.receipt-files small { display: block; color: var(--text-muted); overflow-wrap: anywhere; }
+.admin-subtitle { margin: 22px 0 10px; font-size: 15px; font-weight: 600; }

@@ -61,6 +61,7 @@ const groups = [
     label: 'Conta e acesso',
     items: [
       ['usuarios', 'Contas', 'US'],
+      ['conexoes', 'Conexões', 'CX'],
       ['auditoria', 'Histórico', 'HI'],
       ['configuracoes', 'Configurações', 'CF'],
     ],

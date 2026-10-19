@@ -17,6 +17,8 @@ import { StatisticsModule } from './statistics/statistics.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AccountModule } from './account/account.module';
 import { OperationModule } from './operation/operation.module';
+import { AttachmentsModule } from './attachments/attachments.module';
+import { SystemModule } from './system/system.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -36,6 +38,8 @@ import { HealthController } from './health.controller';
     StatisticsModule,
     NotificationsModule,
     AccountModule,
+    AttachmentsModule,
+    SystemModule,
     OperationModule,
   ],
   controllers: [HealthController],

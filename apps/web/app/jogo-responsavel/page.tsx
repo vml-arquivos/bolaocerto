@@ -20,7 +20,7 @@ export default function ResponsibleGamingPage() {
         <h2>Onde buscar ajuda</h2>
         <p>Procure apoio profissional na rede pública de saúde (CAPS e UBS) ou o CVV (telefone 188, 24 horas, gratuito). Grupos como Jogadores Anônimos também oferecem acolhimento gratuito.</p>
         <h2>Pausar ou encerrar sua conta</h2>
-        <p>Você pode solicitar a exclusão da sua conta a qualquer momento em Minha conta &gt; Privacidade. Para pedir uma pausa ou um limite de participações, fale com o suporte.</p>
+        <p>Você pode solicitar a exclusão da sua conta a qualquer momento em Minha conta &gt; Privacidade. Em Minha conta &gt; Jogo responsável você mesmo define um limite de gasto por mês e pode pausar suas compras por 30, 60 ou 90 dias, ou sem prazo. Baixar o limite vale na hora; subir ou tirar o limite só vale depois de 24 horas. Para voltar de uma pausa sem prazo, fale com o suporte.</p>
       </main>
       <SiteFooter />
     </>

@@ -232,8 +232,9 @@ export class UpdateUserKycDto {
 
 export class OperationReceiptDto {
   /** Aparece publicamente na página do bolão: só https (bloqueia javascript:, data: etc.). */
+  @IsOptional()
   @IsUrl({ protocols: ['https'], require_protocol: true }, { message: 'Informe o link do comprovante começando com https://' })
-  comprovanteUrl!: string;
+  comprovanteUrl?: string;
 
   @IsOptional()
   @IsString()

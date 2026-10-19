@@ -28,11 +28,14 @@ FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# Arquivos enviados (comprovantes). Monte um volume persistente aqui, senão somem a cada deploy.
+ENV UPLOAD_DIR=/data/uploads
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl wget openssl ca-certificates tini \
   && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+  && corepack enable \
+  && mkdir -p /data/uploads
 
 FROM runtime AS api
 COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./

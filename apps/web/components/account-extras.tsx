@@ -4,6 +4,9 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
+import { ATTACHMENT_LABELS, fileSize } from '../lib/files';
+import { OpenFileButton } from './open-file-button';
+import { modalityNames } from '../lib/domain';
 
 type Notice = { id: string; titulo: string; mensagem: string; link: string | null; lida: boolean; criadoEm: string };
 
@@ -187,5 +190,91 @@ export function TwoFactorCard({ role }: { role?: string }) {
     {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}
     <hr className="soft-divider" />
     <div className="action-row"><button type="button" className="button button-ghost" onClick={() => void logoutAll()} disabled={busy}>Sair de todos os dispositivos</button><small className="muted">Útil se perdeu um aparelho ou suspeita de acesso indevido.</small></div>
+  </article>;
+}
+
+
+type MyFile = { id: string; bolaoId: string; cotaId: string | null; tipo: string; nome: string; tamanho: number; enviadoEm: string; modalidade: string; concurso: number };
+
+/** Comprovantes das apostas e recibos das cotas da pessoa (só ela vê). */
+export function ReceiptsCard() {
+  const [files, setFiles] = useState<MyFile[] | null>(null);
+  useEffect(() => {
+    authenticatedFetch('/api/v1/anexos/meus').then(async (response) => setFiles(response.ok ? await response.json() as MyFile[] : [])).catch(() => setFiles([]));
+  }, []);
+  if (!files || files.length === 0) return null;
+  return <article className="dashboard-card wide"><h2>Meus comprovantes</h2>
+    <p className="muted">Guarde estes arquivos: são a prova da sua participação. Para resgatar um prêmio, leve o recibo da sua cota à lotérica ou à CAIXA, junto com um documento.</p>
+    <ul className="receipt-files">{files.map((file) => <li key={file.id}>
+      <div><strong>{ATTACHMENT_LABELS[file.tipo] ?? 'Arquivo'}</strong><small>{modalityNames[file.modalidade] ?? file.modalidade} · concurso {file.concurso} · {file.nome} · {fileSize(file.tamanho)} · {shortDate(file.enviadoEm)}</small></div>
+      <OpenFileButton id={file.id} label="Abrir" />
+    </li>)}</ul>
+  </article>;
+}
+
+type PlayStatus = {
+  pausada: boolean; pausaPermanente: boolean; pausaAte: string | null;
+  limiteMensal: number | null; gastoNoMes: number; restante: number | null;
+  limitePendente: { valor: number | null; aplicaEm: string } | null;
+};
+const reais = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** Jogo responsável: limite de gasto por mês e pausa. Diminuir vale na hora; aumentar espera 24 h. */
+export function ResponsiblePlayCard() {
+  const [status, setStatus] = useState<PlayStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [ok, setOk] = useState(false);
+  const load = useCallback(() => {
+    authenticatedFetch('/api/v1/usuarios/me/jogo-responsavel').then(async (response) => setStatus(response.ok ? await response.json() as PlayStatus : null)).catch(() => setStatus(null));
+  }, []);
+  useEffect(load, [load]);
+
+  async function send(path: string, method: string, body: unknown, done: string) {
+    setBusy(true); setMessage(''); setOk(false);
+    try {
+      const response = await authenticatedFetch(`/api/v1/usuarios/me/jogo-responsavel${path}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({})) as PlayStatus & { message?: string | string[] };
+      if (!response.ok) throw new Error(messageOf(data, 'Não foi possível salvar agora.'));
+      setStatus(data); setOk(true); setMessage(done);
+    } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
+  }
+  function saveLimit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const raw = String(new FormData(event.currentTarget).get('valor') ?? '').replace(',', '.').trim();
+    if (!raw) { setMessage('Digite o valor do limite.'); setOk(false); return; }
+    const valor = Number(raw);
+    if (!Number.isFinite(valor) || valor < 10) { setMessage('O limite mínimo é R$ 10,00.'); setOk(false); return; }
+    void send('/limite', 'PUT', { valor }, 'Limite salvo.');
+  }
+  function pause(dias: number) {
+    if (window.confirm(`Pausar por ${dias} dias? Durante esse tempo você não poderá comprar cotas, e não dá para encurtar.`)) void send('/pausa', 'POST', { dias }, `Pausa de ${dias} dias ativada.`);
+  }
+  function pauseForever() {
+    if (window.confirm('Pausar por tempo indeterminado? Só o suporte pode reativar sua conta para compras.')) void send('/pausa', 'POST', { permanente: true }, 'Pausa ativada.');
+  }
+
+  if (!status) return null;
+  const pendingText = status.limitePendente
+    ? status.limitePendente.valor === null ? 'Remover o limite' : `Novo limite de ${reais(status.limitePendente.valor)}`
+    : '';
+  return <article className="dashboard-card wide"><h2>Jogo responsável</h2>
+    {status.pausada && <div className="form-message form-error" role="status">{status.pausaPermanente ? 'Sua participação está pausada por tempo indeterminado. Fale com o suporte para voltar.' : `Sua participação está pausada até ${status.pausaAte ? shortDate(status.pausaAte) : ''}.`}</div>}
+    <p className="muted">{status.limiteMensal === null ? 'Você não definiu limite de gasto por mês.' : <>Limite do mês: <strong>{reais(status.limiteMensal)}</strong> · usado {reais(status.gastoNoMes)} · ainda pode usar <strong>{reais(status.restante ?? 0)}</strong></>}</p>
+    {status.limitePendente && <p className="muted">{pendingText} vale a partir de {new Date(status.limitePendente.aplicaEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}. Até lá, vale o limite atual.</p>}
+    <form onSubmit={saveLimit} className="admin-form-grid">
+      <div className="field"><label htmlFor="limiteMensal">Limite por mês (R$)</label><input id="limiteMensal" name="valor" inputMode="decimal" placeholder="Ex.: 300" /></div>
+      <div className="field" style={{ alignSelf: 'end', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="button button-primary" disabled={busy}>Salvar limite</button>
+        {status.limiteMensal !== null && <button type="button" className="button button-secondary" disabled={busy} onClick={() => send('/limite', 'PUT', { valor: null }, 'Pedido enviado.')}>Tirar limite</button>}
+      </div>
+    </form>
+    <p className="muted">Baixar o limite vale na hora. Subir ou tirar o limite só vale depois de 24 horas.</p>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+      {[30, 60, 90].map((dias) => <button key={dias} type="button" className="button button-secondary" disabled={busy} onClick={() => pause(dias)}>Pausar {dias} dias</button>)}
+      <button type="button" className="button button-secondary" disabled={busy} onClick={pauseForever}>Pausar sem prazo</button>
+    </div>
+    <p className="muted"><Link href="/jogo-responsavel">Ajuda e telefones de apoio</Link></p>
+    {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}
   </article>;
 }

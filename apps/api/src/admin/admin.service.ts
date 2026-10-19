@@ -1,9 +1,10 @@
 import { evaluateReleaseGate } from '../pools/release-gate';
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
+import { hasProofFile } from '../attachments/proof';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -586,9 +587,10 @@ export class AdminService {
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { cotas: true } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     if (([StatusBolao.fechado, StatusBolao.registrado] as StatusBolao[]).includes(pool.status) === false) throw new ConflictException('O bolão precisa estar fechado ou registrado para receber comprovante.');
+    if (!dto.comprovanteUrl && !pool.comprovanteUrl && !(await hasProofFile(this.prisma, id))) throw new BadRequestException('Envie o arquivo do comprovante (ou informe o link) antes de marcar como apostado.');
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.bolao.update({ where: { id }, data: { comprovanteUrl: dto.comprovanteUrl, ...(dto.codigoBilhete ? { codigoBilhete: dto.codigoBilhete.trim() } : {}), status: StatusBolao.registrado, registradoEm: pool.registradoEm ?? new Date() } });
-      await tx.cota.updateMany({ where: { bolaoId: id, status: StatusCota.paga }, data: { status: StatusCota.registrada, comprovanteIndividualUrl: dto.comprovanteUrl } });
+      const result = await tx.bolao.update({ where: { id }, data: { ...(dto.comprovanteUrl ? { comprovanteUrl: dto.comprovanteUrl } : {}), ...(dto.codigoBilhete ? { codigoBilhete: dto.codigoBilhete.trim() } : {}), status: StatusBolao.registrado, registradoEm: pool.registradoEm ?? new Date() } });
+      await tx.cota.updateMany({ where: { bolaoId: id, status: StatusCota.paga }, data: { status: StatusCota.registrada, ...(dto.comprovanteUrl ? { comprovanteIndividualUrl: dto.comprovanteUrl } : {}) } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.comprovante.vinculado', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: { ...result, hashArquivo: dto.hashArquivo ?? null, observacao: dto.observacao ?? null } as unknown as Prisma.InputJsonValue });
       return result;
     });

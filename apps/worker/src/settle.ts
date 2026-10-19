@@ -31,7 +31,7 @@ export async function apurarConcurso(prisma: PrismaClient, concursoId: string, m
       }
       for (const usuarioId of new Set(active.map((share) => share.compradorId))) {
         await tx.notificacao.create({ data: result.teveGanhador
-          ? { usuarioId, canal: 'push', tipo: 'cota.premiada', payload: { bolaoId: pool.id, mensagem: 'Você possui uma cota premiada! Acesse sua conta autenticada para ver o valor e como resgatar.' } }
+          ? { usuarioId, canal: 'push', tipo: 'cota.premiada', payload: { bolaoId: pool.id, mensagem: 'Você possui uma cota premiada! Acesse sua conta para ver o valor e como resgatar. O prazo para resgatar na CAIXA é de 90 dias após o sorteio.' } }
           : { usuarioId, canal: 'push', tipo: 'bolao.apurado', payload: { bolaoId: pool.id, concurso: contestNumber, modalidade: modality, mensagem: 'O concurso foi apurado e o seu bolão não teve prêmio desta vez. Veja a conferência jogo a jogo na página do bolão.' } } });
       }
       await tx.auditoriaEvento.create({ data: { entidade: 'bolao', entidadeId: pool.id, evento: 'resultado.apurado', payloadDepois: { teveGanhador: result.teveGanhador, premioTotal: result.premioTotal, melhorFaixa: result.melhorFaixa, jogos: result.jogos.map((game) => ({ ordem: game.ordem, acertos: game.acertos, total: game.total })) } } });
