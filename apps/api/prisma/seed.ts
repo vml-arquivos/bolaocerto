@@ -1,9 +1,10 @@
 import 'dotenv/config';
 import * as argon2 from 'argon2';
 import { PrismaClient } from '@prisma/client';
-import { isValidNewPassword } from '../src/auth/password-policy';
 
 const prisma = new PrismaClient();
+
+const isValidNewPassword = (password: string): boolean => /^\d{6,8}$/.test(password);
 
 const modalities = [
   ['megasena', 'Mega-Sena', '19:00'],
