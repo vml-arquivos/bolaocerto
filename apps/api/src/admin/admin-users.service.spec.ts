@@ -6,6 +6,7 @@ function setup() {
   const tx: any = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     usuario: {
+      delete: jest.fn().mockResolvedValue({}),
       findUnique: jest.fn(async ({ where }: any) => users.find(u => u.id === where.id)),
       update: jest.fn(async ({ where, data }: any) => { const row = users.find(u => u.id === where.id); const { tokenVersion, ...rest } = data; Object.assign(row, rest); if (tokenVersion) row.tokenVersion += tokenVersion.increment; return row; }),
     },
@@ -17,6 +18,22 @@ function setup() {
   return { service: new AdminUsersService(tx, audit, mail), tx, users, records, mail, audit };
 }
 describe('Administrative user management', () => {
+  it('only deletes disabled empty accounts and records the action', async () => {
+    const { service, users, tx, audit } = setup();
+    users[1]._count = { tokensSenha: 2, cotasCompradas: 0 };
+    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/Remova/);
+    users[1].desativadoEm = new Date();
+    users[1]._count.cotasCompradas = 1;
+    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/histórico/);
+    expect(tx.usuario.delete).not.toHaveBeenCalled();
+    users[1]._count.cotasCompradas = 0;
+    users[1].afiliado = { id: 'affiliate' };
+    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/histórico/);
+    users[1].afiliado = null;
+    await expect(service.deleteEmpty('admin', actor)).rejects.toThrow(/própria/);
+    await expect(service.deleteEmpty('buyer', actor)).resolves.toEqual({ id: 'buyer', excluido: true });
+    expect(audit.record).toHaveBeenCalledWith(tx, expect.objectContaining({ evento: 'usuario.vazio_excluido' }));
+  });
   it('removes access with session revocation and keeps the user and financial history', async () => {
     const { service, users, tx, audit } = setup();
     await service.setActive('buyer', false, actor);

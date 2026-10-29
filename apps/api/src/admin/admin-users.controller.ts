@@ -15,6 +15,8 @@ export class AdminUsersController {
   edit(@Param('id', ParseUUIDPipe) id: string, @Body() dto: EditManagedUserDto, @CurrentUser() actor: AuthUser) { return this.users.edit(id, dto, actor); }
   @Delete(':id')
   removeAccess(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) { return this.users.setActive(id, false, actor); }
+  @Delete(':id/definitivo')
+  deleteEmpty(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) { return this.users.deleteEmpty(id, actor); }
   @Post(':id/reativar')
   reactivate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) { return this.users.setActive(id, true, actor); }
   @Post(':id/reenviar-senha')

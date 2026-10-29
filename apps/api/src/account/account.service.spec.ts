@@ -9,11 +9,13 @@ function setup() {
   const sent: any[] = [];
   const notified: any[] = [];
   const tx: any = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     tokenSenha: {
+      count: async ({ where }: any) => tokens.filter(t => t.usuarioId === where.usuarioId && t.criadoEm > where.criadoEm.gt).length,
       updateMany: async ({ where, data }: any) => { let count = 0; for (const t of tokens) if ((where.id === undefined || t.id === where.id) && (where.usuarioId === undefined || t.usuarioId === where.usuarioId) && (where.usadoEm === null ? t.usadoEm === null : true)) { Object.assign(t, data); count += 1; } return { count }; },
       create: async ({ data }: any) => { const row = { id: `t${tokens.length + 1}`, usadoEm: null, criadoEm: new Date(), ...data }; tokens.push(row); return row; },
     },
-    usuario: { update: async ({ where, data }: any) => Object.assign(users.find((u) => u.id === where.id), data) },
+    usuario: { findUnique: async ({ where }: any) => where.id === 'admin1' ? { id: 'admin1', papel: 'admin' } : users.find(u => u.id === where.id), update: async ({ where, data }: any) => Object.assign(users.find((u) => u.id === where.id), data) },
   };
   const prisma: any = {
     ...tx,
@@ -96,19 +98,35 @@ describe('AccountService', () => {
     users[0].senhaHash = await argon2.hash('senha-atual-bem-forte', { type: argon2.argon2id });
     await expect(service.changePassword('u1', 'errada', 'nova-senha-bem-forte-1')).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(service.changePassword('u1', 'senha-atual-bem-forte', 'senha-atual-bem-forte')).rejects.toBeInstanceOf(BadRequestException);
+    users[0].tentativasLogin = 4; users[0].bloqueadoAte = new Date(Date.now() + 900000);
     await service.changePassword('u1', 'senha-atual-bem-forte', 'nova-senha-bem-forte-1');
+    expect(users[0].tentativasLogin).toBe(0); expect(users[0].bloqueadoAte).toBeNull();
     expect(await argon2.verify(users[0].senhaHash, 'nova-senha-bem-forte-1')).toBe(true);
     expect(audit.map((a) => a.evento)).toContain('usuario.senha_alterada');
   });
 
   it('link administrativo de redefinição é auditado e funciona uma vez', async () => {
-    const { service, audit, users } = setup();
+    const { service, audit, users, sent } = setup();
     const result = await service.adminResetLink('u1', 'admin1');
+    expect(sent).toHaveLength(0);
     expect(result.link).toMatch(/^https:\/\/bl\.exemplo\/redefinir-senha\?token=/);
     expect(audit.map((a) => a.evento)).toContain('usuario.link_redefinicao_gerado');
     const token = decodeURIComponent(result.link.split('token=')[1]!);
     await service.resetPassword(token, 'uma-senha-bem-forte-123');
     expect(await argon2.verify(users[0].senhaHash, 'uma-senha-bem-forte-123')).toBe(true);
+  });
+
+  it('link manual exige administrador ativo, conta ativa e respeita limite', async () => {
+    const { service, users } = setup();
+    await expect(service.adminResetLink('u1', 'u1')).rejects.toThrow(/administrativo/);
+    users[0].desativadoEm = new Date();
+    await expect(service.adminResetLink('u1', 'admin1')).rejects.toThrow(/Reative/);
+    users[0].desativadoEm = null;
+    const first = await service.adminResetLink('u1', 'admin1');
+    await service.adminResetLink('u1', 'admin1');
+    await expect(service.resetPassword(new URL(first.link).searchParams.get('token')!, 'nova-senha-bem-forte-1')).rejects.toThrow(/expirou/);
+    await service.adminResetLink('u1', 'admin1');
+    await expect(service.adminResetLink('u1', 'admin1')).rejects.toThrow(/3 solicitações/);
   });
 
   it('exclusão (LGPD): registra uma vez, audita e avisa a pessoa', async () => {

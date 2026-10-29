@@ -67,3 +67,7 @@ Antes de implantar o pacote cumulativo, consulte [administração, comprovantes 
 ### Gestão de contas e PWA — revisão 4
 
 Consulte [gestão de usuários e PWA](docs/auditoria/2026-10-29-usuarios-pwa.md). A migração `20261029020000_user_access` é obrigatória antes de executar a nova API. Nenhuma conta é removida pela migração. A nova entrada do aplicativo é `/aplicativo`; instruções de instalação estão em `/instalar`.
+
+Revisão de acessos e recuperação do administrador: [procedimento e validação](docs/auditoria/2026-10-29-acessos-recuperacao.md).
+
+Link de redefinição sem SMTP: [instruções da revisão 6](docs/auditoria/2026-10-29-link-manual-senha.md).

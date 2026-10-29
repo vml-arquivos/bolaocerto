@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Put, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -60,6 +60,7 @@ export class AccountController {
   setLimit(@CurrentUser() user: AuthUser, @Body() dto: MonthlyLimitDto) { return this.responsible.setLimit(user.id, dto.valor); }
 
   @Post('admin/usuarios/:id/redefinicao-senha')
+  @Header('Cache-Control', 'private, no-store')
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

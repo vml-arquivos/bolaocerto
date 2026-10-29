@@ -9,7 +9,7 @@ import { RolesGuard } from '../src/auth/roles.guard';
 const ID = '11111111-1111-4111-8111-111111111111';
 describe('User management HTTP contract', () => {
   let app: INestApplication;
-  const users = { detail: jest.fn().mockResolvedValue({ id: ID, nome: 'Pessoa' }), edit: jest.fn().mockResolvedValue({ id: ID }), setActive: jest.fn().mockResolvedValue({ id: ID, ativo: false }), sendReset: jest.fn().mockResolvedValue({ enviado: true }) };
+  const users = { deleteEmpty: jest.fn().mockResolvedValue({ excluido: true }), detail: jest.fn().mockResolvedValue({ id: ID, nome: 'Pessoa' }), edit: jest.fn().mockResolvedValue({ id: ID }), setActive: jest.fn().mockResolvedValue({ id: ID, ativo: false }), sendReset: jest.fn().mockResolvedValue({ enviado: true }) };
   beforeAll(async () => {
     const module = await Test.createTestingModule({ controllers: [AdminUsersController], providers: [{ provide: AdminUsersService, useValue: users }] })
       .overrideGuard(JwtAuthGuard).useValue({ canActivate(context: any) { const req = context.switchToHttp().getRequest(); const role = req.headers['x-role']; if (!role) throw new UnauthorizedException(); req.user = { id: 'actor', papel: role, email: 'actor@example.invalid' }; return true; } })
@@ -21,6 +21,7 @@ describe('User management HTTP contract', () => {
     await request(app.getHttpServer()).get(`/admin/usuarios/${ID}`).expect(401);
     for (const role of ['cotista', 'afiliado', 'operacao']) {
       await request(app.getHttpServer()).delete(`/admin/usuarios/${ID}`).set('x-role', role).expect(403);
+      await request(app.getHttpServer()).delete(`/admin/usuarios/${ID}/definitivo`).set('x-role', role).expect(403);
       await request(app.getHttpServer()).post(`/admin/usuarios/${ID}/reenviar-senha`).set('x-role', role).expect(403);
     }
   });
@@ -45,5 +46,7 @@ describe('User management HTTP contract', () => {
     expect(users.setActive).toHaveBeenLastCalledWith(ID, true, expect.any(Object));
     await request(app.getHttpServer()).post(`/admin/usuarios/${ID}/reenviar-senha`).set('x-role', 'admin').expect(201);
     expect(users.sendReset).toHaveBeenCalledWith(ID, expect.any(Object));
+    await request(app.getHttpServer()).delete(`/admin/usuarios/${ID}/definitivo`).set('x-role', 'admin').expect(200);
+    expect(users.deleteEmpty).toHaveBeenCalledWith(ID, expect.any(Object));
   });
 });

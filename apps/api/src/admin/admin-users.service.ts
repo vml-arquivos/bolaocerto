@@ -66,6 +66,24 @@ export class AdminUsersService {
       return { id, ativo: active };
     });
   }
+  /** Only empty, already disabled accounts can be physically removed. */
+  async deleteEmpty(id: string, actor: AuthUser) {
+    if (id === actor.id) throw new ConflictException('Você não pode excluir a própria conta.');
+    return this.prisma.$transaction(async tx => {
+      await lockAdminActor(tx, actor.id);
+      await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${id}::uuid FOR UPDATE`;
+      const target = await tx.usuario.findUnique({ where: { id }, include: { _count: true, afiliado: { select: { id: true } }, crmPerfil: { select: { usuarioId: true } } } });
+      if (!target) throw new NotFoundException('Usuário não encontrado.');
+      if (!target.desativadoEm) throw new ConflictException('Remova o acesso antes de excluir definitivamente.');
+      // All list relations are checked, including future relations added to the schema.
+      // Password reset tokens alone are disposable and cascade with the empty account.
+      const linked = Object.entries(target._count).some(([name, count]) => name !== 'tokensSenha' && count > 0);
+      if (linked || target.afiliado || target.crmPerfil) throw new ConflictException('Esta conta possui histórico vinculado. Mantenha o acesso removido; a exclusão definitiva não pode apagar esse histórico.');
+      await tx.usuario.delete({ where: { id } });
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.vazio_excluido', atorId: actor.id, payloadDepois: { excluido: true } });
+      return { id, excluido: true };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
   async sendReset(id: string, actor: AuthUser) {
     if (!this.mail.isConfigured()) throw new ServiceUnavailableException('SMTP não configurado. Nenhum e-mail foi enviado.');
     const token = randomBytes(32).toString('base64url');

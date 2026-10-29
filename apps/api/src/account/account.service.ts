@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
@@ -52,11 +52,23 @@ export class AccountService {
 
   /** Suporte: gera o link de redefinição para o administrador entregar ao usuário quando o e-mail não está disponível. */
   async adminResetLink(usuarioId: string, adminId: string) {
-    const user = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, nome: true } });
-    if (!user) throw new NotFoundException('Usuário não encontrado.');
-    const { token, expiraEm } = await this.issueResetToken(user.id);
-    await this.prisma.$transaction((tx) => this.audit.record(tx, { entidade: 'usuario', entidadeId: user.id, evento: 'usuario.link_redefinicao_gerado', atorId: adminId }));
-    return { link: `${this.mail.publicUrl()}/redefinir-senha?token=${encodeURIComponent(token)}`, expiraEm, aviso: 'Entregue o link somente à própria pessoa. Ele vale por 1 hora e só pode ser usado uma vez.' };
+    const token = randomBytes(32).toString('base64url');
+    const expiraEm = new Date(Date.now() + RESET_TTL_MINUTES * 60_000);
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
+      const actor = await tx.usuario.findUnique({ where: { id: adminId }, select: { papel: true, desativadoEm: true } });
+      if (!actor || actor.papel !== 'admin' || actor.desativadoEm) throw new ForbiddenException('Acesso administrativo indisponível.');
+      await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${usuarioId}::uuid FOR UPDATE`;
+      const user = await tx.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, desativadoEm: true } });
+      if (!user) throw new NotFoundException('Usuário não encontrado.');
+      if (user.desativadoEm) throw new ConflictException('Reative a conta antes de gerar um link.');
+      const recent = await tx.tokenSenha.count({ where: { usuarioId, criadoEm: { gt: new Date(Date.now() - 3_600_000) } } });
+      if (recent >= RESET_MAX_PER_HOUR) throw new ConflictException('Limite de 3 solicitações por hora. Aguarde antes de gerar outro link.');
+      await tx.tokenSenha.updateMany({ where: { usuarioId, usadoEm: null }, data: { usadoEm: new Date() } });
+      await tx.tokenSenha.create({ data: { usuarioId, tokenHash: hashResetToken(token), expiraEm } });
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: usuarioId, evento: 'usuario.link_redefinicao_gerado', atorId: adminId });
+    });
+    return { link: `${this.mail.publicUrl()}/redefinir-senha?token=${encodeURIComponent(token)}`, expiraEm, aviso: 'Entregue o link somente à própria pessoa. Ele vale por 1 hora e só pode ser usado uma vez. Gerar outro link invalida o anterior.' };
   }
 
   async resetPassword(token: string, newPassword: string) {
@@ -76,11 +88,11 @@ export class AccountService {
 
   async changePassword(usuarioId: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, email: true, senhaHash: true } });
-    if (!user || !(await argon2.verify(user.senhaHash, currentPassword))) throw new UnauthorizedException('A senha atual está incorreta.');
+    if (!user || !(await argon2.verify(user.senhaHash, currentPassword).catch(() => false))) throw new UnauthorizedException('A senha atual está incorreta.');
     if (currentPassword === newPassword) throw new BadRequestException('A nova senha deve ser diferente da atual.');
     const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
     await this.prisma.$transaction(async (tx) => {
-      await tx.usuario.update({ where: { id: usuarioId }, data: { senhaHash: hash, tokenVersion: { increment: 1 } } });
+      await tx.usuario.update({ where: { id: usuarioId }, data: { senhaHash: hash, tokenVersion: { increment: 1 }, tentativasLogin: 0, bloqueadoAte: null } });
       await tx.tokenSenha.updateMany({ where: { usuarioId, usadoEm: null }, data: { usadoEm: new Date() } });
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: usuarioId, evento: 'usuario.senha_alterada', atorId: usuarioId });
     });
