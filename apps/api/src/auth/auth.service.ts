@@ -82,13 +82,13 @@ export class AuthService {
   async login(dto: LoginDto): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
     const user = await this.prisma.usuario.findUnique({
       where: { email: dto.email.toLowerCase().trim() },
-      select: { id: true, email: true, papel: true, senhaHash: true, tokenVersion: true, tentativasLogin: true, bloqueadoAte: true, totpAtivo: true, totpSecret: true, totpRecuperacao: true },
+      select: { id: true, email: true, papel: true, senhaHash: true, tokenVersion: true, desativadoEm: true, tentativasLogin: true, bloqueadoAte: true, totpAtivo: true, totpSecret: true, totpRecuperacao: true },
     });
     // Sempre confere uma senha (mesmo sem conta) para o tempo de resposta não revelar quem tem cadastro.
     this.dummyHash ??= argon2.hash(randomBytes(16).toString('hex'), { type: argon2.argon2id });
     const passwordOk = await argon2.verify(user?.senhaHash ?? (await this.dummyHash), dto.senha).catch(() => false);
     const locked = Boolean(user?.bloqueadoAte && user.bloqueadoAte > new Date());
-    if (!user || locked || !passwordOk) {
+    if (!user || user.desativadoEm || locked || !passwordOk) {
       if (user && !locked) await this.registerLoginFailure(user.id);
       throw new UnauthorizedException(GENERIC_LOGIN_ERROR);
     }
@@ -180,7 +180,8 @@ export class AuthService {
 
   /** Emite novos tokens para a sessão atual (ex.: depois de trocar a senha, que encerra as outras sessões). */
   async reissue(userId: string): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
-    const user = await this.prisma.usuario.findUniqueOrThrow({ where: { id: userId }, select: { id: true, email: true, papel: true, tokenVersion: true } });
+    const user = await this.prisma.usuario.findUniqueOrThrow({ where: { id: userId }, select: { id: true, email: true, papel: true, tokenVersion: true, desativadoEm: true } });
+    if (user.desativadoEm) throw new UnauthorizedException('Conta indisponível.');
     return this.issueTokens(user);
   }
 
@@ -197,8 +198,8 @@ export class AuthService {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
       if (payload.typ !== 'refresh') throw new UnauthorizedException('Refresh token inválido.');
-      const user = await this.prisma.usuario.findUnique({ where: { id: payload.id }, select: { id: true, email: true, papel: true, tokenVersion: true } });
-      if (!user) throw new UnauthorizedException('Usuário não encontrado.');
+      const user = await this.prisma.usuario.findUnique({ where: { id: payload.id }, select: { id: true, email: true, papel: true, tokenVersion: true, desativadoEm: true } });
+      if (!user || user.desativadoEm) throw new UnauthorizedException('Usuário indisponível.');
       // Sessão revogada (troca de senha, "sair de todos", mudança de papel): o refresh antigo não renova mais.
       if ((payload.tv ?? 0) !== user.tokenVersion) throw new UnauthorizedException('Sessão encerrada. Entre novamente.');
       return this.issueTokens(user);

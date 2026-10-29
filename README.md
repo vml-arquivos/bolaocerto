@@ -63,3 +63,7 @@ Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a 
 ### Atualização administrativa de 29/10/2026
 
 Antes de implantar o pacote cumulativo, consulte [administração, comprovantes e contratos](docs/auditoria/2026-10-29-admin-contratos.md). Há uma migração aditiva e novas configurações jurídicas obrigatórias para novas compras. As minutas em `docs/juridico/` exigem identificação do operador e revisão do modelo real antes da ativação.
+
+### Gestão de contas e PWA — revisão 4
+
+Consulte [gestão de usuários e PWA](docs/auditoria/2026-10-29-usuarios-pwa.md). A migração `20261029020000_user_access` é obrigatória antes de executar a nova API. Nenhuma conta é removida pela migração. A nova entrada do aplicativo é `/aplicativo`; instruções de instalação estão em `/instalar`.

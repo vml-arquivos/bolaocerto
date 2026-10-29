@@ -23,8 +23,8 @@ export class AccountService {
   /** Resposta idêntica exista ou não o e-mail (não revela quem tem conta). */
   async requestReset(email: string): Promise<{ ok: true; mensagem: string }> {
     const generic = { ok: true as const, mensagem: 'Se o e-mail estiver cadastrado, enviaremos as instruções para criar uma nova senha. O link vale por 1 hora.' };
-    const user = await this.prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() }, select: { id: true, nome: true, email: true } });
-    if (!user) return generic;
+    const user = await this.prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() }, select: { id: true, nome: true, email: true, desativadoEm: true } });
+    if (!user || user.desativadoEm) return generic;
     const recent = await this.prisma.tokenSenha.count({ where: { usuarioId: user.id, criadoEm: { gt: new Date(Date.now() - 3_600_000) } } });
     if (recent >= RESET_MAX_PER_HOUR) return generic;
     const { token } = await this.issueResetToken(user.id);
@@ -60,8 +60,8 @@ export class AccountService {
   }
 
   async resetPassword(token: string, newPassword: string) {
-    const row = await this.prisma.tokenSenha.findUnique({ where: { tokenHash: hashResetToken(token) }, include: { usuario: { select: { id: true, email: true, nome: true } } } });
-    if (!row || row.usadoEm || row.expiraEm.getTime() < Date.now()) throw new BadRequestException('Este link expirou ou já foi usado. Peça uma nova redefinição de senha.');
+    const row = await this.prisma.tokenSenha.findUnique({ where: { tokenHash: hashResetToken(token) }, include: { usuario: { select: { id: true, email: true, nome: true, desativadoEm: true } } } });
+    if (!row || row.usuario.desativadoEm || row.usadoEm || row.expiraEm.getTime() < Date.now()) throw new BadRequestException('Este link expirou ou já foi usado. Peça uma nova redefinição de senha.');
     const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.tokenSenha.updateMany({ where: { id: row.id, usadoEm: null }, data: { usadoEm: new Date() } });

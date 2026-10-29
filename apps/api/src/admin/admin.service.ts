@@ -1,3 +1,4 @@
+import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
@@ -419,9 +420,10 @@ export class AdminService {
 
   async listUsers(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
-    const where: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
+    const search: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
+    const where: Prisma.UsuarioWhereInput = { ...search, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
     const [items, total] = await Promise.all([
-      this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.usuario.count({ where }),
     ]);
     return { items: items.map((item) => ({ ...item, cpf: this.maskCpf(item.cpf) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
@@ -432,6 +434,7 @@ export class AdminService {
     const target = await this.prisma.usuario.findUnique({ where: { id }, select: { id: true, nome: true, email: true, papel: true } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
     const updated = await this.prisma.$transaction(async (tx) => {
+      await lockAdminActor(tx, user.id);
       const result = await tx.usuario.update({ where: { id }, data: { papel: dto.papel, tokenVersion: { increment: 1 } } });
       const affiliate = await tx.afiliado.findUnique({ where: { usuarioId: id } });
       if (dto.papel === 'afiliado' && !affiliate) {

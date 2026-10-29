@@ -3,6 +3,7 @@ import './globals.css';
 import './details.css';
 import './stats.css';
 import type { Metadata, Viewport } from 'next';
+import { ClientAppNav } from '../components/client-app-nav';
 import { PwaRegister } from '../components/pwa-register';
 
 export const metadata: Metadata = {
@@ -27,6 +28,7 @@ export const viewport: Viewport = {
     { media: '(prefers-color-scheme: light)', color: '#f3f5fb' },
     { media: '(prefers-color-scheme: dark)', color: '#060c24' },
   ],
+  viewportFit: 'cover',
   colorScheme: 'dark light',
 };
 
@@ -35,5 +37,5 @@ export const viewport: Viewport = {
 const themeInitScript = `(function(){try{var s=localStorage.getItem('bl-theme');var t=s==='light'||s==='dark'?s:(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}<PwaRegister /></body></html>;
+  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}<ClientAppNav /><PwaRegister /></body></html>;
 }

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { modalityNames, money, shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
@@ -33,6 +33,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
       <div><small>{PAID.includes(share.status) ? 'Valor pago' : 'Valor'}</small><strong style={{ display: 'block' }}>{money(share.valorPago ?? share.valorTotal)}</strong></div>
       <div><span className="tag">{expired ? 'Reserva expirada' : STATUS_TEXT[share.status] ?? share.status}</span>{share.comprovanteIndividualUrl && <a className="text-link" style={{ display: 'block' }} href={share.comprovanteIndividualUrl} target="_blank" rel="noreferrer">Comprovante</a>}</div>
     </div>
+    <Link className="text-link" href={`/boloes/${share.bolaoId}`}>Ver bolão e resultado do concurso</Link>
     {share.bolao && share.bolao.jogos.length > 0 && <details><summary>Ver jogos ({share.bolao.jogos.length})</summary><ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'grid', gap: 4 }}>{share.bolao.jogos.map((game) => <li key={game.ordem}><small>Jogo {game.ordem}:</small> <code>{game.numeros.map((n) => String(n).padStart(2, '0')).join(' ')}</code></li>)}</ul></details>}
     {share.pagamento?.notaFiscal && <small className="muted">Nota fiscal de serviço: {NOTE_TEXT[share.pagamento.notaFiscal.status] ?? share.pagamento.notaFiscal.status}{share.pagamento.notaFiscal.numero ? ` · nº ${share.pagamento.notaFiscal.numero}` : ''} {share.pagamento.notaFiscal.pdfUrl && <a className="text-link" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar PDF</a>}</small>}
     {share.pagamento?.status === 'confirmado' && <ReceiptPanel shareId={share.id} />}
@@ -82,20 +83,29 @@ export function AccountDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const inFlight = useRef(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const [meResponse, sharesResponse] = await Promise.all([authenticatedFetch('/api/v1/auth/me'), authenticatedFetch('/api/v1/cotas/minhas')]);
       if (meResponse.status === 401) { window.location.href = '/login'; return; }
       if (!meResponse.ok || !sharesResponse.ok) throw new Error('Não foi possível carregar sua conta.');
-      setUser(await meResponse.json()); setShares(await sharesResponse.json());
+      setUser(await meResponse.json()); setShares(await sharesResponse.json()); setError(''); setUpdatedAt(new Date());
       try { const addressResponse = await authenticatedFetch('/api/v1/usuarios/me/endereco'); setAddress(addressResponse.ok ? await addressResponse.json() : null); } catch { setAddress(null); }
-    } catch (issue) { setError(issue instanceof Error ? issue.message : 'Falha ao carregar.'); } finally { setLoading(false); }
+    } catch (issue) { setError(issue instanceof Error ? issue.message : 'Falha ao carregar.'); } finally { setLoading(false); inFlight.current = false; }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load();
+    const refresh = () => { if (document.visibilityState === 'visible' && navigator.onLine) void load(); };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener('online', refresh); window.addEventListener('focus', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); };
+  }, [load]);
 
   async function logout() { await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }); window.location.href = '/'; }
   if (loading) return <div className="empty-state"><span>BL</span><h3>Carregando sua conta…</h3></div>;
-  if (error) return <div className="notice notice-error"><strong>Não foi possível abrir sua conta</strong><span>{error}</span></div>;
+  if (error && !user) return <div className="notice notice-error"><strong>Não foi possível abrir sua conta</strong><span>{error}</span></div>;
 
   const paidShares = shares.filter((item) => PAID.includes(item.status));
   const spent = paidShares.reduce((sum, item) => sum + Number(item.valorPago ?? 0), 0);
@@ -104,6 +114,7 @@ export function AccountDashboard() {
 
   return <>
     <div className="page-heading"><div><span className="overline">Área do cotista</span><h1>Olá, {user?.nome?.split(' ')[0]}</h1><p className="muted">Acompanhe suas reservas, pagamentos, jogos e comprovantes.</p></div><div className="header-actions">{user?.papel === 'admin' && <Link className="button button-secondary" href="/admin">Administração</Link>}{user?.papel === 'afiliado' && <Link className="button button-secondary" href="/afiliado">Meu workspace</Link>}<button className="button button-ghost" onClick={logout}>Sair</button></div></div>
+    {error && <p className="notice" role="status">{error} Os dados abaixo são da última consulta concluída.</p>}<p className="muted">{updatedAt ? `Última consulta: ${updatedAt.toLocaleTimeString('pt-BR')}.` : ''} Atualização automática a cada 30 segundos.</p>
     <div className="dashboard-grid">
       <article className="dashboard-card"><span className="overline">Total investido</span><strong className="stat-value">{money(spent)}</strong><small className="muted">em {paidShares.reduce((sum, item) => sum + item.quantidade, 0)} cota(s) pagas</small></article>
       <article className="dashboard-card"><span className="overline">Aguardando pagamento</span><strong className="stat-value">{awaiting}</strong><small className="muted">reservas dentro do prazo</small></article>

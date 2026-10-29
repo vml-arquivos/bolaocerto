@@ -19,5 +19,16 @@ const next=spawn(process.execPath,[cwd+'/node_modules/next/dist/bin/next','start
  await fetch('http://127.0.0.1:45101/renew');
  const renewed=await (await fetch('http://127.0.0.1:45100/')).text();
  assert.ok(renewed.includes('Novo concurso publicado'));
+ const manifestResponse=await fetch('http://127.0.0.1:45100/manifest.webmanifest');
+ assert.equal(manifestResponse.status,200);const manifest=await manifestResponse.json();
+ assert.equal(manifest.display,'standalone');assert.equal(manifest.id,'/');assert.equal(manifest.start_url,'/aplicativo?origem=pwa');
+ for(const shortcut of manifest.shortcuts) assert.ok(shortcut.url.startsWith('/'));
+ for(const icon of manifest.icons){const r=await fetch('http://127.0.0.1:45100'+icon.src);assert.equal(r.status,200);assert.ok(r.headers.get('content-type').includes('image/png'));}
+ const sw=await fetch('http://127.0.0.1:45100/sw.js');assert.ok(sw.headers.get('cache-control').includes('no-store'));assert.equal(sw.headers.get('service-worker-allowed'),'/');
+ const appHtml=await (await fetch('http://127.0.0.1:45100/aplicativo')).text();assert.ok(appHtml.includes('Escolha seu próximo bolão'));assert.ok(appHtml.includes('Navegação do aplicativo'));
+ const installHtml=await (await fetch('http://127.0.0.1:45100/instalar')).text();assert.ok(installHtml.includes('Adicionar à Tela de Início'));assert.ok(installHtml.includes('Android'));assert.ok(installHtml.includes('mobile-web-app-capable'));assert.ok(installHtml.includes('apple-mobile-web-app-title'));
+ const menuHtml=await (await fetch('http://127.0.0.1:45100/aplicativo/mais')).text();assert.ok(menuHtml.includes('/privacidade'));assert.ok(menuHtml.includes('/minha-conta/contratos'));
+ const apiResponse=await fetch('http://127.0.0.1:45100/api/v1/auth/me');assert.ok(apiResponse.headers.get('cache-control').includes('no-store'));
+ console.log('PASS PWA HTTP: manifest, icons, installation guidance, client navigation, worker update headers and API no-store');
  console.log('PASS rendered HTTP with API fixtures: sales/history separation, second draw, expired detail without checkout, new published pool');
  }finally{fixture.kill();next.kill();}})().catch(e=>{console.error(e);process.exitCode=1});

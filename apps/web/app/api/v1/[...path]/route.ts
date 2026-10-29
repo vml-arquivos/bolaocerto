@@ -27,8 +27,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     }
   }
   try {
-    const upstream = await fetch(target, { method: request.method, headers, body, redirect: 'manual' });
+    const upstream = await fetch(target, { method: request.method, headers, body, redirect: 'manual', cache: 'no-store' });
     const responseHeaders = new Headers(upstream.headers);
+    responseHeaders.set('Cache-Control', 'private, no-store');
     responseHeaders.delete('content-encoding'); responseHeaders.delete('content-length'); responseHeaders.delete('transfer-encoding');
     return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
   } catch {

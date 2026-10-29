@@ -37,6 +37,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!navigator.onLine) { setMessage('Você está sem conexão. Reconecte e confira suas cotas antes de tentar novamente.'); return; }
     if (!enabled) { setMessage('Este bolão não aceita novas reservas. Consulte os próximos concursos.'); return; }
     setLoading(true); setMessage(''); setCreated(null);
     const form = new FormData(event.currentTarget);

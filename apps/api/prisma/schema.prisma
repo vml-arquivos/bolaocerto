@@ -94,6 +94,7 @@ enum StatusConvite {
 }
 
 model Usuario {
+  desativadoEm DateTime? @map("desativado_em")
   id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nome                  String        @db.VarChar(150)
   cpf                   String        @unique @db.VarChar(11)
@@ -151,6 +152,7 @@ model Usuario {
   bolaoInteresses       BolaoInteresse[]
   anexosEnviados        Anexo[]          @relation("anexo_enviado_por")
 
+  @@index([desativadoEm, criadoEm])
   @@map("usuarios")
 }
 

@@ -165,9 +165,28 @@ describe('JwtAuthGuard: contas administrativas são conferidas no banco', () => 
     const { allowed } = await run('admin', null);
     await expect(allowed).rejects.toBeInstanceOf(UnauthorizedException);
   });
-  it('cotista continua sem consulta ao banco (stateless)', async () => {
-    const { allowed, prisma } = await run('cotista', null);
+  it('cotista removido perde acesso imediatamente', async () => {
+    const { allowed, prisma } = await run('cotista', { tokenVersion: 0, papel: 'cotista', desativadoEm: new Date() });
+    await expect(allowed).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.usuario.findUnique).toHaveBeenCalled();
+  });
+  it('cotista ativo continua autorizado', async () => {
+    const { allowed } = await run('cotista', { tokenVersion: 0, papel: 'cotista', desativadoEm: null });
     await expect(allowed).resolves.toBe(true);
-    expect(prisma.usuario.findUnique).not.toHaveBeenCalled();
+  });
+  it('afiliado com token antigo não recupera acesso', async () => {
+    const { allowed } = await run('afiliado', { tokenVersion: 2, papel: 'afiliado', desativadoEm: null }, 1);
+    await expect(allowed).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('Conta desativada', () => {
+  it('nega login e refresh mesmo com senha ou token anteriormente válidos', async () => {
+    const { service, rows } = await setup();
+    const session = await login(service);
+    rows[0].desativadoEm = new Date();
+    await expect(login(service)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.refresh(session.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.reissue('u1')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

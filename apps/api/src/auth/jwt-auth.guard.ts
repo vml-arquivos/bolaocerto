@@ -18,11 +18,10 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwt.verifyAsync<AuthUser & { typ?: string; tv?: number }>(token, { secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET') });
       if (payload.typ !== 'access') throw new UnauthorizedException('Token de acesso inválido.');
       let papel = payload.papel;
-      // Contas com poder administrativo são conferidas no banco a cada chamada: sessão revogada, 2FA redefinido ou
-      // papel alterado valem na hora, sem esperar o token de 15 minutos expirar. (Cotistas seguem 100% stateless.)
-      if (this.prisma && (papel === 'admin' || papel === 'operacao')) {
-        const row = await this.prisma.usuario.findUnique({ where: { id: payload.id }, select: { tokenVersion: true, papel: true } });
-        if (!row || row.tokenVersion !== (payload.tv ?? 0)) throw new UnauthorizedException('Sessão encerrada. Entre novamente.');
+      // Revoke every account immediately, including cotistas and affiliates.
+      if (this.prisma) {
+        const row = await this.prisma.usuario.findUnique({ where: { id: payload.id }, select: { tokenVersion: true, papel: true, desativadoEm: true } });
+        if (!row || row.desativadoEm || row.tokenVersion !== (payload.tv ?? 0)) throw new UnauthorizedException('Sessão encerrada. Entre novamente.');
         papel = row.papel;
       }
       request.user = { id: payload.id, email: payload.email, papel };
