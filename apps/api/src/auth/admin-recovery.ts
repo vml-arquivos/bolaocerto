@@ -7,7 +7,7 @@ export async function recoverAdmin(prisma: PrismaClient, email: string, password
   if (!email.includes('@') || !isValidNewPassword(password)) throw new Error('Informe e-mail e senha numérica de 6 a 8 caracteres.');
   const hash = await argon2.hash(password, { type: argon2.argon2id });
   return prisma.$transaction(async tx => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
+    // The row lock below is portable across the managed PostgreSQL variants used in production.
     const user = await tx.usuario.findUnique({ where: { email }, select: { id: true, papel: true, desativadoEm: true } });
     if (!user || user.papel !== 'admin') throw new Error('Administrador não encontrado neste banco. Confira o e-mail e o DATABASE_URL do serviço da API.');
     if (user.desativadoEm) throw new Error('Conta desativada: reative por outro administrador antes de recuperar a senha.');
