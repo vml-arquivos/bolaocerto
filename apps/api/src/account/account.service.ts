@@ -6,6 +6,7 @@ import { AuditService } from '../common/audit.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { isValidNewPassword } from '../auth/password-policy';
 
 const RESET_TTL_MINUTES = 60;
 const RESET_MAX_PER_HOUR = 3;
@@ -72,6 +73,7 @@ export class AccountService {
   }
 
   async resetPassword(token: string, newPassword: string) {
+    if (!isValidNewPassword(newPassword)) throw new BadRequestException('A nova senha deve ter de 6 a 8 caracteres, somente números.');
     const row = await this.prisma.tokenSenha.findUnique({ where: { tokenHash: hashResetToken(token) }, include: { usuario: { select: { id: true, email: true, nome: true, desativadoEm: true } } } });
     if (!row || row.usuario.desativadoEm || row.usadoEm || row.expiraEm.getTime() < Date.now()) throw new BadRequestException('Este link expirou ou já foi usado. Peça uma nova redefinição de senha.');
     const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
@@ -89,6 +91,7 @@ export class AccountService {
   async changePassword(usuarioId: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, email: true, senhaHash: true } });
     if (!user || !(await argon2.verify(user.senhaHash, currentPassword).catch(() => false))) throw new UnauthorizedException('A senha atual está incorreta.');
+    if (!isValidNewPassword(newPassword)) throw new BadRequestException('A nova senha deve ter de 6 a 8 caracteres, somente números.');
     if (currentPassword === newPassword) throw new BadRequestException('A nova senha deve ser diferente da atual.');
     const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
     await this.prisma.$transaction(async (tx) => {

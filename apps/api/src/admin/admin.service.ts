@@ -5,6 +5,7 @@ import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
+import { isValidNewPassword } from '../auth/password-policy';
 import { hasProofFile } from '../attachments/proof';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
@@ -309,6 +310,7 @@ export class AdminService {
   async createManagedUser(dto: CreateManagedUserDto, actor: AuthUser) {
     const cpf = normalizeCpf(dto.cpf);
     if (!isValidCpf(cpf)) throw new ConflictException('CPF inválido.');
+    if (!isValidNewPassword(dto.senha)) throw new ConflictException('A senha deve ter de 6 a 8 caracteres, somente números.');
     const dataNascimento = new Date(dto.dataNascimento);
     if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
     assertAdult(dataNascimento);

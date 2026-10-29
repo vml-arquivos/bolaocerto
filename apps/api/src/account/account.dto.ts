@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, Length, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 export class ForgotPasswordDto {
   @IsEmail() @MaxLength(180) email!: string;
@@ -6,12 +6,12 @@ export class ForgotPasswordDto {
 
 export class ResetPasswordDto {
   @IsString() @Length(20, 200) token!: string;
-  @IsString() @MinLength(12, { message: 'A nova senha deve ter pelo menos 12 caracteres.' }) @MaxLength(128) novaSenha!: string;
+  @IsString() @Length(6, 8, { message: 'A nova senha deve ter de 6 a 8 caracteres.' }) @Matches(/^\d{6,8}$/, { message: 'A nova senha deve conter somente números.' }) novaSenha!: string;
 }
 
 export class ChangePasswordDto {
   @IsString() @MinLength(1) @MaxLength(128) senhaAtual!: string;
-  @IsString() @MinLength(12, { message: 'A nova senha deve ter pelo menos 12 caracteres.' }) @MaxLength(128) novaSenha!: string;
+  @IsString() @Length(6, 8, { message: 'A nova senha deve ter de 6 a 8 caracteres.' }) @Matches(/^\d{6,8}$/, { message: 'A nova senha deve conter somente números.' }) novaSenha!: string;
 }
 
 export class DeletionRequestDto {

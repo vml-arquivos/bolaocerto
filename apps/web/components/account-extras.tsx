@@ -66,8 +66,8 @@ export function PasswordCard() {
     <p className="muted">Troque a senha com regularidade e não a repita em outros serviços.</p>
     <form onSubmit={submit} className="admin-form-grid">
       <div className="field"><label htmlFor="senhaAtual">Senha atual</label><input id="senhaAtual" name="senhaAtual" type="password" required autoComplete="current-password" /></div>
-      <div className="field"><label htmlFor="novaSenhaConta">Nova senha (mín. 12)</label><input id="novaSenhaConta" name="novaSenha" type="password" minLength={12} maxLength={128} required autoComplete="new-password" /></div>
-      <div className="field"><label htmlFor="confirmacaoConta">Repita a nova senha</label><input id="confirmacaoConta" name="confirmacao" type="password" minLength={12} maxLength={128} required autoComplete="new-password" /></div>
+      <div className="field"><label htmlFor="novaSenhaConta">Nova senha (6 a 8 números)</label><input id="novaSenhaConta" name="novaSenha" type="password" minLength={6} maxLength={8} pattern="[0-9]{6,8}" inputMode="numeric" required autoComplete="new-password" /></div>
+      <div className="field"><label htmlFor="confirmacaoConta">Repita a nova senha</label><input id="confirmacaoConta" name="confirmacao" type="password" minLength={6} maxLength={8} pattern="[0-9]{6,8}" inputMode="numeric" required autoComplete="new-password" /></div>
       <div className="field" style={{ alignSelf: 'end' }}><button className="button button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Alterar senha'}</button></div>
     </form>
     {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}

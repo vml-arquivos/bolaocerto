@@ -7,6 +7,7 @@ import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import { RegisterDto, LoginDto } from './auth.dto';
 import { assertAdult, AuthUser, isValidCpf, normalizeCpf } from './auth.utils';
+import { isValidNewPassword } from './password-policy';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, openSecret, otpauthUrl, sealSecret, verifyTotp } from './totp';
 
 const GENERIC_LOGIN_ERROR = 'E-mail ou senha incorretos, ou conta temporariamente bloqueada por excesso de tentativas. Tente novamente em alguns minutos.';
@@ -28,6 +29,7 @@ export class AuthService {
     const dataNascimento = new Date(dto.dataNascimento);
     if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
     assertAdult(dataNascimento);
+    if (!isValidNewPassword(dto.senha)) throw new ConflictException('A senha deve ter de 6 a 8 caracteres, somente números.');
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
@@ -87,16 +89,17 @@ export class AuthService {
     // Sempre confere uma senha (mesmo sem conta) para o tempo de resposta não revelar quem tem cadastro.
     this.dummyHash ??= argon2.hash(randomBytes(16).toString('hex'), { type: argon2.argon2id });
     const passwordOk = await argon2.verify(user?.senhaHash ?? (await this.dummyHash), dto.senha).catch(() => false);
-    const locked = Boolean(user?.bloqueadoAte && user.bloqueadoAte > new Date());
+    const lockApplies = this.shouldCountLoginFailure(user?.papel);
+    const locked = Boolean(lockApplies && user?.bloqueadoAte && user.bloqueadoAte > new Date());
     if (!user || user.desativadoEm || locked || !passwordOk) {
-      if (user && !locked) await this.registerLoginFailure(user.id);
+      if (user && lockApplies && !locked) await this.registerLoginFailure(user.id);
       throw new UnauthorizedException(GENERIC_LOGIN_ERROR);
     }
     if (user.totpAtivo) {
       const code = (dto.codigo ?? '').trim();
       if (!code) throw new UnauthorizedException({ statusCode: 401, message: 'Informe o código de 6 dígitos do seu aplicativo autenticador.', requer2fa: true });
       if (!(await this.checkSecondFactor(user, code))) {
-        await this.registerLoginFailure(user.id);
+        if (lockApplies) await this.registerLoginFailure(user.id);
         throw new UnauthorizedException({ statusCode: 401, message: 'Código inválido ou expirado.', requer2fa: true });
       }
     }
@@ -105,6 +108,11 @@ export class AuthService {
   }
 
   /** Conta as falhas e bloqueia a conta (padrão: 5 erros → 15 minutos). */
+  private shouldCountLoginFailure(papel?: string): boolean {
+    if (papel !== 'admin') return true;
+    return (this.config.get<string>('ADMIN_LOGIN_LOCK_ENABLED', 'true') ?? 'true').trim().toLowerCase() !== 'false';
+  }
+
   private async registerLoginFailure(userId: string): Promise<void> {
     const max = Math.max(3, Number(this.config.get('LOGIN_MAX_ATTEMPTS', '5')) || 5);
     const lockMinutes = Math.max(1, Number(this.config.get('LOGIN_LOCK_MINUTES', '15')) || 15);

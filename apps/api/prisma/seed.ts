@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import * as argon2 from 'argon2';
 import { PrismaClient } from '@prisma/client';
+import { isValidNewPassword } from '../src/auth/password-policy';
 
 const prisma = new PrismaClient();
 
@@ -31,6 +32,8 @@ async function main() {
   let adminId: string | undefined;
 
   if (email && password && cpf?.length === 11) {
+    const existing = await prisma.usuario.findUnique({ where: { email }, select: { id: true } });
+    if (!existing && !isValidNewPassword(password)) throw new Error('ADMIN_BOOTSTRAP_PASSWORD deve ter de 6 a 8 caracteres numéricos para criar o administrador inicial.');
     const admin = await prisma.usuario.upsert({
       where: { email },
       create: {

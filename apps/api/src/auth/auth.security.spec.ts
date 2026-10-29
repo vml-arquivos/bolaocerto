@@ -49,6 +49,20 @@ describe('Segurança do login', () => {
     await expect(login(service)).rejects.toThrow(/bloqueada/);
   });
 
+  it('com ADMIN_LOGIN_LOCK_ENABLED=false, administrador ignora bloqueio anterior sem desativar senha ou 2FA', async () => {
+    CONFIG.ADMIN_LOGIN_LOCK_ENABLED = 'false';
+    try {
+      const { service, rows } = await setup({ papel: 'admin', tentativasLogin: 4, bloqueadoAte: new Date(Date.now() + 900_000) });
+      await expect(login(service)).resolves.toBeTruthy();
+      expect(rows[0]).toMatchObject({ tentativasLogin: 0, bloqueadoAte: null });
+      for (let i = 0; i < 5; i += 1) await expect(login(service, 'errada')).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(rows[0].tentativasLogin).toBe(0);
+      expect(rows[0].bloqueadoAte).toBeNull();
+    } finally {
+      delete CONFIG.ADMIN_LOGIN_LOCK_ENABLED;
+    }
+  });
+
   it('a mensagem é a mesma para e-mail inexistente, senha errada e conta bloqueada (não revela quem tem conta)', async () => {
     const { service } = await setup();
     const messages: string[] = [];

@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreatePartnerLotteryDto {
   @IsString()
@@ -62,7 +62,8 @@ export class CreateManagedUserDto {
   dataNascimento!: string;
 
   @IsString()
-  @MinLength(12)
+  @Length(6, 8, { message: 'A senha deve ter de 6 a 8 caracteres.' })
+  @Matches(/^\d{6,8}$/, { message: 'A senha deve conter somente números.' })
   senha!: string;
 
   @IsOptional()

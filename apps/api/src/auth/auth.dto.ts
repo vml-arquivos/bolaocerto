@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsOptional, IsString, Length, MinLength } from 'class-validator';
+import { IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @IsString()
@@ -20,7 +20,8 @@ export class RegisterDto {
   dataNascimento!: string;
 
   @IsString()
-  @MinLength(12)
+  @Length(6, 8, { message: 'A senha deve ter de 6 a 8 caracteres.' })
+  @Matches(/^\d{6,8}$/, { message: 'A senha deve conter somente números.' })
   senha!: string;
 
   @IsOptional()

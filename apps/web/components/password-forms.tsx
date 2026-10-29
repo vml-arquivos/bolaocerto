@@ -49,8 +49,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
   if (done) return <div><div className="form-message form-success" role="status">Senha alterada com sucesso. Já pode entrar com a nova senha.</div><Link className="button button-primary" href="/login">Ir para o login</Link></div>;
   return <form onSubmit={submit}>
-    <div className="field"><label htmlFor="novaSenha">Nova senha (mínimo 12 caracteres)</label><input id="novaSenha" name="novaSenha" type="password" minLength={12} maxLength={128} required autoComplete="new-password" /></div>
-    <div className="field"><label htmlFor="confirmacao">Repita a nova senha</label><input id="confirmacao" name="confirmacao" type="password" minLength={12} maxLength={128} required autoComplete="new-password" /></div>
+    <div className="field"><label htmlFor="novaSenha">Nova senha (6 a 8 números)</label><input id="novaSenha" name="novaSenha" type="password" minLength={6} maxLength={8} pattern="[0-9]{6,8}" inputMode="numeric" required autoComplete="new-password" /></div>
+    <div className="field"><label htmlFor="confirmacao">Repita a nova senha</label><input id="confirmacao" name="confirmacao" type="password" minLength={6} maxLength={8} pattern="[0-9]{6,8}" inputMode="numeric" required autoComplete="new-password" /></div>
     {error && <div className="form-message form-error" role="alert">{error}</div>}
     <button className="button button-primary" disabled={loading}>{loading ? 'Salvando…' : 'Salvar nova senha'}</button>
   </form>;

@@ -69,15 +69,15 @@ describe('AccountService', () => {
     const { service, sent, users, audit } = setup();
     await service.requestReset('maria@exemplo.com');
     const token = decodeURIComponent(/token=([^\s"&]+)/.exec(sent[0].text)![1]!);
-    await service.resetPassword(token, 'uma-senha-bem-forte-123');
-    expect(await argon2.verify(users[0].senhaHash, 'uma-senha-bem-forte-123')).toBe(true);
+    await service.resetPassword(token, '12345678');
+    expect(await argon2.verify(users[0].senhaHash, '12345678')).toBe(true);
     expect(audit.map((a) => a.evento)).toContain('usuario.senha_redefinida');
-    await expect(service.resetPassword(token, 'outra-senha-bem-forte-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.resetPassword(token, '1234567')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('redefinir: token inválido ou expirado é recusado', async () => {
     const { service, tokens } = setup();
-    await expect(service.resetPassword('x'.repeat(40), 'uma-senha-bem-forte-123')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.resetPassword('x'.repeat(40), '12345678')).rejects.toBeInstanceOf(BadRequestException);
     await service.requestReset('maria@exemplo.com');
     tokens[0].expiraEm = new Date(Date.now() - 1000);
     // token real não é conhecido aqui, então valida pelo hash armazenado
@@ -90,18 +90,18 @@ describe('AccountService', () => {
     await service.requestReset('maria@exemplo.com');
     const first = decodeURIComponent(/token=([^\s"&]+)/.exec(sent[0].text)![1]!);
     await service.requestReset('maria@exemplo.com');
-    await expect(service.resetPassword(first, 'uma-senha-bem-forte-123')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.resetPassword(first, '12345678')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('alterar senha exige a atual e uma nova diferente', async () => {
     const { service, users, audit } = setup();
     users[0].senhaHash = await argon2.hash('senha-atual-bem-forte', { type: argon2.argon2id });
-    await expect(service.changePassword('u1', 'errada', 'nova-senha-bem-forte-1')).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.changePassword('u1', 'errada', '12345678')).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(service.changePassword('u1', 'senha-atual-bem-forte', 'senha-atual-bem-forte')).rejects.toBeInstanceOf(BadRequestException);
     users[0].tentativasLogin = 4; users[0].bloqueadoAte = new Date(Date.now() + 900000);
-    await service.changePassword('u1', 'senha-atual-bem-forte', 'nova-senha-bem-forte-1');
+    await service.changePassword('u1', 'senha-atual-bem-forte', '12345678');
     expect(users[0].tentativasLogin).toBe(0); expect(users[0].bloqueadoAte).toBeNull();
-    expect(await argon2.verify(users[0].senhaHash, 'nova-senha-bem-forte-1')).toBe(true);
+    expect(await argon2.verify(users[0].senhaHash, '12345678')).toBe(true);
     expect(audit.map((a) => a.evento)).toContain('usuario.senha_alterada');
   });
 
@@ -112,8 +112,8 @@ describe('AccountService', () => {
     expect(result.link).toMatch(/^https:\/\/bl\.exemplo\/redefinir-senha\?token=/);
     expect(audit.map((a) => a.evento)).toContain('usuario.link_redefinicao_gerado');
     const token = decodeURIComponent(result.link.split('token=')[1]!);
-    await service.resetPassword(token, 'uma-senha-bem-forte-123');
-    expect(await argon2.verify(users[0].senhaHash, 'uma-senha-bem-forte-123')).toBe(true);
+    await service.resetPassword(token, '12345678');
+    expect(await argon2.verify(users[0].senhaHash, '12345678')).toBe(true);
   });
 
   it('link manual exige administrador ativo, conta ativa e respeita limite', async () => {
@@ -124,7 +124,7 @@ describe('AccountService', () => {
     users[0].desativadoEm = null;
     const first = await service.adminResetLink('u1', 'admin1');
     await service.adminResetLink('u1', 'admin1');
-    await expect(service.resetPassword(new URL(first.link).searchParams.get('token')!, 'nova-senha-bem-forte-1')).rejects.toThrow(/expirou/);
+    await expect(service.resetPassword(new URL(first.link).searchParams.get('token')!, '12345678')).rejects.toThrow(/expirou/);
     await service.adminResetLink('u1', 'admin1');
     await expect(service.adminResetLink('u1', 'admin1')).rejects.toThrow(/3 solicitações/);
   });

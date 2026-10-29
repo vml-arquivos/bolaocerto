@@ -1,9 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { isValidNewPassword } from './password-policy';
 /** Explicit server-console recovery; never called by startup or HTTP routes. */
 export async function recoverAdmin(prisma: PrismaClient, email: string, password: string) {
   email = email.trim().toLowerCase();
-  if (!email.includes('@') || password.length < 12 || password.length > 128) throw new Error('Informe e-mail e senha de 12 a 128 caracteres.');
+  if (!email.includes('@') || !isValidNewPassword(password)) throw new Error('Informe e-mail e senha numérica de 6 a 8 caracteres.');
   const hash = await argon2.hash(password, { type: argon2.argon2id });
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(28471, 1)`;

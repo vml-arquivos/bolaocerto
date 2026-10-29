@@ -23,7 +23,7 @@ describe('AuthService referral attribution', () => {
     return { service: new AuthService(prisma as any, jwt as any, config as any), prisma };
   }
 
-  const dto = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', senha: 'senha-segura-12', codigoAfiliado: 'BL-ABC' };
+  const dto = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', senha: '12345678', codigoAfiliado: 'BL-ABC' };
 
   it('persiste o afiliado aprovado no cadastro', async () => {
     const { service, prisma } = makeService({ afiliado: { findUnique: jest.fn().mockResolvedValue({ id: 'affiliate-1', statusAprovacao: 'aprovado' }) } });
