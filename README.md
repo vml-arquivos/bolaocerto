@@ -59,3 +59,7 @@ Consulte [`docs/cora-e-operacao.md`](docs/cora-e-operacao.md) para configurar a 
 - [Estatísticas, avisos, recuperação de senha e LGPD](docs/estatisticas-avisos-conta.md)
 - [Checklist de lançamento, segurança e operação](docs/lancamento-checklist.md)
 - [Bolão condicional, relatórios, CRM e recibo](docs/profissionalizacao-crm-relatorios.md)
+
+### Atualização administrativa de 29/10/2026
+
+Antes de implantar o pacote cumulativo, consulte [administração, comprovantes e contratos](docs/auditoria/2026-10-29-admin-contratos.md). Há uma migração aditiva e novas configurações jurídicas obrigatórias para novas compras. As minutas em `docs/juridico/` exigem identificação do operador e revisão do modelo real antes da ativação.

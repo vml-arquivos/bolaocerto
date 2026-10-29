@@ -1098,3 +1098,17 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .health-list li.is-ok > span { background: var(--success-soft, #e3f6ec); color: var(--success-strong, #11784a); }
 .health-list li.is-warn > span { background: var(--warning-soft); color: var(--warning-strong); }
 .health-list small { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.45; margin-top: 2px; }
+
+/* Compact operations workspace */
+.admin-nav-group summary { cursor: pointer; padding: 12px 8px; list-style-position: inside; }
+.admin-nav-group:not([open]) { margin-bottom: 2px; }
+.admin-pools-compact .admin-table th, .admin-pools-compact .admin-table td { padding: 10px 8px; font-size: 12px; }
+.admin-pools-compact .admin-row-actions { gap: 5px; min-width: 135px; flex-wrap: wrap; }
+.admin-pools-compact .admin-button-small { padding: 5px 8px; font-size: 12px; }
+.admin-danger { color: #b42318; }
+.legal-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; }
+.purchase-card .legal-text { max-height: 240px; overflow-y: auto; font-size: 13px; padding: 12px; border: 1px solid #b8c3d9; border-radius: 10px; }
+.pool-lots { min-width: 0; }
+.pool-lots > details { padding: 12px; border: 1px solid #dbe3f2; border-radius: 14px; margin-top: 8px; }
+.pool-lots summary { cursor: pointer; font-weight: 600; }
+.pool-lots details .pool-card { margin-top: 12px; }

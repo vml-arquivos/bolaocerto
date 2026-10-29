@@ -18,8 +18,10 @@ function setup(dir: string, shares: Array<{ id: string; bolaoId: string; comprad
   const audits: string[] = [];
   let seq = 0;
   const prisma: any = {
+    $queryRaw: async () => [],
     bolao: { findUnique: async ({ where }: any) => (where.id === 'p1' ? { id: 'p1', status: 'fechado' } : null) },
     cota: {
+      findMany: async ({ where }: any) => Array.from(new Map(shares.filter(s => s.bolaoId === where.bolaoId && (!where.id || where.id === s.id) && where.status.in.includes(s.status)).map(s => [s.compradorId, s])).values()),
       findUnique: async ({ where }: any) => shares.find((s) => s.id === where.id) ?? null,
       count: async ({ where }: any) => shares.filter((s) => s.bolaoId === where.bolaoId && s.compradorId === where.compradorId && where.status.in.includes(s.status)).length,
     },
@@ -104,5 +106,34 @@ describe('AttachmentsService', () => {
     expect(rows[0]?.removidoEm).toBeInstanceOf(Date);
     expect((await storage.usage()).arquivos).toBe(1);
     await expect(service.openFor(file.id, admin)).rejects.toThrow(/não encontrado/i);
+  });
+});
+
+describe('General proof delivery', () => {
+  it('notifies each paid participant once, excluding unpaid reservations and cancelled shares', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'bl-notify-'));
+    try {
+      const { service, notified } = setup(dir, [
+        { id: '1', bolaoId: 'p1', compradorId: 'paid', status: 'paga' },
+        { id: '2', bolaoId: 'p1', compradorId: 'paid', status: 'registrada' },
+        { id: '3', bolaoId: 'p1', compradorId: 'unpaid', status: 'reservada' },
+        { id: '4', bolaoId: 'p1', compradorId: 'cancelled', status: 'cancelada' },
+      ]);
+      await service.upload('p1', { buffer: PDF }, { tipo: 'comprovante_aposta' }, admin);
+      expect(notified).toHaveLength(1);
+      expect((notified[0] as unknown[])[0]).toBe('paid');
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+  it('does not notify participants about a staff-only file until it is made visible', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'bl-notify-'));
+    try {
+      const { service, notified } = setup(dir, [{ id: '1', bolaoId: 'p1', compradorId: 'paid', status: 'paga' }]);
+      const file = await service.upload('p1', { buffer: PDF }, { tipo: 'comprovante_aposta', visivelParticipantes: false }, admin);
+      expect(notified).toHaveLength(0);
+      await service.update(file.id, { visivelParticipantes: true }, admin);
+      expect(notified).toHaveLength(1);
+      await service.update(file.id, { descricao: 'Correção de descrição' }, admin);
+      expect(notified).toHaveLength(1);
+    } finally { await rm(dir, { recursive: true, force: true }); }
   });
 });

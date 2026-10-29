@@ -1,6 +1,9 @@
-import { IsInt, IsOptional, IsString, IsUUID, Length, Min, MaxLength } from 'class-validator';
+import { Equals, IsInt, IsOptional, IsString, IsUUID, Length, Min, MaxLength } from 'class-validator';
 
 export class ReserveShareDto {
+  @Equals(true)
+  aceitoTermos!: boolean;
+
   @IsUUID()
   bolaoId!: string;
 

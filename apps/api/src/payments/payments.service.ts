@@ -1,3 +1,5 @@
+import { approvedDocument } from '../legal/documents';
+import { hasSaleProof } from '../attachments/proof';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MetodoPagamento, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
@@ -250,7 +252,7 @@ export class PaymentsService {
     if (transitioned) {
       const valor = Number(payment.valorBruto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       const jogos = (cota.bolao.jogos ?? []).map(g => ({ ordem: g.ordem, numeros: g.numeros }));
-      await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'pagamento.confirmado', payload: { titulo: 'Pagamento confirmado', mensagem: `Recebemos ${valor}. Seu recibo e os comprovantes de registro ficam disponíveis na sua conta.`, link: '/minha-conta', cotaId: cota.id, jogos, valorJogo: payment.valorCustoBilhete.toFixed(2), taxaAdministracao: payment.valorTaxaAdmin.toFixed(2) } } });
+      await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'pagamento.confirmado', payload: { titulo: 'Pagamento confirmado', mensagem: `Recebemos ${valor}. Consulte o recibo interno e os arquivos disponíveis na sua conta. A confirmação do pagamento não substitui o comprovante oficial de registro da aposta.`, link: '/minha-conta', cotaId: cota.id, jogos, valorJogo: payment.valorCustoBilhete.toFixed(2), taxaAdministracao: payment.valorTaxaAdmin.toFixed(2) } } });
     }
     if (settled && cota.afiliadoReferenciaId && Number(payment.valorComissaoAfiliado) > 0) {
       const fee = Number(payment.valorTaxaAdmin);
@@ -372,17 +374,19 @@ export class PaymentsService {
     if (!user) throw new NotFoundException('Participante não encontrado.');
     const affiliate = dto.codigoAfiliado ? await this.prisma.afiliado.findFirst({ where: { codigoAfiliado: dto.codigoAfiliado, statusAprovacao: 'aprovado' } }) : null;
     if (dto.codigoAfiliado && !affiliate) throw new NotFoundException('Código de afiliado não encontrado.');
-    const termHash = this.config.get<string>('MANDATO_TERM_HASH', '') || 'aceite-presencial-registrado-pelo-operador';
+    const document = approvedDocument('participacao');
+    if (dto.termoMandatoHash !== document.hash) throw new ConflictException('O contrato mudou. Releia e registre novamente o aceite presencial.');
 
     const shareId = await this.prisma.$transaction(async (tx) => {
       await this.lockBolao(tx, dto.bolaoId);
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { concurso: { include: { resultado: true } } } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
+      if (pool.comprovanteAntesVenda && !await hasSaleProof(tx, pool.id)) throw new ConflictException('Envie o comprovante oficial antes da venda.');
       if (pool.concurso.cutoffAt <= new Date() || pool.concurso.status !== 'aberto' || pool.concurso.resultado) throw new ConflictException('Prazo de compra encerrado.');
       if (pool.status !== StatusBolao.aberto) throw new ConflictException('O bolão não está aberto para vendas.');
       if (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas)) throw new ConflictException('Não há cotas suficientes disponíveis.');
       const share = await tx.cota.create({ data: { bolaoId: pool.id, compradorId: user.id, titularCpf: user.cpf, titularNome: user.nome, quantidade: dto.quantidade, status: StatusCota.reservada, expiraReservaEm: null, afiliadoReferenciaId: affiliate?.id ?? null, origemVenda: 'manual' } });
-      await tx.mandato.create({ data: { cotaId: share.id, usuarioId: user.id, textoHash: termHash.slice(0, 64), ipAceite: 'admin-manual', userAgent: `admin:${admin.id}` } });
+      await tx.mandato.create({ data: { cotaId: share.id, usuarioId: user.id, textoHash: document.hash, textoSnapshot: document.texto, versao: document.versao, pedidoSnapshot: { origemAceite: 'ateste_presencial_do_operador', operadorId: admin.id, bolaoId: pool.id, quantidade: dto.quantidade, valorCota: pool.valorCota.toString(), taxaAdministracaoPct: pool.taxaAdministracaoPct.toString() }, ipAceite: 'admin-manual', userAgent: `admin:${admin.id}` } });
       await tx.bolao.update({ where: { id: pool.id }, data: { cotasVendidas: { increment: dto.quantidade } } });
       await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.venda_manual', atorId: admin.id, payloadDepois: { bolaoId: pool.id, usuarioId: user.id, quantidade: dto.quantidade, pago: dto.pago, observacao: dto.observacao } as unknown as Prisma.InputJsonValue });
       return share.id;

@@ -1,3 +1,4 @@
+import { legalDocument, LEGAL_VERSION } from '../src/legal/documents';
 /** Run ONLY against the disposable CI database after prisma migrate deploy. */
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
@@ -13,6 +14,7 @@ import { NotificationsService } from '../src/notifications/notifications.service
 if (process.env.DISPOSABLE_TEST_DATABASE !== 'true') throw new Error('Requires DISPOSABLE_TEST_DATABASE=true; never use production.');
 const prisma = new PrismaClient();
 async function main() {
+  Object.assign(process.env, { LEGAL_APPROVED_VERSION: LEGAL_VERSION, LEGAL_OPERATOR_NAME: 'CI Fixture', LEGAL_OPERATOR_CNPJ: '00000000000100', LEGAL_OPERATOR_ADDRESS: 'CI', LEGAL_CONTACT_EMAIL: 'test@example.invalid', LEGAL_REFUND_TERMS: 'CI', LEGAL_AFFILIATE_PAYOUT_TERMS: 'CI' });
   process.env.PAYMENTS_ENABLED = 'true'; process.env.MANDATO_TERM_HASH = 'a'.repeat(64);
   const suffix = randomUUID();
   const user = await prisma.usuario.create({ data: { nome: 'CI Fixture', email: `${suffix}@example.invalid`, cpf: suffix.replace(/\D/g, '').padEnd(11, '0').slice(0,11), dataNascimento: new Date('1990-01-01'), senhaHash: 'not-a-login', papel: 'cotista' } });
@@ -20,11 +22,11 @@ async function main() {
   await prisma.configLoteria.create({ data: { modalidade, nomeExibicao: 'CI', valorMinimoCota: 1, minCotasBolao: 1, maxCotasBolao: 10, horarioCorteLocal: '19:00', diasSemanaSorteio: [] } });
   const contest = await prisma.concurso.create({ data: { modalidade, numeroConcurso: 1, cutoffAt: new Date(Date.now()+86400000), dataSorteio: new Date(Date.now()+86400000) } });
   const group = await prisma.grupo.create({ data: { nome: 'CI', slug: suffix, tipo: 'oficial' } });
-  const pool = await prisma.bolao.create({ data: { concursoId: contest.id, grupoId: group.id, criadoPor: user.id, tipoOrganizador: 'admin', numerosApostados: [1,2,3,4,5,6], totalCotas: 1, valorCota: 6, taxaAdministracaoPct: 0, modeloOperacional: 'mandato' } });
+  const pool = await prisma.bolao.create({ data: { comprovanteAntesVenda: false, concursoId: contest.id, grupoId: group.id, criadoPor: user.id, tipoOrganizador: 'admin', numerosApostados: [1,2,3,4,5,6], totalCotas: 1, valorCota: 6, taxaAdministracaoPct: 0, modeloOperacional: 'mandato' } });
   const audit = new AuditService(prisma as never);
   const shares = new SharesService(prisma as never, audit);
   const auth = { id: user.id, email: user.email, papel: 'cotista' as const };
-  const dto = { bolaoId: pool.id, quantidade: 1, titularCpf: '52998224725', titularNome: 'CI Fixture', termoMandatoHash: process.env.MANDATO_TERM_HASH! };
+  const dto = { bolaoId: pool.id, quantidade: 1, titularCpf: '52998224725', titularNome: 'CI Fixture', termoMandatoHash: legalDocument('participacao').hash, aceitoTermos: true };
   const attempts = await Promise.allSettled(Array.from({length:8}, () => shares.reserve(dto, auth, { ip: '127.0.0.1' })));
   assert.equal(attempts.filter(r => r.status === 'fulfilled').length, 1, 'exactly one reservation for last quota');
   const share = await prisma.cota.findFirstOrThrow({ where: { bolaoId: pool.id } });

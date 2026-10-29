@@ -124,6 +124,13 @@ export class PoolsController {
     return this.pools.cancel(id, user);
   }
 
+  @Delete('admin/boloes/:id/sem-movimentacao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  removeUnused(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.removeUnused(id, user);
+  }
+
   @Delete('admin/boloes/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

@@ -179,7 +179,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       return;
     }
     if (!unlimited && (!Number.isInteger(Number(totalCotas)) || Number(totalCotas) < 1)) {
-      setMessage('Informe um total de cotas válido ou marque “Cotas ilimitadas”.');
+      setMessage('Informe um total finito de cotas válido.');
       return;
     }
 
@@ -239,7 +239,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} /></label>
       <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>
-    <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. A receita será apurada conforme as vendas.</small></span></label>
+    {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. Opção legada, indisponível para novos lotes.</small></span></label>}
     <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
     {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>

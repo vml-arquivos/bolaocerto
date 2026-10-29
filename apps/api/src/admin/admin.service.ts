@@ -200,7 +200,7 @@ export class AdminService {
           interessados: interested.get(pool.id) ?? 0,
           jogos: pool.jogos.length || (pool.numerosApostados.length ? 1 : 0),
           reservadas: pool.cotas.filter((share) => share.status === StatusCota.reservada).reduce((sum, share) => sum + share.quantidade, 0),
-          pagas: pool.cotas.filter((share) => share.status === StatusCota.paga).reduce((sum, share) => sum + share.quantidade, 0),
+          pagas: pool.cotas.filter((share) => ([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status)).reduce((sum, share) => sum + share.quantidade, 0),
           cotasIlimitadas: pool.cotasIlimitadas,
           disponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0),
           arrecadado: pool.cotas.filter((share) => share.status === StatusCota.paga || share.status === StatusCota.registrada || share.status === StatusCota.apurada || share.status === StatusCota.premiada).reduce((sum, share) => sum + Number(share.valorPago ?? 0), 0).toFixed(2),

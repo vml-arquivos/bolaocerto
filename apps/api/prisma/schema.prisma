@@ -128,6 +128,7 @@ model Usuario {
   boloesCriados         Bolao[]       @relation("criador_bolao")
   cotasCompradas        Cota[]        @relation("comprador_cota")
   mandatos              Mandato[]
+  aceitesLegais         AceiteLegal[]
   notificacoes          Notificacao[]
   auditorias            AuditoriaEvento[]
   documentosRevisados   KycDocumento[] @relation("revisor_kyc")
@@ -295,6 +296,7 @@ model Grupo {
 }
 
 model Bolao {
+  comprovanteAntesVenda Boolean @default(true) @map("comprovante_antes_venda")
   id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   concursoId            String              @map("concurso_id") @db.Uuid
   grupoId               String              @map("grupo_id") @db.Uuid
@@ -388,6 +390,9 @@ model Cota {
 }
 
 model Mandato {
+  textoSnapshot String? @map("texto_snapshot")
+  versao String? @db.VarChar(40)
+  pedidoSnapshot Json? @map("pedido_snapshot")
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   cotaId      String   @unique @map("cota_id") @db.Uuid
   usuarioId   String   @map("usuario_id") @db.Uuid
@@ -630,4 +635,19 @@ model PrecoLoteria {
   @@unique([modalidade, chave, vigenteDesde])
   @@index([modalidade, chave, vigenteAte])
   @@map("precos_loteria")
+}
+
+model AceiteLegal {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId String @map("usuario_id") @db.Uuid
+  tipo String @db.VarChar(30)
+  hash String @db.VarChar(64)
+  versao String @db.VarChar(40)
+  texto String
+  ip String @db.VarChar(64)
+  userAgent String? @map("user_agent")
+  aceitoEm DateTime @default(now()) @map("aceito_em")
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  @@unique([usuarioId, tipo, hash])
+  @@map("aceites_legais")
 }

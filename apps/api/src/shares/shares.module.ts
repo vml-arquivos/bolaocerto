@@ -1,3 +1,4 @@
+import { LegalController } from '../legal/legal.controller';
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SharesController } from './shares.controller';
@@ -8,7 +9,7 @@ import { ReceiptVerifyController } from './receipt-verify.controller';
 
 @Module({
   imports: [ScheduleModule.forRoot()],
-  controllers: [SharesController, PublicConfigController, ReceiptVerifyController],
+  controllers: [LegalController, SharesController, PublicConfigController, ReceiptVerifyController],
   providers: [SharesService, ReservationExpiryJob],
   exports: [SharesService],
 })

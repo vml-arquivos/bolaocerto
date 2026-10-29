@@ -50,7 +50,7 @@ const groups = [
     ],
   },
   {
-    label: 'Dia a dia',
+    label: 'Operação e comprovantes',
     items: [
       ['operacao', 'Para fazer', 'OP'],
       ['comprovantes', 'Comprovantes', 'CP'],
@@ -113,8 +113,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
         {testMode && <p className="admin-environment-note">Não faça pagamentos de verdade.</p>}
         <nav className="admin-nav" aria-label="Menu do painel">
           {groups.map((group) => (
-            <div className="admin-nav-group" key={group.label}>
-              <span className="admin-nav-label">{group.label}</span>
+            <details className="admin-nav-group" key={`${group.label}-${current}-${collapsed}`} open={collapsed || group.items.some(([key]) => key === current)}><summary className="admin-nav-label">{group.label}</summary>
               {group.items.map(([key, label, icon]) => (
                 <Link
                   key={key}
@@ -132,7 +131,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
                   <span className="admin-nav-icon" aria-hidden="true">{icon}</span><span>{label}</span>
                 </Link>
               ))}
-            </div>
+            </details>
           ))}
         </nav>
         <button type="button" className="admin-collapse-toggle" onClick={toggleCollapsed} aria-pressed={collapsed} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>

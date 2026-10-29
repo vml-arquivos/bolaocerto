@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, MaxLength, Min } from 'class-validator';
 
 export class CreatePaymentDto {
   @IsIn(['pix', 'boleto', 'cartao', 'pix_automatico'], { message: 'Método de pagamento inválido.' })
@@ -19,6 +19,10 @@ export class ManualPaymentDto {
 }
 
 export class ManualSaleDto {
+  @IsString()
+  @Length(64, 64)
+  termoMandatoHash!: string;
+
   @IsUUID()
   bolaoId!: string;
 

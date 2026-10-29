@@ -129,7 +129,7 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
   const [link, setLink] = useState('');
   const [ticket, setTicket] = useState('');
   const [busy, setBusy] = useState(false);
-  const alreadyDone = pool.status === 'registrado';
+  const alreadyDone = ['registrado', 'apurado'].includes(pool.status);
   const ready = count > 0 || link.trim().length > 0;
   async function confirm() {
     setBusy(true);
@@ -142,9 +142,9 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
   }
   const name = `${modalityNames[pool.modalidade] ?? pool.modalidade ?? 'Bolão'} #${pool.concurso ?? ''}`;
   return <AdminModal title={`Comprovantes · ${name}`} onClose={onClose}>
-    <p className="admin-help">Envie a foto ou o PDF do comprovante que a lotérica entregou, com os jogos apostados. Depois confirme abaixo.</p>
+    <p className="admin-help">Envie a foto ou o PDF do comprovante que a lotérica entregou, com os jogos apostados. Novos lotes exigem um comprovante visível antes da publicação. Cotistas pagos são avisados por e-mail e pela conta.</p>
     <AttachmentsPanel poolId={pool.id} shares={shares} notify={notify} onChange={setCount} />
-    <div className="attach-confirm">
+    {['aberto', 'fechado'].includes(pool.status) && <div className="attach-confirm">
       <h3>{alreadyDone ? 'Atualizar dados da aposta' : 'Confirmar que a aposta foi feita'}</h3>
       <div className="admin-form-grid">
         <label className="admin-field"><span>Número do bilhete (opcional)</span><input value={ticket} onChange={(event) => setTicket(event.target.value)} maxLength={80} /></label>
@@ -152,6 +152,6 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
       </div>
       <button type="button" className="admin-button admin-button-primary" disabled={busy || !ready} onClick={() => void confirm()}>{busy ? 'Salvando…' : alreadyDone ? 'Salvar' : 'Aposta feita — registrar cotas'}</button>
       {!ready && <small className="admin-help"> Envie ao menos um arquivo (ou informe o link) para liberar o botão.</small>}
-    </div>
+    </div>}
   </AdminModal>;
 }

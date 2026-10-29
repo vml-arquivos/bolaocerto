@@ -1,3 +1,5 @@
+import { hasSaleProof } from '../attachments/proof';
+import { approvedDocument } from '../legal/documents';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota, StatusPagamento } from '@prisma/client';
 import { AuthUser, isValidCpf, normalizeCpf } from '../auth/auth.utils';
@@ -16,8 +18,9 @@ export class SharesService {
     if (process.env.PAYMENTS_ENABLED !== 'true') throw new ServiceUnavailableException('As reservas estão temporariamente indisponíveis. Tente novamente em instantes.');
     const titularCpf = normalizeCpf(dto.titularCpf);
     if (!isValidCpf(titularCpf)) throw new ConflictException('CPF do titular inválido.');
-    const expectedHash = process.env.MANDATO_TERM_HASH;
-    if (!expectedHash) throw new ServiceUnavailableException('Termo de mandato ainda não configurado pelo operador.');
+    if (dto.aceitoTermos !== true) throw new ConflictException('O aceite expresso do contrato é obrigatório.');
+    const document = approvedDocument('participacao');
+    const expectedHash = document.hash;
     if (dto.termoMandatoHash !== expectedHash) throw new ConflictException('Versão do termo de mandato inválida.');
     await this.responsible?.assertCanBuy(user.id, dto.bolaoId, dto.quantidade);
     const expirationMinutes = Number(process.env.SHARE_RESERVATION_MINUTES ?? 15);
@@ -27,8 +30,9 @@ export class SharesService {
       : null;
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId}::uuid FOR UPDATE`;
-      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
+      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } } } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
+      if (pool.comprovanteAntesVenda && !await hasSaleProof(tx, pool.id)) throw new ConflictException('Comprovante oficial ainda indisponível para esta venda.');
       const contestDeadline = await tx.concurso.findUniqueOrThrow({ where: { id: pool.concursoId }, select: { cutoffAt: true, status: true, resultado: { select: { id: true } } } });
       if (contestDeadline.cutoffAt <= new Date() || contestDeadline.resultado || (contestDeadline.status && contestDeadline.status !== 'aberto')) throw new ConflictException('O prazo de compra deste concurso encerrou.');
       if (pool.status !== StatusBolao.aberto || (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas))) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');
@@ -51,7 +55,7 @@ export class SharesService {
           afiliadoReferenciaId: affiliate?.id,
           status: StatusCota.reservada,
           expiraReservaEm: new Date(Math.min(expiresAt.getTime(), contestDeadline.cutoffAt.getTime())),
-          mandato: { create: { usuarioId: user.id, textoHash: dto.termoMandatoHash, ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
+          mandato: { create: { usuarioId: user.id, textoHash: document.hash, textoSnapshot: document.texto, versao: document.versao, pedidoSnapshot: { bolaoId: pool.id, concursoId: pool.concursoId, quantidade: dto.quantidade, valorCota: pool.valorCota.toString(), taxaAdministracaoPct: pool.taxaAdministracaoPct.toString(), modeloOperacional: pool.modeloOperacional, numerosApostados: pool.numerosApostados, jogos: (pool.jogos ?? []).map(j => ({ ordem: j.ordem, numeros: j.numeros, custo: j.custo.toString() })), precificacao: pool.precificacao }, ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
         },
         include: { mandato: true },
       });

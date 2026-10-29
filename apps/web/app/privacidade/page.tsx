@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
 import { SiteFooter, SiteHeader } from '../../components/site-header';
-export const metadata: Metadata = { title: 'Privacidade' };
-export default function PrivacyPage(){return <><SiteHeader/><main className="document-page shell" id="main-content"><span className="overline">Privacidade</span><h1>Como o BL trata seus dados</h1><h2>Dados utilizados</h2><p>Nome, CPF, data de nascimento, e-mail, telefone, dados técnicos de acesso, histórico de aceite, cotas, pagamentos, comprovantes e informações necessárias à operação e segurança.</p><h2>Finalidades</h2><p>Criar e proteger a conta, validar elegibilidade, processar participações, registrar pagamentos, disponibilizar comprovantes, comunicar resultados, prevenir fraudes e atender obrigações legais.</p><h2>Proteção</h2><p>O acesso é controlado por perfis e eventos sensíveis são registrados. Senhas são armazenadas por hash seguro e cookies de autenticação não ficam disponíveis para scripts do navegador.</p><h2>Direitos</h2><p>O titular poderá solicitar confirmação, acesso, correção e demais direitos previstos na legislação aplicável pelo canal oficial que será divulgado antes do lançamento.</p></main><SiteFooter/></>}
+import { LegalDocument } from '../../components/legal-document';
+export const metadata = { title: 'Política de privacidade' };
+export default function Page() { return <><SiteHeader/><main className="document-page shell" id="main-content"><h1>Política de privacidade</h1><LegalDocument kind="privacidade"/></main><SiteFooter/></>; }

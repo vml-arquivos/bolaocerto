@@ -29,8 +29,9 @@ function fakePrisma() {
   let seq = 0;
   const shares = [{ id: COTA, bolaoId: POOL, compradorId: BUYER_ID, status: 'registrada' }];
   const prisma: any = {
+    $queryRaw: async () => [],
     bolao: { findUnique: async ({ where }: any) => (where.id === POOL ? { id: POOL, status: 'fechado' } : null) },
-    cota: { findUnique: async ({ where }: any) => shares.find((s) => s.id === where.id) ?? null, count: async ({ where }: any) => shares.filter((s) => s.bolaoId === where.bolaoId && s.compradorId === where.compradorId && where.status.in.includes(s.status)).length },
+    cota: { findMany: async ({ where }: any) => shares.filter(s => s.bolaoId === where.bolaoId && where.status.in.includes(s.status)), findUnique: async ({ where }: any) => shares.find((s) => s.id === where.id) ?? null, count: async ({ where }: any) => shares.filter((s) => s.bolaoId === where.bolaoId && s.compradorId === where.compradorId && where.status.in.includes(s.status)).length },
     anexo: {
       findFirst: async ({ where }: any) => {
         const row = rows.find((r) => r.removidoEm === null && (where.id ? r.id === where.id : true) && (where.sha256 ? r.sha256 === where.sha256 && r.bolaoId === where.bolaoId && r.cotaId === where.cotaId : true));

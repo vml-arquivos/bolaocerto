@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { AffiliateContract } from './legal-document';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { PoolWizard } from './pool-wizard';
 
@@ -79,7 +80,7 @@ export function AffiliateDashboard() {
   if (!data || !workspace) return <div className="affiliate-loading">Carregando seu workspace…</div>;
 
   const ownPools = workspace.boloes;
-  return <div className="affiliate-page">
+  return <div className="affiliate-page"><AffiliateContract />
     <div className="affiliate-heading"><div><span className="overline">Workspace do afiliado</span><h1>Seu negócio, sua rede, seus bolões.</h1><p>Crie oportunidades, convide pessoas e acompanhe tudo que pertence à sua operação.</p></div><span className={`affiliate-status ${data.statusAprovacao}`}>{statusText(data.statusAprovacao)}</span></div>
     {(error || notice) && <div className={`form-message ${error ? 'form-error' : 'form-success'}`} role="status">{error || notice}</div>}
     <nav className="affiliate-tabs" aria-label="Navegação do workspace"><button className={tab === 'visao' ? 'is-active' : ''} onClick={() => setTab('visao')}>Visão geral</button><button className={tab === 'rede' ? 'is-active' : ''} onClick={() => setTab('rede')}>Minha rede</button><button className={tab === 'grupos' ? 'is-active' : ''} onClick={() => setTab('grupos')}>Grupos</button><button className={tab === 'boloes' ? 'is-active' : ''} onClick={() => setTab('boloes')}>Meus bolões</button><button className={tab === 'comissoes' ? 'is-active' : ''} onClick={() => setTab('comissoes')}>Comissões</button></nav>

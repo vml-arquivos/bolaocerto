@@ -2,6 +2,7 @@
 import { useSaleClock } from './live-storefront';
 import { canPurchase, withinSaleWindow } from '../lib/pool-availability';
 import Link from 'next/link';
+import type { LegalDocumentData } from './legal-document';
 import { FormEvent, useEffect, useState } from 'react';
 import { money, PoolRelease } from '../lib/domain';
 import { ReleaseMeter } from './release-meter';
@@ -15,6 +16,9 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const now = useSaleClock(serverNow);
   const sale = { status, cotasDisponiveis: available, concurso: { cutoffAt, status: contestStatus }, resultado: hasResult, liberacao: release };
   const [message, setMessage] = useState('');
+  const [contract, setContract] = useState<LegalDocumentData | null>(null);
+  const [accepted, setAccepted] = useState(false);
+  useEffect(() => { void fetch('/api/v1/config/mandato', { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Contrato indisponível.'); setContract(await response.json()); }).catch(e => setMessage(e.message)); }, []);
   const [loading, setLoading] = useState(false);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
@@ -37,10 +41,8 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     setLoading(true); setMessage(''); setCreated(null);
     const form = new FormData(event.currentTarget);
     try {
-      const configResponse = await fetch('/api/v1/config/mandato');
-      const config = await configResponse.json() as { hash?: string; message?: string };
-      if (!configResponse.ok || !config.hash) throw new Error(config.message || 'Termo de participação indisponível.');
-      const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: Number(form.get('quantidade')), titularCpf: String(form.get('titularCpf')), titularNome: String(form.get('titularNome')), termoMandatoHash: config.hash }) });
+      if (!contract?.aprovado || !accepted) throw new Error('Leia e aceite o contrato vigente antes de reservar.');
+      const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: Number(form.get('quantidade')), titularCpf: String(form.get('titularCpf')), titularNome: String(form.get('titularNome')), termoMandatoHash: contract.hash, aceitoTermos: true }) });
       if (reserveResponse.status === 401) throw new Error('Entre na sua conta antes de reservar uma cota.');
       const reserve = await reserveResponse.json() as { id?: string; message?: string | string[] };
       if (!reserveResponse.ok || !reserve.id) throw new Error(Array.isArray(reserve.message) ? reserve.message.join(' ') : reserve.message || 'Falha ao reservar.');
@@ -60,8 +62,8 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
         <div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required /></div>
         <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div>
         {methods.length > 1 && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
-        <label className="check-line"><input type="checkbox" required /><span>Li e aceito os <Link href="/termos" target="_blank"><u>termos de participação</u></Link>, confirmo ser maior de 18 anos e autorizo o registro.</span></label>
-        <button className="button button-primary" disabled={loading}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : 'Reservar e gerar Pix'}</button>
+        <details><summary>Contrato desta compra · {contract?.versao ?? 'carregando'}</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito os <Link href="/termos" target="_blank"><u>termos de participação</u></Link>, confirmo ser maior de 18 anos e autorizo o registro.</span></label>
+        <button className="button button-primary" disabled={loading || !accepted || !contract?.aprovado}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : 'Reservar e gerar Pix'}</button>
       </form> : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
         : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}
     {locked && <NotifyMe poolId={poolId} />}

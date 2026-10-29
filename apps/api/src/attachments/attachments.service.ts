@@ -47,6 +47,7 @@ export class AttachmentsService {
     const key = await this.storage.save(file.buffer, detected.ext);
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${poolId}::uuid FOR UPDATE`;
         const row = await tx.anexo.create({
           data: { bolaoId: poolId, cotaId: dto.cotaId ?? null, tipo: dto.tipo, nomeOriginal: safeFileName(file.originalname, detected.ext), mime: detected.mime, tamanho: file.buffer!.length, sha256, caminho: key, descricao: dto.descricao?.trim() || null, visivelParticipantes: dto.visivelParticipantes ?? true, enviadoPor: user.id },
           include: { autor: { select: { nome: true } } },
@@ -55,6 +56,7 @@ export class AttachmentsService {
         if (buyerId && row.visivelParticipantes) {
           await this.notifications.notify(buyerId, 'cota.recibo', { titulo: 'Recibo da sua cota disponível', mensagem: 'O recibo da sua cota já está na sua conta. Guarde-o: é a sua prova de participação.', link: '/minha-conta' }, tx);
         }
+        if (!row.cotaId && row.visivelParticipantes) await this.notifyParticipants(tx, row.bolaoId, row.id);
         return row;
       });
       return toView(created);
@@ -62,6 +64,11 @@ export class AttachmentsService {
       await this.storage.remove(key);
       throw error;
     }
+  }
+
+  private async notifyParticipants(tx: Prisma.TransactionClient, poolId: string, attachmentId: string, shareId?: string | null) {
+    const buyers = await tx.cota.findMany({ where: { bolaoId: poolId, ...(shareId ? { id: shareId } : {}), status: { in: ['paga', 'registrada', 'apurada', 'premiada'] } }, select: { compradorId: true }, distinct: ['compradorId'] });
+    for (const buyer of buyers) await this.notifications.notify(buyer.compradorId, 'cota.recibo', { titulo: 'Comprovante disponível', mensagem: 'Um comprovante da sua participação foi disponibilizado. Entre na sua conta para consultar e baixar o arquivo.', bolaoId: poolId, anexoId: attachmentId, link: '/minha-conta' }, tx);
   }
 
   async listForPool(poolId: string) {
@@ -101,8 +108,12 @@ export class AttachmentsService {
     const current = await this.prisma.anexo.findFirst({ where: { id, removidoEm: null } });
     if (!current) throw new NotFoundException('Arquivo não encontrado.');
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${current.bolaoId}::uuid FOR UPDATE`;
+      const latest = await tx.anexo.findFirst({ where: { id, removidoEm: null } });
+      if (!latest) throw new NotFoundException('Arquivo não encontrado.');
       const row = await tx.anexo.update({ where: { id }, data: { ...(dto.visivelParticipantes !== undefined ? { visivelParticipantes: dto.visivelParticipantes } : {}), ...(dto.descricao !== undefined ? { descricao: dto.descricao.trim() || null } : {}) }, include: { autor: { select: { nome: true } } } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: current.bolaoId, evento: 'anexo.alterado', atorId: user.id, payloadAntes: { visivelParticipantes: current.visivelParticipantes, descricao: current.descricao }, payloadDepois: { visivelParticipantes: row.visivelParticipantes, descricao: row.descricao, anexoId: id } as unknown as Prisma.InputJsonValue });
+      if (!latest.visivelParticipantes && row.visivelParticipantes) await this.notifyParticipants(tx, row.bolaoId, row.id, row.cotaId);
       return row;
     });
     return toView(updated);

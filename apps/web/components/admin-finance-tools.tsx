@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -86,16 +86,27 @@ export function ReportsView() {
     return params.toString();
   }, [de, ate, status, tab]);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('');
+  const sequence = useRef(0);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const load = useCallback(async (quiet = false) => {
+    const id = ++sequence.current;
+    if (!quiet) setLoading(true);
+    setError('');
     try {
-      if (tab === 'resumo') setData(await api(`/api/v1/admin/relatorios/resumo?${query()}`));
-      else if (tab === 'boloes') setList(await api<Rec[]>(`/api/v1/admin/relatorios/boloes?${query()}`));
-      else setData(await api(`/api/v1/admin/relatorios/${tab}?${query()}`));
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Falha ao carregar o relatório.'); }
-    finally { setLoading(false); }
+      const result = await api(`/api/v1/admin/relatorios/${tab}?${query()}`);
+      if (id !== sequence.current) return;
+      if (tab === 'boloes') setList(result as unknown as Rec[]); else setData(result);
+      setUpdatedAt(new Date());
+    } catch (failure) { if (id === sequence.current) setError(failure instanceof Error ? failure.message : 'Falha ao carregar o relatório.'); }
+    finally { if (id === sequence.current) setLoading(false); }
   }, [tab, query]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { sequence.current++; }; }, [load]);
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible' && !exporting) void load(true); };
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [load, exporting]);
 
   async function exportFile(path: string, format: 'csv' | 'xlsx' | 'pdf', key: string) {
     setExporting(`${key}-${format}`); setError('');
@@ -113,7 +124,7 @@ export function ReportsView() {
   const rows: Rec[] = tab === 'vendas' || tab === 'nao-pagos' || tab === 'comissoes' || tab === 'pagamentos' || tab === 'notas-fiscais' ? (data?.linhas ?? []) : [];
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Relatórios</h1><p>Receita, comissões, inadimplência e planilhas completas para conferência e prestação de contas.</p></div></div>
+    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Relatórios</h1><small>Atualização automática a cada 15 s · {updatedAt ? updatedAt.toLocaleTimeString('pt-BR') : 'consultando…'}</small><p>Receita, comissões, inadimplência e planilhas completas para conferência e prestação de contas.</p></div></div>
     <div className="admin-toolbar"><div className="admin-toolbar-filters">
       <label className="admin-field"><span>De</span><input type="date" value={de} onChange={(event) => setDe(event.target.value)} /></label>
       <label className="admin-field"><span>Até</span><input type="date" value={ate} onChange={(event) => setAte(event.target.value)} /></label>
@@ -224,6 +235,8 @@ export function ManualSaleForm({ onDone, notify }: { onDone: () => Promise<void>
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(true);
+  const [contract, setContract] = useState<Rec | null>(null);
+  useEffect(() => { if (open) void api('/api/v1/config/mandato').then(setContract).catch(() => setContract(null)); }, [open]);
   useEffect(() => { if (!open) return; void api('/api/v1/admin/boloes?page=1&pageSize=100&status=aberto').then((result) => setPools(result.items ?? [])).catch(() => setPools([])); }, [open]);
   useEffect(() => {
     if (!open || search.trim().length < 2) { setUsers([]); return; }
@@ -238,7 +251,7 @@ export function ManualSaleForm({ onDone, notify }: { onDone: () => Promise<void>
       await api('/api/v1/admin/cotas/venda-manual', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
         bolaoId: String(form.get('bolaoId')), usuarioId: String(form.get('usuarioId')), quantidade: Number(form.get('quantidade')), pago: paid,
         forma: paid ? String(form.get('forma')) : undefined, codigoAfiliado: String(form.get('codigoAfiliado') || '') || undefined,
-        observacao: String(form.get('observacao') || '') || undefined, aceiteTermoConfirmado: form.get('aceite') === 'on',
+        termoMandatoHash: contract?.hash, observacao: String(form.get('observacao') || '') || undefined, aceiteTermoConfirmado: form.get('aceite') === 'on',
       }) });
       notify('success', paid ? 'Venda registrada e paga.' : 'Reserva criada. Dê baixa quando o pagamento for recebido.');
       setOpen(false); await onDone();
@@ -257,8 +270,8 @@ export function ManualSaleForm({ onDone, notify }: { onDone: () => Promise<void>
       <label className="admin-field"><span>Situação</span><select value={paid ? 'pago' : 'pendente'} onChange={(event) => setPaid(event.target.value === 'pago')}><option value="pago">Já pago</option><option value="pendente">Reservar (pagará depois)</option></select></label>
       {paid && <label className="admin-field"><span>Forma de pagamento</span><select name="forma" defaultValue="pix_direto">{FORMS.map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>}
       <label className="admin-field"><span>Observação</span><input name="observacao" maxLength={300} /></label>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center', gridColumn: '1 / -1' }}><input name="aceite" type="checkbox" required /> Confirmo que o participante leu e aceitou o termo de participação.</label>
-      <div style={{ gridColumn: '1 / -1' }}><button className="admin-button admin-button-primary" disabled={busy}>{busy ? 'Registrando…' : 'Registrar venda'}</button></div>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', gridColumn: '1 / -1' }}><input name="aceite" type="checkbox" required /> Atesto que apresentei este contrato ao participante e obtive seu aceite presencial. Este registro identifica minha declaração como operador.</label>
+      <details style={{ gridColumn: '1 / -1' }}><summary>Contrato a apresentar ao participante · {contract?.versao}</summary><div className="legal-text">{contract?.texto}</div></details><div style={{ gridColumn: '1 / -1' }}><button className="admin-button admin-button-primary" disabled={busy || !contract?.aprovado}>{busy ? 'Registrando…' : 'Registrar venda'}</button></div>
     </form>
   </Panel>;
 }

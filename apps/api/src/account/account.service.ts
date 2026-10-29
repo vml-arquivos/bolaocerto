@@ -105,7 +105,7 @@ export class AccountService {
         where: { compradorId: usuarioId }, orderBy: { criadoEm: 'asc' },
         select: { id: true, bolaoId: true, titularNome: true, titularCpf: true, quantidade: true, valorPago: true, status: true, faixaPremio: true, valorPremio: true, criadoEm: true, pagamento: { select: { id: true, metodo: true, valorBruto: true, valorTaxaAdmin: true, valorComissaoAfiliado: true, valorCustoBilhete: true, status: true, confirmadoEm: true, criadoEm: true, notaFiscal: { select: { numero: true, status: true } } } } },
       }),
-      this.prisma.mandato.findMany({ where: { usuarioId }, select: { cotaId: true, textoHash: true, ipAceite: true, aceitoEm: true } }),
+      this.prisma.mandato.findMany({ where: { usuarioId }, select: { cotaId: true, textoHash: true, textoSnapshot: true, versao: true, pedidoSnapshot: true, ipAceite: true, aceitoEm: true } }),
       this.prisma.notificacao.findMany({ where: { usuarioId }, orderBy: { criadoEm: 'asc' }, select: { tipo: true, payload: true, criadoEm: true, lidoEm: true } }),
       this.prisma.bolaoInteresse.findMany({ where: { usuarioId }, select: { bolaoId: true, criadoEm: true } }),
     ]);
