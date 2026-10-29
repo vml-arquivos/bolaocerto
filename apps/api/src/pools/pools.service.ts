@@ -1,3 +1,4 @@
+import { PricingService } from '../pricing/pricing.service';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
@@ -9,7 +10,28 @@ import { evaluateReleaseGate } from './release-gate';
 
 @Injectable()
 export class PoolsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly notifications?: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly notifications?: NotificationsService, @Optional() private readonly pricing?: PricingService) {}
+
+  /** Dedicated storefront: history remains accessible without appearing for sale. */
+  async listAvailable() {
+    const pools = await this.prisma.bolao.findMany({
+      where: { status: StatusBolao.aberto, concurso: { status: 'aberto', cutoffAt: { gt: new Date() }, resultado: { is: null } },
+        OR: [{ cotasIlimitadas: true }, { totalCotas: { gt: this.prisma.bolao.fields.cotasVendidas } }] },
+      include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } },
+      orderBy: [{ concurso: { cutoffAt: 'asc' } }, { criadoEm: 'desc' }], take: 100,
+    });
+    return pools.filter(p => p.cotasIlimitadas || (p.totalCotas !== null && p.cotasVendidas < p.totalCotas)).map(p => this.toPublic(p));
+  }
+
+  async listHistory() {
+    const pools = await this.prisma.bolao.findMany({
+      where: { status: { in: [StatusBolao.aberto, StatusBolao.fechado, StatusBolao.registrado, StatusBolao.apurado] },
+        OR: [{ concurso: { cutoffAt: { lte: new Date() } } }, { concurso: { resultado: { isNot: null } } }, { status: StatusBolao.apurado }] },
+      include: { concurso: { include: { resultado: true } }, grupo: true, jogos: { orderBy: { ordem: 'asc' } } },
+      orderBy: [{ concurso: { dataSorteio: 'desc' } }, { criadoEm: 'desc' }], take: 50,
+    });
+    return pools.map(p => this.toPublic(p));
+  }
 
   async listPublic() {
     const pools = await this.prisma.bolao.findMany({
@@ -22,7 +44,7 @@ export class PoolsService {
   }
 
   async getPublicById(id: string) {
-    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, anexos: { where: { removidoEm: null, cotaId: null, visivelParticipantes: true }, orderBy: { criadoEm: 'asc' } } } });
+    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: { include: { resultado: true } }, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, anexos: { where: { removidoEm: null, cotaId: null, visivelParticipantes: true }, orderBy: { criadoEm: 'asc' } } } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     return this.toPublic(pool);
   }
@@ -31,6 +53,13 @@ export class PoolsService {
     const group = await this.prisma.grupo.findUnique({ where: { slug }, include: { boloes: { include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } }, orderBy: { criadoEm: 'desc' } } } });
     if (!group) throw new NotFoundException('Grupo não encontrado.');
     return { id: group.id, nome: group.nome, slug: group.slug, tipo: group.tipo, descricao: group.descricao, boloes: group.boloes.map((pool) => this.toPublic(pool)) };
+  }
+
+  async quote(dto: CreatePoolDto) {
+    const contest = await this.prisma.concurso.findUnique({ where: { id: dto.concursoId } });
+    if (!contest || !this.pricing) throw new NotFoundException('Concurso ou precificador indisponível.');
+    if (dto.cotasIlimitadas || !dto.totalCotas) throw new ConflictException('A precificação exige um total finito de cotas.');
+    return this.pricing.quote(contest.modalidade, (dto.jogos?.length ? dto.jogos : [{ numeros: dto.numerosApostados }]).map(g => ({ ...('selecao' in g ? g.selecao : {}), numeros: g.numeros })), dto.totalCotas, dto.taxaAdministracaoPct);
   }
 
   async create(dto: CreatePoolDto, user: AuthUser) {
@@ -50,7 +79,12 @@ export class PoolsService {
     const group = await this.prisma.grupo.findFirst({ where: { id: dto.grupoId, ...(affiliate ? { afiliadoId: affiliate.id } : {}) } });
     if (!group) throw new NotFoundException(affiliate ? 'Grupo não encontrado na sua área de afiliado.' : 'Grupo não encontrado.');
 
-    const games = this.normalizeGames(dto.jogos, dto.numerosApostados);
+    const quote = dto.precificacaoAutomatica ? await this.quote(dto) : null;
+    if (quote && dto.totalCotadoCentavos !== undefined && dto.totalCotadoCentavos !== quote.totalCents) throw new ConflictException('O preço mudou. Refaça a cotação antes de salvar.');
+    // Supplemental results are not yet supported by the settlement engine; never silently sell incomplete bets.
+    if (quote && !['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(contest.modalidade)) throw new ConflictException('Matriz disponível para consulta; habilitação desta modalidade depende da apuração dos prognósticos adicionais.');
+    if (quote && dto.modeloOperacional === 'loterica_parceira' && new Set(quote.jogos.map(g => g.quantidadeDezenas)).size > 1) throw new ConflictException('Recibo de bolão Caixa exige jogos com a mesma quantidade de números. Separe os recibos.');
+    const games = quote?.jogos ?? this.normalizeGames(dto.jogos, dto.numerosApostados);
     const pool = await this.prisma.$transaction(async (tx) => {
       const created = await tx.bolao.create({
         data: {
@@ -61,7 +95,9 @@ export class PoolsService {
           numerosApostados: games[0]!.numeros,
           totalCotas: dto.cotasIlimitadas ? null : dto.totalCotas,
           cotasIlimitadas: dto.cotasIlimitadas === true,
-          valorCota: new Prisma.Decimal(dto.valorCota),
+          valorCota: new Prisma.Decimal(quote ? quote.quotaCents / 100 : dto.valorCota),
+          ...(quote ? { precificacao: quote as unknown as Prisma.InputJsonValue } : {}),
+          status: StatusBolao.rascunho,
           taxaAdministracaoPct: new Prisma.Decimal(dto.taxaAdministracaoPct),
           modeloOperacional: dto.modeloOperacional,
           lotericaParceiraId: dto.lotericaParceiraId,
@@ -82,8 +118,10 @@ export class PoolsService {
     await this.assertCanManagePool(pool, user);
     const editableStatuses: StatusBolao[] = [StatusBolao.rascunho, StatusBolao.aberto];
     if (!editableStatuses.includes(pool.status)) throw new ConflictException('Bolão não pode mais ser editado neste estado.');
-    const hasPaid = pool.cotas.some((share) => ([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status));
+    const hasPaid = pool.cotas.some((share) => ([StatusCota.reservada, StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status));
     const sensitiveChanged = dto.premioMinimoLiberacao !== undefined || dto.numerosApostados !== undefined || dto.jogos !== undefined || dto.totalCotas !== undefined || dto.cotasIlimitadas !== undefined || dto.valorCota !== undefined || dto.taxaAdministracaoPct !== undefined;
+    if (pool.precificacao && sensitiveChanged) throw new ConflictException('Bolão precificado possui orçamento imutável. Crie outro bolão para recalcular.');
+    if (dto.taxaAdministracaoPct !== undefined && dto.taxaAdministracaoPct > Number(pool.concurso.config.taxaAdministracaoTetoPct)) throw new ConflictException('Taxa acima do teto da modalidade.');
     if (hasPaid && sensitiveChanged) throw new ConflictException('Campos sensíveis não podem ser alterados após confirmação de pagamento.');
     const nextUnlimited = dto.cotasIlimitadas ?? pool.cotasIlimitadas;
     const nextTotal = nextUnlimited ? null : (dto.totalCotas ?? pool.totalCotas);
@@ -93,6 +131,10 @@ export class PoolsService {
     const games = dto.jogos !== undefined || dto.numerosApostados !== undefined ? this.normalizeGames(dto.jogos, dto.numerosApostados ?? pool.numerosApostados) : null;
     const before = pool as unknown as Prisma.InputJsonValue;
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${id}::uuid FOR UPDATE`;
+      const current = await tx.bolao.findUniqueOrThrow({ where: { id }, include: { concurso: true } });
+      if (!editableStatuses.includes(current.status) || current.concurso.cutoffAt <= new Date()) throw new ConflictException('Bolão fechado para alterações.');
+      if (sensitiveChanged && await tx.cota.count({ where: { bolaoId: id, status: { notIn: [StatusCota.cancelada, StatusCota.estornada] } } })) throw new ConflictException('Há reservas ou compras; valores e jogos estão bloqueados.');
       const updated = await tx.bolao.update({ where: { id }, data: {
         ...(dto.numerosApostados !== undefined || games ? { numerosApostados: games![0]!.numeros } : {}),
         ...(dto.totalCotas !== undefined || dto.cotasIlimitadas !== undefined ? { totalCotas: nextTotal, cotasIlimitadas: nextUnlimited } : {}),
@@ -159,7 +201,7 @@ export class PoolsService {
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     await this.assertCanManagePool(pool, user);
     const created = await this.prisma.$transaction(async (tx) => {
-      const copy = await tx.bolao.create({ data: { concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, premioMinimoLiberacao: pool.premioMinimoLiberacao, status: StatusBolao.rascunho } });
+      const copy = await tx.bolao.create({ data: { concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, premioMinimoLiberacao: pool.premioMinimoLiberacao, ...(pool.precificacao ? { precificacao: pool.precificacao } : {}), status: StatusBolao.rascunho } });
       if (pool.jogos.length) await tx.jogoBolao.createMany({ data: pool.jogos.map((game) => ({ bolaoId: copy.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custo, status: 'ativo' })) });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: copy.id, evento: 'bolao.duplicado', atorId: user.id, payloadDepois: { origemId: id, copiaId: copy.id } });
       return copy;
@@ -207,7 +249,7 @@ export class PoolsService {
     const jogos = Array.isArray(pool.jogos) ? pool.jogos.map((game: any) => ({ id: game.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: Number(game.custo ?? 0).toFixed(2), status: game.status })) : [];
     const custoJogos = jogos.reduce((sum: number, game: { custo: string }) => sum + Number(game.custo), 0);
     const receitaPrevista = pool.cotasIlimitadas || pool.totalCotas === null ? null : Number(pool.valorCota) * pool.totalCotas;
-    const taxaPrevista = receitaPrevista === null ? null : receitaPrevista * Number(pool.taxaAdministracaoPct) / 100;
+    const taxaPrevista = receitaPrevista === null ? null : pool.precificacao ? Number(pool.precificacao.adminTotalCents) / 100 : receitaPrevista - receitaPrevista / (1 + Number(pool.taxaAdministracaoPct) / 100);
     return {
       id: pool.id,
       concursoId: pool.concursoId,
@@ -224,6 +266,11 @@ export class PoolsService {
       modeloOperacional: pool.modeloOperacional,
       status: pool.status,
       teveGanhador: pool.teveGanhador,
+      resultado: pool.concurso?.resultado ? {
+        numerosSorteados: pool.concurso.resultado.numerosSorteados,
+        numerosSegundoSorteio: pool.concurso.resultado.numerosSegundoSorteio,
+        atualizadoEm: pool.concurso.resultado.apuradoEm,
+      } : null,
       transparencia: ['registrado', 'apurado'].includes(pool.status) ? {
         registradoEm: pool.registradoEm ?? null,
         codigoBilhete: pool.codigoBilhete ?? null,
@@ -237,8 +284,10 @@ export class PoolsService {
         anexos: (pool.anexos ?? []).map((file: any) => ({ id: file.id, tipo: file.tipo, nome: file.nomeOriginal, mime: file.mime, tamanho: file.tamanho, sha256: file.sha256, enviadoEm: file.criadoEm })),
       } : null,
       liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso?.valorEstimadoPremio }),
-      financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista === null ? null : receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista === null ? null : taxaPrevista.toFixed(2), margemOperacionalPrevista: taxaPrevista === null ? null : (taxaPrevista - custoJogos).toFixed(2) },
+      precificacao: pool.precificacao ?? null,
+      financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista === null ? null : receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista === null ? null : taxaPrevista.toFixed(2), margemOperacionalPrevista: taxaPrevista === null ? null : (receitaPrevista! - custoJogos).toFixed(2) },
       concurso: pool.concurso ? {
+        status: pool.concurso.status,
         modalidade: pool.concurso.modalidade,
         numeroConcurso: pool.concurso.numeroConcurso,
         dataSorteio: pool.concurso.dataSorteio,

@@ -41,4 +41,8 @@ jobs:
       - run: pnpm test
       # Contrato HTTP (usa o ValidationPipe de produção).
       - run: pnpm test:e2e
+      - name: Financial concurrency on real PostgreSQL
+        run: pnpm --filter @bolaocerto/api exec tsx scripts/financial-integration.ts
+        env:
+          DISPOSABLE_TEST_DATABASE: 'true'
       - run: pnpm build

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsObject, ArrayMaxSize, IsPositive, IsString, IsUUID, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
 
 export class PoolGameDto {
   @IsInt()
@@ -20,9 +20,23 @@ export class PoolGameDto {
   @IsNumber()
   @Min(0)
   custo?: number;
+
+  @IsOptional()
+  @IsObject()
+  selecao?: { trevos?: number[]; colunas?: number[][]; mesSorte?: number; timeCoracao?: string };
+
 }
 
 export class CreatePoolDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  totalCotadoCentavos?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  precificacaoAutomatica?: boolean;
+
   @IsUUID()
   concursoId!: string;
 
@@ -39,6 +53,7 @@ export class CreatePoolDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => PoolGameDto)
   jogos?: PoolGameDto[];
@@ -52,9 +67,11 @@ export class CreatePoolDto {
   @Min(1)
   totalCotas?: number;
 
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   valorCota!: number;
 
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(35)
   taxaAdministracaoPct!: number;
@@ -86,6 +103,7 @@ export class UpdatePoolDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(100)
   @ValidateNested({ each: true })
   @Type(() => PoolGameDto)
   jogos?: PoolGameDto[];
@@ -100,10 +118,12 @@ export class UpdatePoolDto {
   totalCotas?: number;
 
   @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   valorCota?: number;
 
   @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(35)
   taxaAdministracaoPct?: number;

@@ -30,6 +30,7 @@ describe('SharesService stock safety', () => {
     const pool = { id: 'pool-1', status: 'aberto', cotasVendidas: 0, totalCotas: 1 };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([]),
+      concurso: { findUniqueOrThrow: jest.fn().mockResolvedValue({ cutoffAt: new Date(Date.now() + 86400000) }) },
       bolao: {
         findUnique: jest.fn().mockImplementation(async () => pool),
         update: jest.fn().mockImplementation(async ({ data }: any) => { pool.cotasVendidas += data.cotasVendidas.increment; return pool; }),
@@ -52,6 +53,7 @@ describe('SharesService stock safety', () => {
     const pool = { id: 'pool-unlimited', status: 'aberto', cotasVendidas: 0, totalCotas: null, cotasIlimitadas: true };
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([]),
+      concurso: { findUniqueOrThrow: jest.fn().mockResolvedValue({ cutoffAt: new Date(Date.now() + 86400000) }) },
       bolao: {
         findUnique: jest.fn().mockImplementation(async () => pool),
         update: jest.fn().mockImplementation(async ({ data }: any) => { pool.cotasVendidas += data.cotasVendidas.increment; return pool; }),
@@ -77,7 +79,7 @@ describe('SharesService stock safety', () => {
         findUnique: jest.fn().mockImplementation(async () => pool),
         update: jest.fn().mockImplementation(async ({ data }: any) => { if (data.liberadoEm) pool.liberadoEm = data.liberadoEm; if (data.cotasVendidas) pool.cotasVendidas += data.cotasVendidas.increment; return pool; }),
       },
-      concurso: { findUnique: jest.fn().mockImplementation(async () => ({ valorEstimadoPremio: estimate })) },
+      concurso: { findUniqueOrThrow: jest.fn().mockResolvedValue({ cutoffAt: new Date(Date.now() + 86400000) }), findUnique: jest.fn().mockImplementation(async () => ({ valorEstimadoPremio: estimate })) },
       cota: { create: jest.fn().mockResolvedValue({ id: 'share-c', bolaoId: 'pool-cond', status: 'reservada', quantidade: 1, expiraReservaEm: new Date() }) },
     };
     const prisma = { afiliado: { findFirst: jest.fn() }, $transaction: serializedTransaction(tx) };

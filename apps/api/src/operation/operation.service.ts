@@ -25,10 +25,18 @@ export class OperationService {
     if (live.length === 0 || live.some((share) => share.status !== StatusCota.paga)) throw new ConflictException('Todas as cotas ativas devem estar pagas antes do registro. Cotas canceladas ou estornadas são ignoradas.');
     if (!dto.comprovanteUrl && !(await hasProofFile(this.prisma, poolId))) throw new BadRequestException('Envie o arquivo do comprovante (ou informe o link) antes de marcar como apostado.');
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${poolId}::uuid FOR UPDATE`;
+      const current = await tx.bolao.findUniqueOrThrow({ where: { id: poolId }, include: { cotas: true, jogos: { orderBy: { ordem: 'asc' } } } });
+      const active = current.cotas.filter(c => ![StatusCota.cancelada, StatusCota.estornada].includes(c.status as 'cancelada' | 'estornada'));
+      if (!registrableStatuses.includes(current.status) || !active.length || active.some(c => c.status !== StatusCota.paga)) throw new ConflictException('Bolão ou pagamentos mudaram durante o registro. Recarregue.');
       const registered = await tx.bolao.update({ where: { id: poolId }, data: { status: StatusBolao.registrado, ...(dto.comprovanteUrl ? { comprovanteUrl: dto.comprovanteUrl } : {}), codigoBilhete: dto.codigoBilhete ?? null, registradoEm: new Date() } });
       await tx.cota.updateMany({ where: { bolaoId: poolId, status: StatusCota.paga }, data: { status: StatusCota.registrada, ...(dto.comprovanteUrl ? { comprovanteIndividualUrl: dto.comprovanteUrl } : {}) } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: poolId, evento: 'aposta.registrada', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: registered as unknown as Prisma.InputJsonValue });
-      for (const share of pool.cotas) {
+      for (const share of active) {
+        await tx.notificacao.create({ data: { usuarioId: share.compradorId, canal: 'push', tipo: 'cota.recibo', payload: {
+          titulo: 'Apostas registradas', mensagem: 'As apostas foram registradas. Consulte os comprovantes e o recibo individual na sua conta.',
+          cotaId: share.id, link: '/minha-conta', jogos: current.jogos.map(g => ({ ordem: g.ordem, numeros: g.numeros })),
+        } } });
         await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.registrada', atorId: user.id, payloadAntes: share as unknown as Prisma.InputJsonValue, payloadDepois: { status: 'registrada', comprovanteUrl: dto.comprovanteUrl } });
       }
       return registered;

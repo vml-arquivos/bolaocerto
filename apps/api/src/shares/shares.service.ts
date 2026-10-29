@@ -29,6 +29,8 @@ export class SharesService {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId}::uuid FOR UPDATE`;
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
+      const contestDeadline = await tx.concurso.findUniqueOrThrow({ where: { id: pool.concursoId }, select: { cutoffAt: true, status: true, resultado: { select: { id: true } } } });
+      if (contestDeadline.cutoffAt <= new Date() || contestDeadline.resultado || (contestDeadline.status && contestDeadline.status !== 'aberto')) throw new ConflictException('O prazo de compra deste concurso encerrou.');
       if (pool.status !== StatusBolao.aberto || (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas))) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');
       if (pool.premioMinimoLiberacao !== null && pool.premioMinimoLiberacao !== undefined) {
         const contest = await tx.concurso.findUnique({ where: { id: pool.concursoId }, select: { valorEstimadoPremio: true } });
@@ -48,7 +50,7 @@ export class SharesService {
           quantidade: dto.quantidade,
           afiliadoReferenciaId: affiliate?.id,
           status: StatusCota.reservada,
-          expiraReservaEm: expiresAt,
+          expiraReservaEm: new Date(Math.min(expiresAt.getTime(), contestDeadline.cutoffAt.getTime())),
           mandato: { create: { usuarioId: user.id, textoHash: dto.termoMandatoHash, ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
         },
         include: { mandato: true },
@@ -153,7 +155,8 @@ export class SharesService {
     let count = 0;
     for (const share of expired) {
       await this.prisma.$transaction(async (tx) => {
-        const updated = await tx.cota.updateMany({ where: { id: share.id, status: StatusCota.reservada }, data: { status: StatusCota.cancelada } });
+        await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${share.bolaoId}::uuid FOR UPDATE`;
+        const updated = await tx.cota.updateMany({ where: { id: share.id, status: StatusCota.reservada, expiraReservaEm: { lt: new Date() } }, data: { status: StatusCota.cancelada } });
         if (updated.count === 0) return;
         await tx.bolao.update({ where: { id: share.bolaoId }, data: { cotasVendidas: { decrement: share.quantidade } } });
         await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.reservada.expirada', payloadDepois: { quantidade: share.quantidade } });

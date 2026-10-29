@@ -1,0 +1,52 @@
+/** Run ONLY against the disposable CI database after prisma migrate deploy. */
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { PrismaClient } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { AuditService } from '../src/common/audit.service';
+import { SharesService } from '../src/shares/shares.service';
+import { PaymentsService } from '../src/payments/payments.service';
+import { TestPaymentProvider } from '../src/payments/payment.provider';
+import { NotificationsService } from '../src/notifications/notifications.service';
+
+if (process.env.DISPOSABLE_TEST_DATABASE !== 'true') throw new Error('Requires DISPOSABLE_TEST_DATABASE=true; never use production.');
+const prisma = new PrismaClient();
+async function main() {
+  process.env.PAYMENTS_ENABLED = 'true'; process.env.MANDATO_TERM_HASH = 'a'.repeat(64);
+  const suffix = randomUUID();
+  const user = await prisma.usuario.create({ data: { nome: 'CI Fixture', email: `${suffix}@example.invalid`, cpf: suffix.replace(/\D/g, '').padEnd(11, '0').slice(0,11), dataNascimento: new Date('1990-01-01'), senhaHash: 'not-a-login', papel: 'cotista' } });
+  const modalidade = `ci_${suffix.slice(0,8)}`;
+  await prisma.configLoteria.create({ data: { modalidade, nomeExibicao: 'CI', valorMinimoCota: 1, minCotasBolao: 1, maxCotasBolao: 10, horarioCorteLocal: '19:00', diasSemanaSorteio: [] } });
+  const contest = await prisma.concurso.create({ data: { modalidade, numeroConcurso: 1, cutoffAt: new Date(Date.now()+86400000), dataSorteio: new Date(Date.now()+86400000) } });
+  const group = await prisma.grupo.create({ data: { nome: 'CI', slug: suffix, tipo: 'oficial' } });
+  const pool = await prisma.bolao.create({ data: { concursoId: contest.id, grupoId: group.id, criadoPor: user.id, tipoOrganizador: 'admin', numerosApostados: [1,2,3,4,5,6], totalCotas: 1, valorCota: 6, taxaAdministracaoPct: 0, modeloOperacional: 'mandato' } });
+  const audit = new AuditService(prisma as never);
+  const shares = new SharesService(prisma as never, audit);
+  const auth = { id: user.id, email: user.email, papel: 'cotista' as const };
+  const dto = { bolaoId: pool.id, quantidade: 1, titularCpf: '52998224725', titularNome: 'CI Fixture', termoMandatoHash: process.env.MANDATO_TERM_HASH! };
+  const attempts = await Promise.allSettled(Array.from({length:8}, () => shares.reserve(dto, auth, { ip: '127.0.0.1' })));
+  assert.equal(attempts.filter(r => r.status === 'fulfilled').length, 1, 'exactly one reservation for last quota');
+  const share = await prisma.cota.findFirstOrThrow({ where: { bolaoId: pool.id } });
+  const config = new ConfigService({ PAYMENTS_ENABLED: 'true', PAYMENT_TEST_MODE: 'true' });
+  const payments = new PaymentsService(prisma as never, audit, config, new TestPaymentProvider(config));
+  const charges = await Promise.allSettled([payments.createForShare(share.id, {metodo:'pix'}, auth), payments.createForShare(share.id, {metodo:'pix'}, auth)]);
+  assert.ok(charges.some(c => c.status === 'fulfilled'));
+  const payment = await prisma.pagamento.findUniqueOrThrow({ where: { cotaId: share.id } });
+  await Promise.all(Array.from({length:5}, () => payments.confirmPayment(payment.pspTransactionId!, undefined, 6)));
+  assert.equal(await prisma.notificacao.count({ where: { usuarioId: user.id } }), 1, 'confirmation outbox is atomic and idempotent');
+  let sent = 0;
+  const mail = { isConfigured: () => true, publicUrl: () => 'https://example.invalid', send: async () => { sent++; return true; } };
+  const notifications = new NotificationsService(prisma as never, mail as never);
+  await Promise.all([notifications.dispatchPending(), notifications.dispatchPending()]);
+  assert.equal(sent, 1, 'single SMTP dispatch across competing workers');
+  await Promise.all(Array.from({length:5}, () => payments.releasePayment(payment.id, 'estornado')));
+  assert.equal((await prisma.bolao.findUniqueOrThrow({ where: { id: pool.id } })).cotasVendidas, 0, 'refund releases stock only once');
+  await payments.confirmPayment(payment.pspTransactionId!, undefined, 6);
+  assert.equal((await prisma.pagamento.findUniqueOrThrow({ where: { id: payment.id } })).status, 'estornado', 'old confirmation cannot resurrect refund');
+  const price = { modalidade, chave: '6', valorCentavos: 600, fonte: 'https://loterias.caixa.gov.br', verificadoEm: new Date(), vigenteDesde: new Date('2020-01-01') };
+  await prisma.precoLoteria.create({ data: price });
+  await assert.rejects(prisma.precoLoteria.create({ data: {...price, vigenteDesde: new Date('2021-01-01') } }), 'overlapping prices must be rejected by PostgreSQL');
+  console.log('PASS: PostgreSQL reservation/charge/refund concurrency, outbox and price exclusion');
+}
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => prisma.$disconnect());

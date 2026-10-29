@@ -1,5 +1,6 @@
 'use client';
 
+import { LotteryPriceAdmin } from './lottery-price-admin';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type RecordValue = Record<string, any>;
@@ -74,9 +75,13 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [trigger, setTrigger] = useState('100000000');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [automatic, setAutomatic] = useState(true);
+  const [quote, setQuote] = useState<RecordValue | null>(null);
+  const [quoteError, setQuoteError] = useState('');
 
   useEffect(() => {
     if (!editPool) {
+      setAutomatic(true);
       setModality('megasena');
       setContestId('');
       setSelectedGroupId(groupId ?? '');
@@ -96,7 +101,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setModality(existingModality);
     setContestId(String(editPool.concursoId ?? editPool.concurso?.id ?? ''));
     setSelectedGroupId(String(editPool.grupoId ?? groupId ?? ''));
-    setNumbers(existingNumbers.join(' '));
+    setNumbers((editPool.jogos?.length ? editPool.jogos.map((g: RecordValue) => g.numeros.join(' ')) : [existingNumbers.join(' ')]).join('\n'));
+    setAutomatic(Boolean(editPool.precificacao));
     setTotalCotas(editPool.totalCotas == null ? '' : String(editPool.totalCotas));
     setUnlimited(Boolean(editPool.cotasIlimitadas));
     setValorCota(String(editPool.valorCota ?? '20'));
@@ -111,8 +117,23 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const limits = modalityLimits[modality] ?? modalityLimits.megasena!;
   const availableContests = useMemo(() => contests.filter((contest) => contest.modalidade === modality && ['aberto', 'aberta'].includes(String(contest.status).toLowerCase())), [contests, modality]);
   const selectedContest = contests.find((contest) => contest.id === contestId) ?? (editPool?.concursoId === contestId ? editPool.concurso : null);
-  const parsedNumbers = numbers.split(/[\s,;]+/).map(Number).filter((number) => Number.isInteger(number) && number >= 1 && number <= limits.max);
-  const uniqueNumbers = Array.from(new Set(parsedNumbers)).sort((a, b) => a - b);
+  const games = numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number) }));
+  const uniqueNumbers = games[0]?.numeros ?? [];
+  const canPrice = ['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(modality);
+  useEffect(() => {
+    setQuote(null); setQuoteError('');
+    if (!automatic || editing || !canPrice || !contestId || !selectedGroupId || !numbers.trim() || unlimited) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const response = await authFetch('/api/v1/admin/boloes/cotacao', { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ concursoId: contestId, grupoId: selectedGroupId, numerosApostados: uniqueNumbers, jogos: games, totalCotas: Number(totalCotas), valorCota: 1, taxaAdministracaoPct: Number(taxa), modeloOperacional: 'mandato' }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message);
+        if (!controller.signal.aborted) { setQuote(data); setValorCota((data.quotaCents / 100).toFixed(2)); setCusto((data.costCents / 100).toFixed(2)); }
+      } catch (error) { if (!controller.signal.aborted) setQuoteError(error instanceof Error ? error.message : 'Falha na cotação.'); }
+    }, 350);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [automatic, editing, canPrice, contestId, selectedGroupId, numbers, totalCotas, taxa, unlimited]);
   async function suggestGame() {
     setSuggesting(true);
     try {
@@ -149,7 +170,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setMessage('Selecione um concurso aberto e um grupo válido.');
       return;
     }
-    if (uniqueNumbers.length < limits.min) {
+    if (games.some(g => g.numeros.length < limits.min)) {
       setMessage(`Informe pelo menos ${limits.min} números válidos para ${modalityNames[modality] ?? modality}.`);
       return;
     }
@@ -167,12 +188,15 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       return;
     }
 
+    if (!automatic && games.length > 1 && !editing) { setMessage('Para criar vários jogos com custos distintos, utilize a cotação automática.'); return; }
+    if (!editing && automatic && (!quote || !canPrice || unlimited)) { setMessage('Aguarde uma cotação válida.'); return; }
     setSaving(true);
     try {
       const body = {
         ...(editing ? {} : { concursoId: selectedContest.id, grupoId: selectedGroupId }),
         numerosApostados: uniqueNumbers,
-        jogos: [{ ordem: 1, numeros: uniqueNumbers, quantidadeDezenas: uniqueNumbers.length, custo: Number(custo || 0) }],
+        jogos: games.map((g, i) => ({ ...g, quantidadeDezenas: g.numeros.length, custo: Number(quote?.jogos[i]?.custo ?? editPool?.jogos?.[i]?.custo ?? custo ?? 0) })),
+        ...(!editing ? { precificacaoAutomatica: automatic, totalCotadoCentavos: quote?.totalCents } : {}),
         ...(unlimited ? { cotasIlimitadas: true, totalCotas: undefined } : { cotasIlimitadas: false, totalCotas: Number(totalCotas) }),
         valorCota: Number(valorCota),
         taxaAdministracaoPct: Number(taxa),
@@ -197,24 +221,30 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
 
   return <form className="pool-wizard pool-wizard-simple" onSubmit={submit}>
     <div className="simple-form-heading"><div><span className="admin-eyebrow">{editing ? 'Edição rápida' : 'Criação rápida'}</span><h3>{editing ? 'Editar bolão' : 'Novo bolão'}</h3><p>{editing ? 'Atualize os dados enquanto o bolão estiver em rascunho ou aberto.' : 'Preencha os dados essenciais em uma única tela. O bolão nasce como rascunho.'}</p></div>{editing && <button type="button" className="admin-button admin-button-ghost" onClick={onCancelEdit}>Cancelar edição</button>}</div>
+    {editing && editPool?.precificacao && <p>Este orçamento é imutável. Crie um novo bolão para recalcular os jogos e os valores.</p>}
     {message && <div className="admin-callout admin-callout-warning">{message}</div>}
     <div className="admin-form-grid admin-form-grid-three">
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
       <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
       <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>#{contest.numeroConcurso} · {dateOnly(contest.dataSorteio)} · prêmio {money(contest.valorEstimadoPremio)}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
-      <label className="admin-field admin-field-wide"><span>Números do jogo</span><input value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
+      <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
     </div>
+    {!editing && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>Calcular pela tabela Caixa</strong><small>Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.</small></span></label>}
+    {automatic && !canPrice && <p role="alert">Matriz disponível na API. Venda automática desta modalidade aguarda suporte à apuração completa.</p>}
+    {quoteError && <p role="alert">{quoteError}</p>}
+    {quote && <div className="simple-form-summary" aria-live="polite"><span>Bilhetes <strong>{money(quote.costCents / 100)}</strong></span><span>Administração <strong>{money(quote.adminTotalCents / 100)}</strong></span><span>Reserva de arredondamento <strong>{money(quote.roundingReserveCents / 100)}</strong></span><span>Por cota: bilhete {money(quote.ticketPerShare / 100)} + taxa {money(quote.feePerShare / 100)}</span></div>}
     <div className="admin-form-grid admin-form-grid-four">
-      <label className="admin-field"><span>Valor da cota (R$)</span><input type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>
+      <label className="admin-field"><span>Valor da cota (R$)</span><input readOnly={automatic} type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>
       <label className="admin-field"><span>Taxa administrativa (%)</span><input type="number" min="0" max="35" step="0.01" value={taxa} onChange={(event) => setTaxa(event.target.value)} /></label>
       <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} /></label>
-      <label className="admin-field"><span>Custo do jogo (R$)</span><input type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
+      <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>
     <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. A receita será apurada conforme as vendas.</small></span></label>
     <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
     {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
     <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? `#${selectedContest.numeroConcurso}` : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
-    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
+    {role === 'admin' && <LotteryPriceAdmin />}
+    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && automatic && !quote) || (editing && Boolean(editPool?.precificacao))}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
   </form>;
 }

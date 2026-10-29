@@ -1,16 +1,17 @@
+import { canPurchase, withinSaleWindow } from '../lib/pool-availability';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { modalityNames, money, PublicPool, shortDate } from '../lib/domain';
 import { lotteryVisual } from '../lib/lottery-config';
 import { ReleaseMeter } from './release-meter';
 
-export function PoolCard({ pool }: { pool: PublicPool }) {
+export function PoolCard({ pool, now }: { pool: PublicPool; now: number }) {
   const unlimited = pool.cotasIlimitadas || pool.cotasDisponiveis === null;
   const sold = unlimited ? 0 : Math.max((pool.totalCotas ?? 0) - (pool.cotasDisponiveis ?? 0), 0);
   const progress = unlimited ? 0 : Math.min(100, Math.round((sold / Math.max(pool.totalCotas ?? 1, 1)) * 100));
   const visual = lotteryVisual(pool.concurso?.modalidade);
-  const locked = Boolean(pool.liberacao?.condicional && !pool.liberacao.liberado);
-  const isOpen = pool.status === 'aberto' && (unlimited || (pool.cotasDisponiveis ?? 0) > 0) && !locked;
+  const locked = withinSaleWindow(pool, now) && Boolean(pool.liberacao?.condicional && !pool.liberacao.liberado);
+  const isOpen = canPurchase(pool, now);
   const progressState = unlimited ? '' : progress >= 100 ? 'is-full' : progress >= 85 ? 'is-high' : progress >= 40 ? 'is-mid' : 'is-low';
   return <article className="pool-card" style={{ '--pool-accent': visual.accent, '--pool-soft': visual.soft } as CSSProperties}>
     <div className="pool-art"><img src={visual.art} alt="" loading="lazy" /><div className="pool-art-shade" /><div className="pool-art-copy"><span>{visual.eyebrow}</span><strong>{modalityNames[pool.concurso?.modalidade ?? ''] ?? visual.name}</strong></div><span className={`pool-status ${isOpen ? 'is-open' : 'is-closed'}`}>{isOpen ? 'Cotas abertas' : locked ? 'Aguardando prêmio' : 'Encerrado'}</span></div>

@@ -1,4 +1,6 @@
 'use client';
+import { useSaleClock } from './live-storefront';
+import { canPurchase, withinSaleWindow } from '../lib/pool-availability';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { money, PoolRelease } from '../lib/domain';
@@ -9,15 +11,17 @@ import { PaymentInstructions, PaymentView } from './payment-instructions';
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito', pix_automatico: 'Pix Automático (recorrente)' };
 
-export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled, release }: { poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean; release?: PoolRelease }) {
+export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled, release, cutoffAt, contestStatus, hasResult, serverNow }: { cutoffAt?: string; contestStatus?: string; hasResult: boolean; serverNow: number; poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean; release?: PoolRelease }) {
+  const now = useSaleClock(serverNow);
+  const sale = { status, cotasDisponiveis: available, concurso: { cutoffAt, status: contestStatus }, resultado: hasResult, liberacao: release };
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
   const [created, setCreated] = useState<{ shareId: string; payment: PaymentView } | null>(null);
   const unlimited = available === null;
-  const locked = Boolean(release?.condicional && !release.liberado);
-  const enabled = status === 'aberto' && (unlimited || available > 0) && paymentsEnabled && !locked;
+  const locked = withinSaleWindow(sale, now) && Boolean(release?.condicional && !release.liberado);
+  const enabled = paymentsEnabled && canPurchase(sale, now);
 
   useEffect(() => {
     if (!paymentsEnabled) return;
@@ -28,7 +32,9 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   }, [paymentsEnabled]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setLoading(true); setMessage(''); setCreated(null);
+    event.preventDefault();
+    if (!enabled) { setMessage('Este bolão não aceita novas reservas. Consulte os próximos concursos.'); return; }
+    setLoading(true); setMessage(''); setCreated(null);
     const form = new FormData(event.currentTarget);
     try {
       const configResponse = await fetch('/api/v1/config/mandato');

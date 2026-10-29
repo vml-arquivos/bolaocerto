@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
@@ -129,25 +130,35 @@ export class NotificationsService {
   async dispatchPending(limit = 50): Promise<{ enviados: number; falhas: number }> {
     if (!this.mail.isConfigured()) return { enviados: 0, falhas: 0 };
     const pending = await this.prisma.notificacao.findMany({
-      where: { enviadoEm: null, canal: 'push', criadoEm: { gt: new Date(Date.now() - 3 * 86_400_000) } },
+      where: { enviadoEm: null, canal: 'push', tentativas: { lt: 10 }, proximaTentativaEm: { lte: new Date() }, OR: [{ leaseAte: null }, { leaseAte: { lt: new Date() } }] },
       orderBy: { criadoEm: 'asc' }, take: limit, include: { usuario: { select: { email: true, nome: true } } },
     });
     let enviados = 0;
     let falhas = 0;
     for (const item of pending) {
-      const claimed = await this.prisma.notificacao.updateMany({ where: { id: item.id, enviadoEm: null }, data: { enviadoEm: new Date() } });
+      const token = randomUUID();
+      const claimed = await this.prisma.notificacao.updateMany({ where: { id: item.id, enviadoEm: null, tentativas: { lt: 10 }, proximaTentativaEm: { lte: new Date() }, OR: [{ leaseAte: null }, { leaseAte: { lt: new Date() } }] }, data: { leaseToken: token, leaseAte: new Date(Date.now() + 120_000), tentativas: { increment: 1 } } });
       if (claimed.count !== 1) continue;
       const info = describeNotification(item.tipo, (item.payload ?? {}) as NotificationPayload);
       const url = info.link ? `${this.mail.publicUrl()}${info.link}` : this.mail.publicUrl();
       const first = item.usuario.nome.split(' ')[0] ?? '';
-      const ok = await this.mail.send({
+      const payload = item.payload as NotificationPayload;
+      const games = Array.isArray(payload.jogos) ? (payload.jogos as Array<{ ordem: number; numeros: number[] }>).map(g => `Jogo ${g.ordem}: ${g.numeros.join(' ')}`).join('\n') : '';
+      const details = [games, payload.valorJogo ? `Destinado aos bilhetes: R$ ${payload.valorJogo}` : '', payload.taxaAdministracao ? `Administração: R$ ${payload.taxaAdministracao}` : ''].filter(Boolean).join('\n');
+      let ok = false;
+      try { ok = await this.mail.send({
+        messageId: `<${item.id}@notifications.bolaolivre>`,
         to: item.usuario.email,
         subject: info.titulo,
-        text: `Olá, ${first}!\n\n${info.mensagem}\n\n${url}\n\nBL — Bolão Livre`,
-        html: wrapEmailHtml(info.titulo, `<p>Olá, ${escapeHtml(first)}!</p><p>${escapeHtml(info.mensagem)}</p>`, { label: 'Abrir no BL', url }),
-      });
-      if (ok) enviados += 1;
-      else { falhas += 1; await this.prisma.notificacao.updateMany({ where: { id: item.id }, data: { enviadoEm: null } }); }
+        text: `Olá, ${first}!\n\n${info.mensagem}\n\n${details}\n\n${url}\n\nBL — Bolão Livre`,
+        html: wrapEmailHtml(info.titulo, `<p>Olá, ${escapeHtml(first)}!</p><p>${escapeHtml(info.mensagem)}</p><pre>${escapeHtml(details)}</pre>`, { label: 'Abrir no BL', url }),
+      }); } catch { ok = false; }
+      if (ok) enviados += 1; else falhas += 1;
+      await this.prisma.notificacao.updateMany({ where: { id: item.id, leaseToken: token }, data: {
+        enviadoEm: ok ? new Date() : null, leaseAte: null, leaseToken: null,
+        ultimoErro: ok ? null : 'SMTP não confirmou o envio; consulte logs do serviço.',
+        proximaTentativaEm: new Date(Date.now() + Math.min(86_400_000, 60_000 * 2 ** (item.tentativas ?? 0))),
+      } });
     }
     return { enviados, falhas };
   }

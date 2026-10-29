@@ -1,5 +1,5 @@
 export type PublicContest = {
-  id: string; modalidade: string; numeroConcurso: number; dataSorteio: string; cutoffAt: string;
+  status?: string; id: string; modalidade: string; numeroConcurso: number; dataSorteio: string; cutoffAt: string;
   valorEstimadoPremio: string | number | null; acumulado: boolean;
 };
 
@@ -17,6 +17,7 @@ export type PublicPool = {
   id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number | null;
   cotasIlimitadas: boolean; cotasVendidas?: number; cotasDisponiveis: number | null; valorCota: string; taxaAdministracaoPct: string; modeloOperacional: string;
   status: string; teveGanhador: boolean; concurso?: Omit<PublicContest, 'id'>;
+  resultado?: { numerosSorteados: number[]; numerosSegundoSorteio: number[]; atualizadoEm: string } | null;
   liberacao?: PoolRelease;
   jogos?: Array<{ id: string; ordem: number; numeros: number[] }>;
   transparencia?: PoolTransparency | null;

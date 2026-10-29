@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 export interface MailMessage {
+  messageId?: string;
   to: string;
   subject: string;
   text: string;
@@ -109,7 +110,7 @@ export class MailService {
       return false;
     }
     try {
-      await transporter.sendMail({ from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', to: message.to, subject: message.subject, text: message.text, html: message.html });
+      await transporter.sendMail({ from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', messageId: message.messageId, to: message.to, subject: message.subject, text: message.text, html: message.html });
       return true;
     } catch (error) {
       this.logger.error(`Falha ao enviar e-mail "${message.subject}": ${error instanceof Error ? error.message : String(error)}`);

@@ -344,10 +344,14 @@ export class AsaasProvider implements PaymentProvider {
     const presented = headers['asaas-access-token'] ?? headers['x-webhook-signature'];
     const expected = headers['asaas-access-token'] ? this.webhookSecret : createHmac('sha256', this.webhookSecret).update(rawBody).digest('hex');
     if (!presented || !safeEqual(presented, expected)) throw new UnauthorizedException('Assinatura de webhook inválida.');
-    const payload = JSON.parse(rawBody) as { event?: string; payment?: { id?: string } };
+    const payload = JSON.parse(rawBody) as { event?: string; payment?: { id?: string; value?: number } };
     if (!payload.payment?.id) throw new UnauthorizedException('Webhook sem identificador de pagamento.');
-    const status: ChargeStatus = payload.event === 'PAYMENT_RECEIVED' || payload.event === 'PAYMENT_CONFIRMED' ? 'confirmed' : payload.event === 'PAYMENT_REFUNDED' ? 'refunded' : 'failed';
-    return { transactionId: payload.payment.id, status };
+    const statuses: Record<string, ChargeStatus> = { PAYMENT_RECEIVED: 'confirmed', PAYMENT_CONFIRMED: 'confirmed', PAYMENT_REFUNDED: 'refunded', PAYMENT_DELETED: 'failed' };
+    const status = statuses[payload.event ?? ''];
+    // Creation, update and overdue events are not cancellations.
+    if (!status) return null;
+    if (status === 'confirmed' && (!Number.isFinite(payload.payment.value) || payload.payment.value! <= 0)) throw new UnauthorizedException('Webhook sem valor válido.');
+    return { transactionId: payload.payment.id, status, paidAmount: payload.payment.value };
   }
 
   private headers(): Record<string, string> {

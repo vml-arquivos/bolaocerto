@@ -300,6 +300,7 @@ model Bolao {
   grupoId               String              @map("grupo_id") @db.Uuid
   criadoPor             String              @map("criado_por") @db.Uuid
   tipoOrganizador       TipoOrganizador     @map("tipo_organizador")
+  precificacao         Json?               // Immutable financial snapshot for new priced pools
   numerosApostados      Int[]               @map("numeros_apostados")
   totalCotas            Int?                @map("total_cotas")
   cotasIlimitadas       Boolean             @default(false) @map("cotas_ilimitadas")
@@ -342,6 +343,8 @@ model JogoBolao {
   ordem             Int
   numeros           Int[]
   quantidadeDezenas Int      @map("quantidade_dezenas")
+  selecao           Json?
+  precoSnapshot     Json? @map("preco_snapshot")
   custo             Decimal  @default(0) @db.Decimal(10,2)
   status            String   @default("ativo") @db.VarChar(20)
   criadoEm          DateTime @default(now()) @map("criado_em")
@@ -504,10 +507,16 @@ model Notificacao {
   tipo       String   @db.VarChar(40)
   payload    Json
   enviadoEm  DateTime? @map("enviado_em")
+  tentativas Int @default(0)
+  proximaTentativaEm DateTime @default(now()) @map("proxima_tentativa_em")
+  leaseAte DateTime? @map("lease_ate")
+  leaseToken String? @map("lease_token") @db.Uuid
+  ultimoErro String? @map("ultimo_erro")
   lidoEm     DateTime? @map("lido_em")
   criadoEm   DateTime @default(now()) @map("criado_em")
   usuario    Usuario @relation(fields: [usuarioId], references: [id])
 
+  @@index([enviadoEm, proximaTentativaEm, leaseAte])
   @@index([usuarioId, lidoEm, criadoEm])
   @@map("notificacoes")
 }
@@ -606,4 +615,19 @@ model Anexo {
   @@index([cotaId])
   @@index([sha256])
   @@map("anexos")
+}
+
+/// Append-only price versions; no overlap for a modality/key (migration constraint).
+model PrecoLoteria {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  modalidade String @db.VarChar(30)
+  chave String @db.VarChar(30)
+  valorCentavos Int @map("valor_centavos")
+  fonte String
+  verificadoEm DateTime @map("verificado_em")
+  vigenteDesde DateTime @map("vigente_desde")
+  vigenteAte DateTime? @map("vigente_ate")
+  @@unique([modalidade, chave, vigenteDesde])
+  @@index([modalidade, chave, vigenteAte])
+  @@map("precos_loteria")
 }

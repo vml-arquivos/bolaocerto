@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MetodoPagamento, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
 import { AuthUser } from '../auth/auth.utils';
 import { addDaysToDate, brazilDate, endOfBrazilDay, round2 } from '../common/brazil-time';
 import { AuditService } from '../common/audit.service';
@@ -18,6 +17,7 @@ export interface ShareAmounts { gross: number; cost: number; adminFee: number; a
 
 /** Decomposição financeira de uma cota. Sempre fecha: gross = cost + adminFee. */
 export function computeShareAmounts(valorCota: number, quantidade: number, taxaAdminPct: number, comissaoAfiliadoPct: number): ShareAmounts {
+  if (![valorCota, quantidade, taxaAdminPct, comissaoAfiliadoPct].every(Number.isFinite) || valorCota <= 0 || !Number.isSafeInteger(quantidade) || quantidade < 1 || taxaAdminPct < 0 || taxaAdminPct > 35 || comissaoAfiliadoPct < 0 || comissaoAfiliadoPct > 100) throw new BadRequestException('Valores financeiros inválidos.');
   const gross = round2(valorCota * quantidade);
   const cost = round2(gross / (1 + taxaAdminPct / 100));
   const adminFee = round2(gross - cost);
@@ -45,6 +45,17 @@ export class PaymentsService {
     this.reservationMinutes = Number(config.get<string>('SHARE_RESERVATION_MINUTES', '15')) || 15;
     this.boletoDueDays = Number(config.get<string>('PAYMENT_BOLETO_DUE_DAYS', '2')) || 2;
     this.boletoMinHoursToCutoff = Number(config.get<string>('PAYMENT_BOLETO_MIN_HOURS_TO_CUTOFF', '96')) || 96;
+  }
+
+  private shareAmounts(share: { quantidade: number; bolao: { valorCota: Prisma.Decimal; taxaAdministracaoPct: Prisma.Decimal; precificacao?: Prisma.JsonValue | null }; afiliadoReferencia?: { comissaoPadraoPct: Prisma.Decimal } | null }): ShareAmounts {
+    const snapshot = share.bolao.precificacao as { ticketPerShare?: number; feePerShare?: number } | null;
+    const affiliate = Number(share.afiliadoReferencia?.comissaoPadraoPct ?? 0);
+    if (snapshot && Number.isSafeInteger(snapshot.ticketPerShare) && Number.isSafeInteger(snapshot.feePerShare)) {
+      const cost = snapshot.ticketPerShare! * share.quantidade / 100;
+      const adminFee = snapshot.feePerShare! * share.quantidade / 100;
+      return { cost, adminFee, gross: round2(cost + adminFee), affiliateCommission: round2(adminFee * affiliate / 100) };
+    }
+    return computeShareAmounts(Number(share.bolao.valorCota), share.quantidade, Number(share.bolao.taxaAdministracaoPct), affiliate);
   }
 
   /** Provedor Cora ativo (usado pelo módulo fiscal para emitir NFS-e), ou null. */
@@ -83,7 +94,7 @@ export class PaymentsService {
     }
     if (!this.provider.methods.includes(dto.metodo)) throw new BadRequestException('Este método de pagamento não está disponível no momento.');
 
-    const amounts = computeShareAmounts(Number(share.bolao.valorCota), share.quantidade, Number(share.bolao.taxaAdministracaoPct), share.afiliadoReferencia ? Number(share.afiliadoReferencia.comissaoPadraoPct) : 0);
+    const amounts = this.shareAmounts(share);
     if (amounts.gross < this.provider.minAmount) {
       throw new BadRequestException(`O valor mínimo para pagamento é R$ ${this.provider.minAmount.toFixed(2).replace('.', ',')}. Aumente a quantidade de cotas.`);
     }
@@ -114,10 +125,18 @@ export class PaymentsService {
       origem: 'gateway',
       vencimentoEm: endOfBrazilDay(dueDate),
     };
-    const retry = Boolean(share.pagamento);
-    const payment = share.pagamento
-      ? await this.prisma.pagamento.update({ where: { id: share.pagamento.id }, data: base })
-      : await this.prisma.pagamento.create({ data: { cotaId: share.id, ...base } });
+    // An uncertain network result must reuse the same provider key, never create a new charge.
+    if (share.pagamento && share.pagamento.metodo !== dto.metodo) throw new ConflictException('Concilie a cobrança existente antes de trocar o método.');
+    const payment = await this.prisma.$transaction(async tx => {
+      await this.lockBolao(tx, share.bolaoId);
+      const current = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true, bolao: { include: { concurso: { include: { resultado: true } } } } } });
+      if (current.status !== StatusCota.reservada || current.bolao.status !== StatusBolao.aberto || current.bolao.concurso.cutoffAt <= new Date() || current.bolao.concurso.status !== 'aberto' || current.bolao.concurso.resultado || (current.expiraReservaEm && current.expiraReservaEm <= new Date())) throw new ConflictException('Reserva indisponível.');
+      if (current.pagamento?.pspTransactionId) throw new ConflictException('Já existe uma cobrança. Recarregue para consultá-la.');
+      if (current.pagamento && (current.pagamento.status !== StatusPagamento.falhou || this.provider.name !== 'cora')) throw new ConflictException('Cobrança em processamento ou resultado incerto. Aguarde a conciliação antes de tentar novamente.');
+      return current.pagamento
+        ? tx.pagamento.update({ where: { id: current.pagamento.id }, data: base })
+        : tx.pagamento.create({ data: { cotaId: share.id, ...base } });
+    });
 
     try {
       const created = await this.provider.createCharge({
@@ -129,7 +148,7 @@ export class PaymentsService {
         customerCpf: share.comprador.cpf,
         customerEmail: share.comprador.email,
         description: `Cota de bolão ${share.bolao.concurso.modalidade} ${share.id.slice(0, 8)}`.trim(),
-        idempotencyKey: retry ? randomUUID() : undefined,
+        idempotencyKey: payment.id,
       });
       const updated = await this.prisma.pagamento.update({
         where: { id: payment.id },
@@ -149,7 +168,7 @@ export class PaymentsService {
       if (created.status === 'confirmed') await this.confirmPayment(created.transactionId, user.id);
       return this.toPublicPayment(updated);
     } catch (error) {
-      await this.prisma.pagamento.update({ where: { id: payment.id }, data: { status: StatusPagamento.falhou } });
+      await this.prisma.pagamento.updateMany({ where: { id: payment.id, status: StatusPagamento.pendente, pspTransactionId: null }, data: { status: StatusPagamento.falhou } });
       throw error;
     }
   }
@@ -172,21 +191,24 @@ export class PaymentsService {
   }
 
   async applyProviderStatus(transactionId: string, status: ChargeStatus, paidAmount?: number) {
-    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId }, include: { cota: true } });
+    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId, pspProvedor: this.provider.name }, include: { cota: true } });
     if (!payment) {
       this.logger.warn(`Evento de pagamento sem registro local: ${transactionId}`);
       return { ignorado: true };
     }
-    if (status === 'confirmed') return this.confirmPayment(transactionId, undefined, paidAmount);
+    if (status === 'confirmed') {
+      if (paidAmount === undefined || !Number.isFinite(paidAmount)) throw new BadRequestException('Provedor não informou o valor pago; conciliação necessária.');
+      return this.confirmPayment(transactionId, undefined, paidAmount);
+    }
     if (status === 'pending') return { pendente: true };
     return this.releasePayment(payment.id, status === 'refunded' ? StatusPagamento.estornado : StatusPagamento.falhou);
   }
 
   async confirmPayment(transactionId: string, actorId?: string, paidAmount?: number) {
-    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId }, include: { cota: true } });
+    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId, pspProvedor: this.provider.name }, include: { cota: true } });
     if (!payment) throw new NotFoundException('Pagamento não encontrado para confirmação.');
     if (payment.status === StatusPagamento.confirmado && payment.cota.status === StatusCota.paga) return this.toPublicPayment(payment);
-    if (paidAmount !== undefined && paidAmount + 0.009 < Number(payment.valorBruto)) {
+    if (paidAmount !== undefined && (!Number.isFinite(paidAmount) || Math.round(paidAmount * 100) !== Math.round(Number(payment.valorBruto) * 100))) {
       await this.audit.record(this.prisma, { entidade: 'pagamento', entidadeId: payment.id, evento: 'pagamento.valor_divergente', atorId: actorId, payloadDepois: { esperado: payment.valorBruto.toFixed(2), recebido: paidAmount } as unknown as Prisma.InputJsonValue });
       return { divergente: true };
     }
@@ -201,15 +223,18 @@ export class PaymentsService {
    */
   private async settleTx(tx: Tx, payment: PaymentRow & { cota?: unknown }, actorId: string | undefined, evento: string, extra: Prisma.PagamentoUpdateInput = {}) {
     await this.lockBolao(tx, (await tx.cota.findUniqueOrThrow({ where: { id: payment.cotaId }, select: { bolaoId: true } })).bolaoId);
-    const cota = await tx.cota.findUniqueOrThrow({ where: { id: payment.cotaId }, include: { bolao: true } });
+    payment = await tx.pagamento.findUniqueOrThrow({ where: { id: payment.id } });
+    if (payment.status === StatusPagamento.estornado) return payment;
+    const cota = await tx.cota.findUniqueOrThrow({ where: { id: payment.cotaId }, include: { bolao: { include: { concurso: { include: { resultado: true } }, jogos: { orderBy: { ordem: 'asc' } } } } } });
     let settled = false;
     let transitioned = false;
-    if (cota.status === StatusCota.reservada) {
+    const beforeCutoff = cota.bolao.concurso.cutoffAt > new Date() && cota.bolao.concurso.status === 'aberto' && !cota.bolao.concurso.resultado;
+    if (cota.status === StatusCota.reservada && beforeCutoff && cota.bolao.status === StatusBolao.aberto) {
       await tx.cota.update({ where: { id: cota.id }, data: { status: StatusCota.paga, valorPago: payment.valorBruto, expiraReservaEm: null } });
       settled = true;
       transitioned = true;
     } else if (cota.status === StatusCota.cancelada) {
-      const hasStock = cota.bolao.status === StatusBolao.aberto && (cota.bolao.cotasIlimitadas || (cota.bolao.totalCotas !== null && cota.bolao.cotasVendidas + cota.quantidade <= cota.bolao.totalCotas));
+      const hasStock = beforeCutoff && cota.bolao.status === StatusBolao.aberto && (cota.bolao.cotasIlimitadas || (cota.bolao.totalCotas !== null && cota.bolao.cotasVendidas + cota.quantidade <= cota.bolao.totalCotas));
       if (hasStock) {
         await tx.cota.update({ where: { id: cota.id }, data: { status: StatusCota.paga, valorPago: payment.valorBruto, expiraReservaEm: null } });
         await tx.bolao.update({ where: { id: cota.bolaoId }, data: { cotasVendidas: { increment: cota.quantidade } } });
@@ -223,11 +248,9 @@ export class PaymentsService {
     const updatedPayment = await tx.pagamento.update({ where: { id: payment.id }, data: { status: StatusPagamento.confirmado, confirmadoEm: payment.confirmadoEm ?? new Date(), ...extra } });
     await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: settled ? evento : 'pagamento.sem_cota', atorId: actorId, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: updatedPayment as unknown as Prisma.InputJsonValue });
     if (transitioned) {
-      // Aviso na conta do cliente (o e-mail sai pela rotina de avisos). Opcional: nunca impede a baixa do pagamento.
-      try {
-        const valor = Number(payment.valorBruto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'pagamento.confirmado', payload: { titulo: 'Pagamento confirmado', mensagem: `Recebemos o pagamento de ${valor} da sua cota. O recibo com todos os valores já está disponível em Minha conta.`, link: '/minha-conta', cotaId: cota.id } } });
-      } catch { /* aviso é opcional */ }
+      const valor = Number(payment.valorBruto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const jogos = (cota.bolao.jogos ?? []).map(g => ({ ordem: g.ordem, numeros: g.numeros }));
+      await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'pagamento.confirmado', payload: { titulo: 'Pagamento confirmado', mensagem: `Recebemos ${valor}. Seu recibo e os comprovantes de registro ficam disponíveis na sua conta.`, link: '/minha-conta', cotaId: cota.id, jogos, valorJogo: payment.valorCustoBilhete.toFixed(2), taxaAdministracao: payment.valorTaxaAdmin.toFixed(2) } } });
     }
     if (settled && cota.afiliadoReferenciaId && Number(payment.valorComissaoAfiliado) > 0) {
       const fee = Number(payment.valorTaxaAdmin);
@@ -242,11 +265,15 @@ export class PaymentsService {
 
   /** Cancela/estorna o pagamento, libera o estoque e cancela a comissão pendente. */
   async releasePayment(paymentId: string, status: 'falhou' | 'estornado', actorId?: string) {
-    const payment = await this.prisma.pagamento.findUnique({ where: { id: paymentId }, include: { cota: true } });
+    let payment = await this.prisma.pagamento.findUnique({ where: { id: paymentId }, include: { cota: true } });
     if (!payment) throw new NotFoundException('Pagamento não encontrado.');
     if (status === StatusPagamento.falhou && payment.status === StatusPagamento.confirmado) return this.toPublicPayment(payment);
     if (payment.status === status) return this.toPublicPayment(payment);
+    const target = payment;
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockBolao(tx, target.cota.bolaoId);
+      const payment = await tx.pagamento.findUniqueOrThrow({ where: { id: target.id }, include: { cota: true } });
+      if (payment.status === status || payment.status === StatusPagamento.estornado || (status === StatusPagamento.falhou && payment.status === StatusPagamento.confirmado)) return payment;
       const current = await tx.pagamento.update({ where: { id: payment.id }, data: { status } });
       const nextShareStatus = status === StatusPagamento.estornado ? StatusCota.estornada : StatusCota.cancelada;
       const shareUpdated = await tx.cota.update({ where: { id: payment.cotaId }, data: { status: nextShareStatus } });
@@ -254,7 +281,7 @@ export class PaymentsService {
         await tx.bolao.update({ where: { id: payment.cota.bolaoId }, data: { cotasVendidas: { decrement: payment.cota.quantidade } } });
       }
       const cancelled = await tx.comissao.updateMany({ where: { cotaId: payment.cotaId, status: StatusComissao.pendente }, data: { status: StatusComissao.cancelada, observacao: `Venda ${status === 'estornado' ? 'estornada' : 'cancelada'} em ${brazilDate()}` } });
-      const alreadyPaid = await tx.comissao.count({ where: { cotaId: payment.cotaId, status: { not: StatusComissao.pendente } } });
+      const alreadyPaid = await tx.comissao.count({ where: { cotaId: payment.cotaId, status: StatusComissao.paga } });
       await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: `pagamento.${status}`, atorId: actorId, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: { pagamento: current, cota: shareUpdated, comissoesCanceladas: cancelled.count, comissaoJaRepassada: alreadyPaid > 0 } as unknown as Prisma.InputJsonValue });
       return current;
     });
@@ -321,11 +348,14 @@ export class PaymentsService {
     if (share.pagamento?.pspTransactionId && this.provider.cancelCharge) {
       try { await this.provider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Não foi possível cancelar a cobrança no provedor: ${(error as Error).message}`); }
     }
-    const amounts = computeShareAmounts(Number(share.bolao.valorCota), share.quantidade, Number(share.bolao.taxaAdministracaoPct), share.afiliadoReferencia ? Number(share.afiliadoReferencia.comissaoPadraoPct) : 0);
+    const amounts = this.shareAmounts(share);
     const manualData = { metodo: MetodoPagamento.manual, origem: 'manual', pspProvedor: 'manual', pspTransactionId: null, formaBaixa: dto.forma, observacao: dto.observacao ?? null, baixaPor: admin.id, status: StatusPagamento.pendente, valorBruto: new Prisma.Decimal(amounts.gross), valorTaxaAdmin: new Prisma.Decimal(amounts.adminFee), valorComissaoAfiliado: new Prisma.Decimal(amounts.affiliateCommission), valorCustoBilhete: new Prisma.Decimal(amounts.cost) };
     const result = await this.prisma.$transaction(async (tx) => {
-      const row = share.pagamento
-        ? await tx.pagamento.update({ where: { id: share.pagamento.id }, data: manualData })
+      await this.lockBolao(tx, share.bolaoId);
+      const freshShare = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true } });
+      if (![StatusCota.reservada, StatusCota.cancelada].includes(freshShare.status as 'reservada' | 'cancelada') || freshShare.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Pagamento ou cota mudou; recarregue.');
+      const row = freshShare.pagamento
+        ? await tx.pagamento.update({ where: { id: freshShare.pagamento!.id }, data: manualData })
         : await tx.pagamento.create({ data: { cotaId: share.id, ...manualData } });
       const settled = await this.settleTx(tx, row, admin.id, 'pagamento.baixa_manual');
       const fresh = await tx.cota.findUniqueOrThrow({ where: { id: share.id } });
@@ -346,8 +376,9 @@ export class PaymentsService {
 
     const shareId = await this.prisma.$transaction(async (tx) => {
       await this.lockBolao(tx, dto.bolaoId);
-      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId } });
+      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { concurso: { include: { resultado: true } } } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
+      if (pool.concurso.cutoffAt <= new Date() || pool.concurso.status !== 'aberto' || pool.concurso.resultado) throw new ConflictException('Prazo de compra encerrado.');
       if (pool.status !== StatusBolao.aberto) throw new ConflictException('O bolão não está aberto para vendas.');
       if (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas)) throw new ConflictException('Não há cotas suficientes disponíveis.');
       const share = await tx.cota.create({ data: { bolaoId: pool.id, compradorId: user.id, titularCpf: user.cpf, titularNome: user.nome, quantidade: dto.quantidade, status: StatusCota.reservada, expiraReservaEm: null, afiliadoReferenciaId: affiliate?.id ?? null, origemVenda: 'manual' } });
@@ -368,8 +399,12 @@ export class PaymentsService {
     if (share.pagamento?.pspTransactionId && share.pagamento.status === StatusPagamento.pendente && this.provider.cancelCharge) {
       try { await this.provider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Cobrança não cancelada no provedor: ${(error as Error).message}`); }
     }
+    if (share.pagamento?.status === StatusPagamento.confirmado && share.pagamento.origem === 'gateway') throw new ConflictException('Solicite o estorno no provedor e aguarde a confirmação do webhook. Cancelamento local não devolve dinheiro.');
     if (share.pagamento) return this.releasePayment(share.pagamento.id, share.pagamento.status === StatusPagamento.confirmado ? StatusPagamento.estornado : StatusPagamento.falhou, admin.id);
     await this.prisma.$transaction(async (tx) => {
+      await this.lockBolao(tx, share.bolaoId);
+      const current = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true } });
+      if (current.pagamento || current.status !== StatusCota.reservada) throw new ConflictException('A cota mudou durante o cancelamento. Recarregue.');
       await tx.cota.update({ where: { id: share.id }, data: { status: StatusCota.cancelada } });
       await tx.bolao.update({ where: { id: share.bolaoId }, data: { cotasVendidas: { decrement: share.quantidade } } });
       await tx.comissao.updateMany({ where: { cotaId: share.id, status: StatusComissao.pendente }, data: { status: StatusComissao.cancelada } });

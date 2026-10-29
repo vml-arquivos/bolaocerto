@@ -11,7 +11,7 @@ function payment(overrides: Record<string, unknown> = {}) {
   return { id: 'pay-1', cotaId: 'cota-1', status: StatusPagamento.pendente, pspTransactionId: 'inv_1', valorBruto: new Prisma.Decimal(100), valorTaxaAdmin: new Prisma.Decimal(25.93), valorCustoBilhete: new Prisma.Decimal(74.07), valorComissaoAfiliado: new Prisma.Decimal(2.59), confirmadoEm: null, ...overrides };
 }
 function cota(overrides: Record<string, unknown> = {}) {
-  return { id: 'cota-1', bolaoId: 'bolao-1', quantidade: 2, status: StatusCota.reservada, afiliadoReferenciaId: 'af-1', bolao: { status: StatusBolao.aberto, cotasIlimitadas: false, totalCotas: 10, cotasVendidas: 5 }, ...overrides };
+  return { id: 'cota-1', bolaoId: 'bolao-1', quantidade: 2, status: StatusCota.reservada, afiliadoReferenciaId: 'af-1', bolao: { concurso: { status: 'aberto', cutoffAt: new Date(Date.now() + 86400000) }, jogos: [], status: StatusBolao.aberto, cotasIlimitadas: false, totalCotas: 10, cotasVendidas: 5 }, ...overrides };
 }
 
 function setup(options: { payment?: unknown; cota?: unknown; provider?: Partial<PaymentProvider> } = {}) {
@@ -19,7 +19,8 @@ function setup(options: { payment?: unknown; cota?: unknown; provider?: Partial<
     $queryRaw: jest.fn().mockResolvedValue([]),
     cota: { findUniqueOrThrow: jest.fn().mockResolvedValue(options.cota ?? cota()), update: jest.fn().mockResolvedValue({}) },
     bolao: { update: jest.fn().mockResolvedValue({}) },
-    pagamento: { update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...payment(), ...data, valorBruto: new Prisma.Decimal(100) })) },
+    notificacao: { create: jest.fn().mockResolvedValue({}) },
+    pagamento: { findUniqueOrThrow: jest.fn().mockImplementation(() => Promise.resolve({ ...(options.payment as object ?? payment()), cota: options.cota ?? cota() })), update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...payment(), ...data, valorBruto: new Prisma.Decimal(100) })) },
     comissao: { upsert: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
   };
   const basePayment = (options.payment ?? payment()) as Record<string, unknown>;
@@ -61,7 +62,7 @@ describe('PaymentsService — confirmação', () => {
   });
 
   it('BUG CORRIGIDO: pagamento tardio sem estoque NÃO vende acima do total e fica para estorno', async () => {
-    const full = cota({ status: StatusCota.cancelada, bolao: { status: StatusBolao.aberto, cotasIlimitadas: false, totalCotas: 10, cotasVendidas: 9 } });
+    const full = cota({ status: StatusCota.cancelada, bolao: { concurso: { status: 'aberto', cutoffAt: new Date(Date.now() + 86400000) }, jogos: [], status: StatusBolao.aberto, cotasIlimitadas: false, totalCotas: 10, cotasVendidas: 9 } });
     const { service, tx, audit } = setup({ cota: full });
     await service.confirmPayment('inv_1');
     expect(tx.cota.update).not.toHaveBeenCalled();
@@ -127,9 +128,42 @@ describe('PaymentsService — operação manual', () => {
     const share = { ...cota(), pagamento: null, afiliadoReferencia: { comissaoPadraoPct: new Prisma.Decimal(10) }, bolao: { valorCota: new Prisma.Decimal(50), taxaAdministracaoPct: new Prisma.Decimal(35), status: StatusBolao.aberto, cotasIlimitadas: false, totalCotas: 10, cotasVendidas: 5 } };
     (prisma as unknown as { cota: Record<string, unknown> }).cota.findUnique = jest.fn().mockResolvedValue(share);
     (tx as unknown as { pagamento: Record<string, unknown> }).pagamento.create = jest.fn().mockResolvedValue(payment({ id: 'pay-new', pspTransactionId: null }));
-    tx.cota.findUniqueOrThrow.mockResolvedValueOnce({ bolaoId: 'bolao-1' }).mockResolvedValueOnce(cota()).mockResolvedValueOnce(cota({ status: StatusCota.paga }));
+    tx.cota.findUniqueOrThrow.mockResolvedValueOnce({ ...cota(), pagamento: null }).mockResolvedValueOnce({ bolaoId: 'bolao-1' }).mockResolvedValueOnce(cota()).mockResolvedValueOnce(cota({ status: StatusCota.paga }));
     const result = await service.markPaidManually('cota-1', { forma: 'pix_direto', observacao: 'Pix na conta PJ' }, admin);
     expect(result.status).toBe(StatusPagamento.confirmado);
     expect((tx.pagamento as unknown as { create: jest.Mock }).create).toHaveBeenCalledWith({ data: expect.objectContaining({ origem: 'manual', formaBaixa: 'pix_direto', baixaPor: 'admin-1', metodo: 'manual' }) });
+  });
+});
+
+describe('Payment regression guards', () => {
+  it('does not settle a charge that was refunded while waiting for the lock', async () => {
+    const { service, tx } = setup();
+    tx.pagamento.findUniqueOrThrow.mockResolvedValue(payment({ status: StatusPagamento.estornado }));
+    await service.confirmPayment('inv_1', undefined, 100);
+    expect(tx.cota.update).not.toHaveBeenCalled();
+    expect(tx.pagamento.update).not.toHaveBeenCalled();
+  });
+  it.each([99.99, 100.01, NaN, Infinity])('does not settle divergent amount %s', async amount => {
+    const { service, tx } = setup();
+    await expect(service.confirmPayment('inv_1', undefined, amount)).resolves.toEqual({ divergente: true });
+    expect(tx.cota.update).not.toHaveBeenCalled();
+  });
+  it('does not sell a late payment after cutoff', async () => {
+    const share = cota({ status: StatusCota.cancelada, bolao: { status: StatusBolao.aberto, concurso: { status: 'aberto', cutoffAt: new Date(0) }, totalCotas: 10, cotasVendidas: 0 } });
+    const { service, tx, audit } = setup({ cota: share });
+    await service.confirmPayment('inv_1', undefined, 100);
+    expect(tx.cota.update).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(tx, expect.objectContaining({ evento: 'pagamento.sem_cota' }));
+  });
+  it('a duplicate refund observed under lock never decrements stock twice', async () => {
+    const { service, tx } = setup();
+    tx.pagamento.findUniqueOrThrow.mockResolvedValue({ ...payment({ status: StatusPagamento.estornado }), cota: cota({ status: StatusCota.estornada }) });
+    await service.releasePayment('pay-1', StatusPagamento.estornado);
+    expect(tx.bolao.update).not.toHaveBeenCalled();
+  });
+  it('failure to enqueue confirmation rolls back instead of hiding a lost email', async () => {
+    const { service, tx } = setup();
+    tx.notificacao.create.mockRejectedValue(new Error('database unavailable'));
+    await expect(service.confirmPayment('inv_1', undefined, 100)).rejects.toThrow('database unavailable');
   });
 });

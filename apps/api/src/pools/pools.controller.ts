@@ -1,3 +1,4 @@
+import { PricingService } from '../pricing/pricing.service';
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -8,7 +9,15 @@ import { PoolsService } from './pools.service';
 
 @Controller()
 export class PoolsController {
-  constructor(private readonly pools: PoolsService) {}
+  constructor(private readonly pools: PoolsService, private readonly pricing: PricingService) {}
+
+  @Get('loterias/precos')
+  prices() { return this.pricing.catalog(); }
+
+  @Post('admin/boloes/cotacao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'afiliado')
+  async quote(@Body() dto: CreatePoolDto) { return this.pools.quote(dto); }
 
   @Get('boloes')
   list() {
@@ -19,6 +28,12 @@ export class PoolsController {
   group(@Param('slug') slug: string) {
     return this.pools.getGroupBySlug(slug);
   }
+
+  @Get('boloes/disponiveis')
+  available() { return this.pools.listAvailable(); }
+
+  @Get('boloes/historico')
+  history() { return this.pools.listHistory(); }
 
   @Get('boloes/:id')
   get(@Param('id') id: string) {

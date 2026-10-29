@@ -206,7 +206,7 @@ export class AdminService {
           arrecadado: pool.cotas.filter((share) => share.status === StatusCota.paga || share.status === StatusCota.registrada || share.status === StatusCota.apurada || share.status === StatusCota.premiada).reduce((sum, share) => sum + Number(share.valorPago ?? 0), 0).toFixed(2),
           custoJogos: pool.jogos.reduce((sum, game) => sum + Number(game.custo), 0).toFixed(2),
           receitaPrevista: pool.cotasIlimitadas ? null : (pool.valorCota.toNumber() * (pool.totalCotas ?? 0)).toFixed(2),
-          taxaPrevista: pool.cotasIlimitadas ? null : (pool.valorCota.toNumber() * (pool.totalCotas ?? 0) * pool.taxaAdministracaoPct.toNumber() / 100).toFixed(2),
+          taxaPrevista: pool.cotasIlimitadas ? null : (pool.precificacao ? Number((pool.precificacao as Record<string, unknown>).adminTotalCents) / 100 : pool.valorCota.toNumber() * (pool.totalCotas ?? 0) * (1 - 1 / (1 + pool.taxaAdministracaoPct.toNumber() / 100))).toFixed(2),
         },
       })),
       pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) },
