@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -17,6 +17,7 @@ import {
   OperationReceiptDto,
   PayRemittanceDto,
   UpdateAffiliateCommissionDto,
+  UpdateGroupCapacityDto,
   UpdateSettingsDto,
   UpdateUserKycDto,
   UpdateUserRoleDto,
@@ -130,6 +131,24 @@ export class AdminController {
     return this.admin.listGroups(query, user);
   }
 
+  @Get('admin/grupos/:id/membros')
+  @Roles('admin')
+  adminGroupMembers(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.admin.listGroupMembers(id, user);
+  }
+
+  @Patch('admin/grupos/:id/capacidade')
+  @Roles('admin')
+  updateGroupCapacity(@Param('id') id: string, @Body() dto: UpdateGroupCapacityDto, @CurrentUser() user: AuthUser) {
+    return this.admin.updateGroupCapacity(id, dto, user);
+  }
+
+  @Delete('admin/grupos/:id/membros/:usuarioId')
+  @Roles('admin')
+  removeGroupMember(@Param('id') id: string, @Param('usuarioId') usuarioId: string, @CurrentUser() user: AuthUser) {
+    return this.admin.removeGroupMember(id, usuarioId, user);
+  }
+
   @Patch('admin/usuarios/:id/papel')
   @Roles('admin')
   updateUserRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto, @CurrentUser() user: AuthUser) {
@@ -200,6 +219,12 @@ export class AdminController {
   @Roles('afiliado')
   affiliateGroups(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
     return this.admin.listGroups(query, user);
+  }
+
+  @Get('afiliados/me/grupos/:id/membros')
+  @Roles('afiliado')
+  affiliateGroupMembers(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.admin.listGroupMembers(id, user);
   }
 
   @Get('afiliados/me/rede')

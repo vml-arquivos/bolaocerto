@@ -6,6 +6,7 @@ import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { ReceiptPanel } from './receipt-panel';
 import { NotificationsCard, PasswordCard, PrivacyCard, ReceiptsCard, ResponsiblePlayCard, TwoFactorCard } from './account-extras';
+import { concursoNo } from '../lib/contest';
 
 type User = { id: string; nome: string; email: string; papel: string; statusKyc: string };
 type Share = {
@@ -25,7 +26,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
   const [showPayment, setShowPayment] = useState(false);
   const expired = share.status === 'reservada' && share.expiraReservaEm ? new Date(share.expiraReservaEm) < new Date() : false;
   const pending = share.status === 'reservada' && !expired && share.pagamento && share.pagamento.status === 'pendente';
-  const title = share.bolao ? `${modalityNames[share.bolao.modalidade] ?? share.bolao.modalidade} · concurso ${share.bolao.numeroConcurso}` : `Bolão ${share.bolaoId.slice(0, 8)}`;
+  const title = share.bolao ? `${modalityNames[share.bolao.modalidade] ?? share.bolao.modalidade} · concurso ${concursoNo(share.bolao.numeroConcurso)}` : `Bolão ${share.bolaoId.slice(0, 8)}`;
   return <div className="share-item share-stack" style={{ display: 'grid', gap: 12 }}>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between', alignItems: 'flex-start' }}>
       <div><strong>{title}</strong><small style={{ display: 'block' }}>{share.bolao ? `Sorteio: ${shortDate(share.bolao.dataSorteio)} · ${share.bolao.grupo}` : ''}</small><small>Titular: {share.titularNome} · cota {share.id.slice(0, 8)}</small></div>

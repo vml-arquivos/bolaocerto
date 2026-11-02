@@ -7,12 +7,13 @@ import { AuthUser } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { CreatePoolDto, PoolGameDto, UpdatePoolDto } from './pools.dto';
+import { StatisticsService } from '../statistics/statistics.service';
+import { CreatePoolDto, GenerateGamesDto, PoolGameDto, UpdatePoolDto } from './pools.dto';
 import { evaluateReleaseGate } from './release-gate';
 
 @Injectable()
 export class PoolsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly notifications?: NotificationsService, @Optional() private readonly pricing?: PricingService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly notifications?: NotificationsService, @Optional() private readonly pricing?: PricingService, @Optional() private readonly statistics?: StatisticsService) {}
 
   /** Dedicated storefront: history remains accessible without appearing for sale. */
   async listAvailable() {
@@ -35,6 +36,16 @@ export class PoolsService {
     return pools.map(p => this.toPublic(p));
   }
 
+  /** Bolões cujo concurso já foi sorteado (com os números oficiais), do sorteio mais recente para o mais antigo. */
+  async listDrawn() {
+    const pools = await this.prisma.bolao.findMany({
+      where: { status: { in: [StatusBolao.aberto, StatusBolao.fechado, StatusBolao.registrado, StatusBolao.apurado] }, concurso: { resultado: { isNot: null } } },
+      include: { concurso: { include: { resultado: true } }, grupo: true, jogos: { orderBy: { ordem: 'asc' } } },
+      orderBy: [{ concurso: { dataSorteio: 'desc' } }, { criadoEm: 'desc' }], take: 12,
+    });
+    return pools.map((pool) => this.toPublic(pool));
+  }
+
   async listPublic() {
     const pools = await this.prisma.bolao.findMany({
       where: { status: { in: [StatusBolao.aberto, StatusBolao.fechado, StatusBolao.registrado, StatusBolao.apurado] } },
@@ -52,9 +63,9 @@ export class PoolsService {
   }
 
   async getGroupBySlug(slug: string) {
-    const group = await this.prisma.grupo.findUnique({ where: { slug }, include: { boloes: { include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } }, orderBy: { criadoEm: 'desc' } } } });
+    const group = await this.prisma.grupo.findUnique({ where: { slug }, include: { _count: { select: { membros: true } }, boloes: { where: { status: { in: [StatusBolao.aberto, StatusBolao.fechado, StatusBolao.registrado, StatusBolao.apurado] } }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } }, orderBy: { criadoEm: 'desc' }, take: 50 } } });
     if (!group) throw new NotFoundException('Grupo não encontrado.');
-    return { id: group.id, nome: group.nome, slug: group.slug, tipo: group.tipo, descricao: group.descricao, boloes: group.boloes.map((pool) => this.toPublic(pool)) };
+    return { id: group.id, nome: group.nome, slug: group.slug, tipo: group.tipo, descricao: group.descricao, totalMembros: group._count?.membros ?? 0, boloes: group.boloes.map((pool) => this.toPublic(pool)) };
   }
 
   async quote(dto: CreatePoolDto) {
@@ -62,6 +73,22 @@ export class PoolsService {
     if (!contest || !this.pricing) throw new NotFoundException('Concurso ou precificador indisponível.');
     if (dto.cotasIlimitadas || !dto.totalCotas) throw new ConflictException('A precificação exige um total finito de cotas.');
     return this.pricing.quote(contest.modalidade, (dto.jogos?.length ? dto.jogos : [{ numeros: dto.numerosApostados }]).map(g => ({ ...('selecao' in g ? g.selecao : {}), numeros: g.numeros })), dto.totalCotas, dto.taxaAdministracaoPct);
+  }
+
+  /**
+   * Gera os jogos do bolão e já diz quanto custa registrar cada um na CAIXA (tabela de preços vigente).
+   * Cada jogo é distinto; os números são sorteados com regras de equilíbrio — não existe jogo "mais provável".
+   */
+  async generateGames(dto: GenerateGamesDto) {
+    if (!this.statistics || !this.pricing) throw new ConflictException('Gerador de jogos indisponível.');
+    const generated = await this.statistics.generateMany(dto.modalidade, { quantidade: dto.quantidade, dezenas: dto.dezenas, estrategia: dto.estrategia, fixos: dto.fixos, excluir: dto.excluir });
+    const priced = await this.pricing.priceGames(dto.modalidade, generated.jogos.map((game) => ({ numeros: game.numbers })));
+    const jogos = priced.jogos.map((game, index) => ({ ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custoCentavos / 100, motivos: generated.jogos[index]?.reasons ?? [] }));
+    return {
+      modalidade: dto.modalidade, nome: generated.nome, estrategia: generated.estrategia, quantidade: jogos.length, dezenas: generated.dezenas,
+      custoPorJogo: (priced.jogos[0]?.custoCentavos ?? 0) / 100, custoTotal: priced.custoTotalCentavos / 100, custoTotalCentavos: priced.custoTotalCentavos,
+      jogos, aviso: generated.aviso,
+    };
   }
 
   async create(dto: CreatePoolDto, user: AuthUser) {
@@ -82,6 +109,7 @@ export class PoolsService {
     }
     const group = await this.prisma.grupo.findFirst({ where: { id: dto.grupoId, ...(affiliate ? { afiliadoId: affiliate.id } : {}) } });
     if (!group) throw new NotFoundException(affiliate ? 'Grupo não encontrado na sua área de afiliado.' : 'Grupo não encontrado.');
+    if (affiliate && dto.totalCotas !== undefined) await this.assertWithinGroupCapacity(group.id, dto.totalCotas, contest.config.minCotasBolao);
 
     const quote = dto.precificacaoAutomatica ? await this.quote(dto) : null;
     if (quote && dto.totalCotadoCentavos !== undefined && dto.totalCotadoCentavos !== quote.totalCents) throw new ConflictException('O preço mudou. Refaça a cotação antes de salvar.');
@@ -132,6 +160,7 @@ export class PoolsService {
     const nextTotal = nextUnlimited ? null : (dto.totalCotas ?? pool.totalCotas);
     if (!nextUnlimited && (nextTotal === null || nextTotal === undefined || nextTotal < pool.concurso.config.minCotasBolao || nextTotal > pool.concurso.config.maxCotasBolao)) throw new ConflictException('Quantidade de cotas fora dos limites da modalidade.');
     if (!nextUnlimited && nextTotal !== null && nextTotal !== undefined && nextTotal < pool.cotasVendidas) throw new ConflictException('Total de cotas não pode ficar abaixo das cotas já vendidas.');
+    if (user.papel === 'afiliado' && dto.totalCotas !== undefined && nextTotal) await this.assertWithinGroupCapacity(pool.grupoId, nextTotal, pool.concurso.config.minCotasBolao);
 
     const games = dto.jogos !== undefined || dto.numerosApostados !== undefined ? this.normalizeGames(dto.jogos, dto.numerosApostados ?? pool.numerosApostados) : null;
     const before = pool as unknown as Prisma.InputJsonValue;
@@ -171,10 +200,17 @@ export class PoolsService {
       const current = await tx.bolao.findUniqueOrThrow({ where: { id }, include: { concurso: { include: { resultado: true } } } });
       if (current.status !== 'rascunho' || current.concurso.status !== 'aberto' || current.concurso.resultado || current.concurso.cutoffAt <= new Date()) throw new ConflictException('Bolão ou concurso indisponível para publicação.');
       if (current.comprovanteAntesVenda && !await hasSaleProof(tx, id)) throw new ConflictException('Envie o comprovante oficial visível aos participantes antes de publicar.');
-      const result = await tx.bolao.update({ where: { id }, data: { status: StatusBolao.aberto, editadoPor: user.id, editadoEm: new Date() } });
-      await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.publicado', atorId: user.id, payloadDepois: result as unknown as Prisma.InputJsonValue });
-      return result;
+      // Bolão de afiliado: o afiliado só PEDE a publicação; quem abre a venda é o admin.
+      if (user.papel === 'afiliado') {
+        const requested = await tx.bolao.update({ where: { id }, data: { aprovacaoSolicitadaEm: new Date(), editadoPor: user.id, editadoEm: new Date() } });
+        await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.aprovacao_solicitada', atorId: user.id, payloadDepois: { aprovacaoSolicitadaEm: requested.aprovacaoSolicitadaEm } });
+        return { ...requested, aguardandoAprovacao: true };
+      }
+      const result = await tx.bolao.update({ where: { id }, data: { status: StatusBolao.aberto, editadoPor: user.id, editadoEm: new Date(), ...(current.tipoOrganizador === 'afiliado' ? { aprovadoEm: new Date(), aprovadoPor: user.id } : {}) } });
+      await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: current.tipoOrganizador === 'afiliado' ? 'bolao.aprovado_e_publicado' : 'bolao.publicado', atorId: user.id, payloadDepois: result as unknown as Prisma.InputJsonValue });
+      return { ...result, aguardandoAprovacao: false };
     });
+    if (updated.aguardandoAprovacao) return { id: updated.id, status: updated.status, aguardandoAprovacao: true };
     return { id: updated.id, status: updated.status };
   }
 
@@ -253,6 +289,56 @@ export class PoolsService {
     });
   }
 
+  /** O afiliado recusa/ajusta: admin devolve o bolão ao afiliado com um motivo. */
+  async rejectApproval(id: string, reason: string, user: AuthUser) {
+    const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { grupo: { select: { nome: true } } } });
+    if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    if (pool.status !== StatusBolao.rascunho || !pool.aprovacaoSolicitadaEm) throw new ConflictException('Este bolão não está aguardando aprovação.');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.bolao.update({ where: { id }, data: { aprovacaoSolicitadaEm: null } });
+      await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.aprovacao_recusada', atorId: user.id, payloadDepois: { motivo: reason } });
+      await tx.notificacao.create({ data: { usuarioId: pool.criadoPor, canal: 'push', tipo: 'bolao.aprovacao_recusada', payload: { titulo: 'Bolão precisa de ajustes', mensagem: `O bolão "${pool.grupo?.nome ?? 'sem nome'}" não foi aprovado: ${reason}`, link: '/afiliado' } } });
+    });
+    return { id, aguardandoAprovacao: false };
+  }
+
+  /** Quantas pessoas o grupo conta (quem entrou pelo site + as que o admin autorizou). */
+  async groupCapacity(groupId: string) {
+    const [group, members] = await Promise.all([
+      this.prisma.grupo.findUnique({ where: { id: groupId }, select: { capacidadeExtra: true } }),
+      this.prisma.grupoMembro.count({ where: { grupoId: groupId } }),
+    ]);
+    return { membros: members, extra: group?.capacidadeExtra ?? 0, capacidade: members + (group?.capacidadeExtra ?? 0) };
+  }
+
+  /** Um bolão de afiliado não pode ter mais cotas do que o grupo tem pessoas. */
+  private async assertWithinGroupCapacity(groupId: string, totalCotas: number, minCotas: number) {
+    const { capacidade } = await this.groupCapacity(groupId);
+    if (capacidade < minCotas) throw new ConflictException(`Seu grupo tem ${capacidade} ${capacidade === 1 ? 'pessoa' : 'pessoas'}. Para abrir um bolão são precisas pelo menos ${minCotas}. Convide mais gente para o grupo.`);
+    if (totalCotas > capacidade) throw new ConflictException(`Seu grupo tem ${capacidade} ${capacidade === 1 ? 'pessoa' : 'pessoas'}, então o bolão pode ter no máximo ${capacidade} cotas.`);
+  }
+
+  async joinGroup(slug: string, user: AuthUser) {
+    const group = await this.prisma.grupo.findUnique({ where: { slug }, select: { id: true, nome: true } });
+    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    await this.prisma.grupoMembro.upsert({ where: { grupoId_usuarioId: { grupoId: group.id, usuarioId: user.id } }, create: { grupoId: group.id, usuarioId: user.id }, update: {} });
+    return { grupo: group.nome, membro: true, totalMembros: await this.prisma.grupoMembro.count({ where: { grupoId: group.id } }) };
+  }
+
+  async leaveGroup(slug: string, user: AuthUser) {
+    const group = await this.prisma.grupo.findUnique({ where: { slug }, select: { id: true } });
+    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    await this.prisma.grupoMembro.deleteMany({ where: { grupoId: group.id, usuarioId: user.id } });
+    return { membro: false, totalMembros: await this.prisma.grupoMembro.count({ where: { grupoId: group.id } }) };
+  }
+
+  async groupMembership(slug: string, userId?: string) {
+    const group = await this.prisma.grupo.findUnique({ where: { slug }, select: { id: true } });
+    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    const [total, mine] = await Promise.all([this.prisma.grupoMembro.count({ where: { grupoId: group.id } }), userId ? this.prisma.grupoMembro.findUnique({ where: { grupoId_usuarioId: { grupoId: group.id, usuarioId: userId } } }) : null]);
+    return { totalMembros: total, membro: Boolean(mine) };
+  }
+
   private async assertCanManagePool(pool: { criadoPor: string }, user: AuthUser): Promise<void> {
     if (user.papel === 'admin') return;
     if (user.papel !== 'afiliado' || pool.criadoPor !== user.id) throw new ForbiddenException('Você só pode operar seus próprios bolões.');
@@ -320,6 +406,7 @@ export class PoolsService {
         /** Só dados do arquivo; o conteúdo só abre para quem participa (login). */
         anexos: (pool.anexos ?? []).map((file: any) => ({ id: file.id, tipo: file.tipo, nome: file.nomeOriginal, mime: file.mime, tamanho: file.tamanho, sha256: file.sha256, enviadoEm: file.criadoEm })),
       } : null,
+      aprovacao: pool.tipoOrganizador === 'afiliado' ? { solicitadaEm: pool.aprovacaoSolicitadaEm ?? null, aprovadoEm: pool.aprovadoEm ?? null } : null,
       liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso?.valorEstimadoPremio }),
       precificacao: pool.precificacao ?? null,
       financeiro: { custoJogos: custoJogos.toFixed(2), receitaPrevista: receitaPrevista === null ? null : receitaPrevista.toFixed(2), taxaAdministracaoPrevista: taxaPrevista === null ? null : taxaPrevista.toFixed(2), margemOperacionalPrevista: taxaPrevista === null ? null : (receitaPrevista! - custoJogos).toFixed(2) },
@@ -331,6 +418,9 @@ export class PoolsService {
         cutoffAt: pool.concurso.cutoffAt,
         valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed(2) ?? null,
         acumulado: pool.concurso.acumulado,
+        especial: pool.concurso.especial ?? null,
+        nomeEspecial: pool.concurso.nomeEspecial ?? null,
+        numeroDefinido: pool.concurso.numeroDefinido ?? true,
       } : undefined,
       grupo: pool.grupo ? { nome: pool.grupo.nome, slug: pool.grupo.slug, descricao: pool.grupo.descricao } : undefined,
     };

@@ -1,6 +1,7 @@
 'use client';
 
 import { LotteryPriceAdmin } from './lottery-price-admin';
+import { concursoNo } from '../lib/contest';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type RecordValue = Record<string, any>;
@@ -78,6 +79,16 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [automatic, setAutomatic] = useState(true);
   const [quote, setQuote] = useState<RecordValue | null>(null);
   const [quoteError, setQuoteError] = useState('');
+  // Gerador de jogos
+  const [genCount, setGenCount] = useState('1');
+  const [genSize, setGenSize] = useState('');
+  const [genStrategy, setGenStrategy] = useState('equilibrado');
+  const [genFixed, setGenFixed] = useState('');
+  const [genExclude, setGenExclude] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState('');
+  const [generated, setGenerated] = useState<RecordValue | null>(null);
+  const [priceTable, setPriceTable] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!editPool) {
@@ -120,6 +131,31 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const games = numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number) }));
   const uniqueNumbers = games[0]?.numeros ?? [];
   const canPrice = ['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(modality);
+  useEffect(() => {
+    fetch('/api/v1/loterias/precos').then(async (response) => {
+      if (!response.ok) return;
+      const rows = await response.json() as Array<{ modalidade: string; chave: string; valorCentavos: number }>;
+      setPriceTable(Object.fromEntries(rows.map((row) => [`${row.modalidade}:${row.chave}`, row.valorCentavos])));
+    }).catch(() => undefined);
+  }, []);
+  useEffect(() => { setGenSize(String(limits.min)); setGenerated(null); setGenError(''); }, [modality]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId);
+  const groupCapacity: number | null = role === 'affiliate' && selectedGroup ? Number(selectedGroup.capacidade ?? 0) : null;
+  const sizeNumber = Number(genSize || limits.min);
+  const gameCountNumber = Math.min(Math.max(Math.trunc(Number(genCount) || 1), 1), 100);
+  const unitCents = priceTable[`${modality}:${sizeNumber}`];
+  const previewTotal = unitCents === undefined ? null : unitCents * gameCountNumber;
+  async function generateGames() {
+    setGenerating(true); setGenError('');
+    try {
+      const response = await authFetch('/api/v1/admin/boloes/gerar-jogos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: modality, quantidade: gameCountNumber, dezenas: sizeNumber, estrategia: genStrategy, ...(genFixed.trim() ? { fixos: genFixed.trim() } : {}), ...(genExclude.trim() ? { excluir: genExclude.trim() } : {}) }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível gerar os jogos.');
+      setGenerated(data);
+      setNumbers((data.jogos as Array<{ numeros: number[] }>).map((game) => game.numeros.map((n) => String(n).padStart(2, '0')).join(' ')).join('\n'));
+    } catch (error) { setGenError(error instanceof Error ? error.message : 'Falha ao gerar.'); }
+    finally { setGenerating(false); }
+  }
   useEffect(() => {
     setQuote(null); setQuoteError('');
     if (!automatic || editing || !canPrice || !contestId || !selectedGroupId || !numbers.trim() || unlimited) return;
@@ -226,24 +262,43 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     <div className="admin-form-grid admin-form-grid-three">
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
       <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
-      <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>#{contest.numeroConcurso} · {dateOnly(contest.dataSorteio)} · prêmio {money(contest.valorEstimadoPremio)}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
+      <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateOnly(contest.dataSorteio)} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
+      {canPrice && !editing && <div className="admin-field admin-field-wide game-generator" aria-label="Gerador de jogos">
+        <strong>Gerar jogos automaticamente</strong>
+        <div className="admin-form-grid admin-form-grid-four">
+          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} value={genCount} onChange={(event) => setGenCount(event.target.value)} /></label>
+          <label className="admin-field"><span>Números em cada jogo</span><input type="number" min={limits.min} max={modality === 'megasena' ? 20 : modality === 'lotofacil' ? 20 : modality === 'quina' ? 15 : modality === 'duplasena' ? 15 : 50} value={genSize} onChange={(event) => setGenSize(event.target.value)} /></label>
+          <label className="admin-field"><span>Como escolher</span><select value={genStrategy} onChange={(event) => setGenStrategy(event.target.value)}><option value="equilibrado">Equilibrado (evita padrões comuns)</option><option value="aleatorio">Totalmente aleatório</option><option value="quentes">Mais sorteados recentes</option><option value="atrasados">Mais atrasados</option><option value="misto">Misto</option></select></label>
+          <div className="admin-field" style={{ alignSelf: 'end' }}><button type="button" className="admin-button admin-button-primary" disabled={generating} onClick={() => void generateGames()}>{generating ? 'Gerando…' : generated ? 'Gerar de novo' : 'Gerar jogos'}</button></div>
+        </div>
+        <div className="admin-form-grid admin-form-grid-three">
+          <label className="admin-field"><span>Números que devem entrar (opcional)</span><input value={genFixed} onChange={(event) => setGenFixed(event.target.value)} placeholder="Ex.: 7, 10" inputMode="numeric" /></label>
+          <label className="admin-field"><span>Números para evitar (opcional)</span><input value={genExclude} onChange={(event) => setGenExclude(event.target.value)} placeholder="Ex.: 13" inputMode="numeric" /></label>
+        </div>
+        <div className="generator-cost" aria-live="polite">
+          {previewTotal === null ? <span>Valor do registro na CAIXA: confira a tabela de preços.</span> : <span>Registro na CAIXA: <strong>{money(unitCents! / 100)}</strong> por jogo de {sizeNumber} números · <strong>{gameCountNumber} {gameCountNumber === 1 ? 'jogo' : 'jogos'} = {money(previewTotal / 100)}</strong></span>}
+        </div>
+        {genError && <p role="alert" className="form-error">{genError}</p>}
+        {generated && <div className="generator-result"><span>{generated.quantidade} {generated.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {generated.dezenas} números cada · <strong>total na CAIXA {money(generated.custoTotal)}</strong></span><small>{generated.aviso}</small></div>}
+      </div>}
       <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
     </div>
     {!editing && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>Calcular pela tabela Caixa</strong><small>Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.</small></span></label>}
     {automatic && !canPrice && <p role="alert">Matriz disponível na API. Venda automática desta modalidade aguarda suporte à apuração completa.</p>}
     {quoteError && <p role="alert">{quoteError}</p>}
+    {quote && quote.jogos?.length > 0 && <div className="simple-form-summary" aria-label="Custo de cada jogo"><span>Jogos <strong>{quote.jogos.length}</strong></span><span>Custo por jogo <strong>{[...new Set(quote.jogos.map((g: RecordValue) => money(g.custo)))].join(' / ')}</strong></span><span>Registro na CAIXA <strong>{money(quote.costCents / 100)}</strong></span></div>}
     {quote && <div className="simple-form-summary" aria-live="polite"><span>Bilhetes <strong>{money(quote.costCents / 100)}</strong></span><span>Administração <strong>{money(quote.adminTotalCents / 100)}</strong></span><span>Reserva de arredondamento <strong>{money(quote.roundingReserveCents / 100)}</strong></span><span>Por cota: bilhete {money(quote.ticketPerShare / 100)} + taxa {money(quote.feePerShare / 100)}</span></div>}
     <div className="admin-form-grid admin-form-grid-four">
       <label className="admin-field"><span>Valor da cota (R$)</span><input readOnly={automatic} type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>
       <label className="admin-field"><span>Taxa administrativa (%)</span><input type="number" min="0" max="35" step="0.01" value={taxa} onChange={(event) => setTaxa(event.target.value)} /></label>
-      <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} /></label>
+      <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" max={groupCapacity ?? undefined} value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: o bolão pode ter no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convite alguém para o grupo antes de criar o bolão.'}</small>}</label>
       <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>
     {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. Opção legada, indisponível para novos lotes.</small></span></label>}
     <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
     {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
-    <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? `#${selectedContest.numeroConcurso}` : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
+    <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? (selectedContest.nomeEspecial ? `${selectedContest.nomeEspecial}${selectedContest.numeroConcurso > 0 ? ` #${selectedContest.numeroConcurso}` : ' (número a definir)'}` : `#${selectedContest.numeroConcurso}`) : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
     {role === 'admin' && <LotteryPriceAdmin />}
     <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && automatic && !quote) || (editing && Boolean(editPool?.precificacao))}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
   </form>;

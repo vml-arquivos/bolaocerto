@@ -1137,3 +1137,23 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .site-header { padding-top: env(safe-area-inset-top); }
   .client-app-home { padding-top: 20px; }
 }
+
+/* Gerador de jogos (assistente de bolão) */
+.game-generator { display: grid; gap: 12px; padding: 14px 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius-md); background: var(--surface-muted); }
+.game-generator > strong { color: var(--text-primary); }
+.generator-cost { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary); font-size: .85rem; }
+.generator-cost strong { color: var(--text-primary); }
+.generator-result { display: grid; gap: 4px; color: var(--text-secondary); font-size: .85rem; }
+.generator-result small { color: var(--text-muted); }
+.group-members { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.group-members li { display: flex; flex-direction: column; font-size: .85rem; }
+.group-members small { color: var(--text-muted); }
+
+/* Bolões já sorteados */
+.drawn-games { margin: 10px 0; }
+.drawn-games summary { cursor: pointer; font-weight: 600; }
+.drawn-game { display: grid; gap: 4px; margin: 10px 0; }
+.drawn-game .number-ball { width: 34px; height: 34px; font-size: .8rem; background: var(--surface-raised); color: var(--text-secondary); box-shadow: none; border: 1px solid var(--border); }
+.drawn-game .number-ball.is-hit { background: linear-gradient(145deg, #16a34a, #22c55e); color: #fff; border-color: transparent; }
+.drawn-status { margin: 8px 0 0; }
+.group-page-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }

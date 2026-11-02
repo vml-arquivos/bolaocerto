@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import {
@@ -14,15 +14,21 @@ import {
   normalizeCaixaContestPayload,
   parseCaixaDate,
   resolveCaixaTimeout,
+  adoptProvisionalContests,
+  FestaTx,
+  FESTAS_PRESETS,
+  provisionalContestNumber,
+  brazilDayKey,
 } from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
-import { CreateManualContestDto } from './lotteries.dto';
+import { AuditService } from '../common/audit.service';
+import { CreateFestaContestDto, CreateManualContestDto, UpdateFestaContestDto } from './lotteries.dto';
 
 @Injectable()
 export class LotteriesService {
   private readonly health = new CaixaSourceHealth();
 
-  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
+  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService, @Optional() private readonly audit?: AuditService) {}
 
   /**
    * Lista pública. Sem filtro (ou status=aberto) devolve só os concursos realmente abertos (prazo no futuro), do mais próximo
@@ -128,6 +134,9 @@ export class LotteriesService {
     const nextEstimatedPrize = payload.valorEstimadoProximoConcurso ?? payload.valorAcumuladoProximoConcurso ?? null;
 
     await this.prisma.$transaction(async (tx) => {
+      // Concurso de festa criado antes do número oficial (ex.: Mega da Virada) vira o concurso oficial da mesma data.
+      await adoptProvisionalContests(tx as unknown as FestaTx, modalidade, payload.numero!, currentDrawDate);
+      await adoptProvisionalContests(tx as unknown as FestaTx, modalidade, payload.numeroConcursoProximo!, nextDrawDate);
       const currentContest = await tx.concurso.upsert({
         where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: payload.numero! } },
         create: {
@@ -228,12 +237,85 @@ export class LotteriesService {
     return this.toPublicContest(contest);
   }
 
+  festivalPresets() {
+    return FESTAS_PRESETS.map((preset) => ({ ...preset }));
+  }
+
+  /**
+   * Concurso de festa: nasce aberto e já aceita bolões. Sem número oficial, usa um número provisório (negativo)
+   * e é trocado pelo oficial na próxima sincronização com a CAIXA (mesma modalidade e mesmo dia).
+   */
+  async createFestival(dto: CreateFestaContestDto, actorId: string) {
+    const preset = FESTAS_PRESETS.find((item) => item.chave === dto.especial);
+    if (!preset && dto.especial !== 'personalizado') throw new BadRequestException('Escolha uma festa da lista ou "personalizado".');
+    const modalidade = this.assertModalidade(preset?.modalidade ?? dto.modalidade ?? '');
+    const nome = (preset?.nome ?? dto.nomeEspecial ?? '').trim();
+    if (!nome) throw new BadRequestException('Informe o nome da festa (ex.: Mega da Virada).');
+    const config = await this.prisma.configLoteria.findUnique({ where: { modalidade } });
+    if (!config) throw new BadRequestException('Modalidade sem configuração cadastrada.');
+    const drawDate = new Date(`${dto.dataSorteio}T20:00:00-03:00`);
+    if (Number.isNaN(drawDate.getTime())) throw new BadRequestException('Data do sorteio inválida.');
+    if (brazilDayKey(drawDate) !== dto.dataSorteio) throw new BadRequestException('Data do sorteio inválida.');
+    if (drawDate.getTime() <= Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
+    const defined = dto.numeroConcurso !== undefined;
+    const numero = defined ? dto.numeroConcurso! : provisionalContestNumber(drawDate);
+    const exists = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: numero } } });
+    if (exists) {
+      // Se a CAIXA já trouxe o concurso oficial dessa data, só marcamos a festa nele (sem duplicar).
+      if (defined && !exists.especial) {
+        const marked = await this.prisma.concurso.update({ where: { id: exists.id }, data: { especial: preset?.chave ?? 'personalizado', nomeEspecial: nome } });
+        await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: marked.id, evento: 'concurso.festa_marcada', atorId: actorId, payloadDepois: { especial: marked.especial, nomeEspecial: marked.nomeEspecial } });
+        return this.toPublicContest(marked);
+      }
+      throw new ConflictException('Este concurso de festa já está cadastrado.');
+    }
+    if (!defined) {
+      const sameDay = (await this.prisma.concurso.findMany({ where: { modalidade, especial: { not: null }, numeroDefinido: true } })).find((item) => brazilDayKey(item.dataSorteio) === dto.dataSorteio);
+      if (sameDay) throw new ConflictException(`Já existe o concurso ${sameDay.numeroConcurso} nessa data com a festa marcada. Crie o bolão nele.`);
+    }
+    const contest = await this.prisma.concurso.create({
+      data: {
+        modalidade, numeroConcurso: numero, dataSorteio: drawDate, cutoffAt: calculateBrazilCutoff(drawDate, config.horarioCorteLocal),
+        valorEstimadoPremio: dto.valorEstimadoPremio ?? null, acumulado: false, status: 'aberto', fonteSincronizacao: 'manual',
+        especial: preset?.chave ?? 'personalizado', nomeEspecial: nome, numeroDefinido: defined,
+      },
+    });
+    await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: contest.id, evento: 'concurso.festa_criada', atorId: actorId, payloadDepois: { modalidade, nomeEspecial: nome, dataSorteio: dto.dataSorteio, numeroDefinido: defined } });
+    return this.toPublicContest(contest);
+  }
+
+  /** Informa o número oficial e/ou o prêmio estimado de um concurso de festa. */
+  async updateFestival(id: string, dto: UpdateFestaContestDto, actorId: string) {
+    const contest = await this.prisma.concurso.findUnique({ where: { id } });
+    if (!contest || !contest.especial) throw new NotFoundException('Concurso de festa não encontrado.');
+    if (dto.numeroConcurso === undefined && dto.valorEstimadoPremio === undefined) throw new BadRequestException('Informe o número do concurso ou o prêmio estimado.');
+    const data: Record<string, unknown> = {};
+    if (dto.numeroConcurso !== undefined) {
+      if (contest.numeroDefinido) throw new ConflictException('Este concurso já tem número oficial.');
+      const clash = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade: contest.modalidade, numeroConcurso: dto.numeroConcurso } } });
+      if (clash && clash.id !== contest.id) {
+        // O concurso oficial já existe (veio da CAIXA): unifica, passando os bolões para ele.
+        await this.prisma.$transaction(async (tx) => {
+          await adoptProvisionalContests(tx as unknown as FestaTx, contest.modalidade, dto.numeroConcurso!, contest.dataSorteio);
+        });
+        await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: clash.id, evento: 'concurso.festa_unificada', atorId: actorId, payloadDepois: { numeroConcurso: dto.numeroConcurso } });
+        return this.toPublicContest(await this.prisma.concurso.findUniqueOrThrow({ where: { id: clash.id } }));
+      }
+      data.numeroConcurso = dto.numeroConcurso;
+      data.numeroDefinido = true;
+    }
+    if (dto.valorEstimadoPremio !== undefined) data.valorEstimadoPremio = dto.valorEstimadoPremio;
+    const updated = await this.prisma.concurso.update({ where: { id }, data });
+    await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: id, evento: 'concurso.festa_atualizada', atorId: actorId, payloadAntes: { numeroConcurso: contest.numeroConcurso, valorEstimadoPremio: contest.valorEstimadoPremio }, payloadDepois: data as never });
+    return this.toPublicContest(updated);
+  }
+
   private assertModalidade(value: string): ModalidadeLoteria {
     if (!MODALIDADES_LOTERIA.includes(value as ModalidadeLoteria)) throw new ServiceUnavailableException('Modalidade de loteria não suportada.');
     return value as ModalidadeLoteria;
   }
 
-  private toPublicContest(contest: { id: string; modalidade: string; numeroConcurso: number; dataSorteio: Date; cutoffAt: Date; valorEstimadoPremio: unknown; acumulado: boolean }) {
+  private toPublicContest(contest: { id: string; modalidade: string; numeroConcurso: number; dataSorteio: Date; cutoffAt: Date; valorEstimadoPremio: unknown; acumulado: boolean; especial?: string | null; nomeEspecial?: string | null; numeroDefinido?: boolean }) {
     return {
       id: contest.id,
       modalidade: contest.modalidade,
@@ -242,6 +324,9 @@ export class LotteriesService {
       cutoffAt: contest.cutoffAt,
       valorEstimadoPremio: contest.valorEstimadoPremio,
       acumulado: contest.acumulado,
+      especial: contest.especial ?? null,
+      nomeEspecial: contest.nomeEspecial ?? null,
+      numeroDefinido: contest.numeroDefinido ?? true,
     };
   }
 }

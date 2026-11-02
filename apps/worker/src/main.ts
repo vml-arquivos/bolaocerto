@@ -11,6 +11,8 @@ import {
   MODALIDADES_LOTERIA,
   parseCaixaDate,
   resolveCaixaTimeout,
+  adoptProvisionalContests,
+  type FestaTx,
 } from '@bolaocerto/shared-types';
 import { sendAlert } from './alert';
 import { backfillHistory, readHistoryOptions } from './history';
@@ -69,6 +71,9 @@ async function syncOnce(): Promise<void> {
 
       let currentContestId: string;
       await prisma.$transaction(async (tx) => {
+        // Concurso de festa criado antes do número oficial (ex.: Mega da Virada) vira o concurso oficial da mesma data.
+        await adoptProvisionalContests(tx as unknown as FestaTx, modality, currentNumber, currentDrawDate);
+        await adoptProvisionalContests(tx as unknown as FestaTx, modality, nextNumber, nextDrawDate);
         const currentContest = await tx.concurso.upsert({
           where: { modalidade_numeroConcurso: { modalidade: modality, numeroConcurso: currentNumber } },
           create: {

@@ -22,6 +22,7 @@ import {
   OperationReceiptDto,
   PayRemittanceDto,
   UpdateAffiliateCommissionDto,
+  UpdateGroupCapacityDto,
   UpdateAffiliateNetworkDto,
   UpdateSettingsDto,
   UpdateUserKycDto,
@@ -334,18 +335,26 @@ export class AdminService {
 
   async createInvite(dto: CreateInviteDto, actor: AuthUser) {
     const actorAffiliate = actor.papel === 'afiliado' ? await this.requireApprovedAffiliate(actor) : null;
+    // O afiliado é um vendedor: ele traz clientes, não monta rede de outros afiliados. Só o admin convida afiliados.
+    if (actorAffiliate && dto.tipo === 'afiliado') throw new ForbiddenException('Afiliado não convida outros afiliados. Convide clientes para o seu grupo.');
     const requestedOrigin = dto.afiliadoOrigemId ? await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoOrigemId, statusAprovacao: 'aprovado' } }) : null;
     if (dto.afiliadoOrigemId && !requestedOrigin) throw new NotFoundException('Afiliado de origem não encontrado ou não aprovado.');
     if (actorAffiliate && requestedOrigin && requestedOrigin.id !== actorAffiliate.id) throw new ForbiddenException('Um afiliado só pode gerar convites na própria rede.');
     const origin = requestedOrigin ?? actorAffiliate;
+    if (dto.grupoId) {
+      if (dto.tipo === 'afiliado') throw new ConflictException('Convite de grupo é só para clientes.');
+      const group = await this.prisma.grupo.findUnique({ where: { id: dto.grupoId }, select: { id: true, afiliadoId: true } });
+      if (!group) throw new NotFoundException('Grupo não encontrado.');
+      if (origin && group.afiliadoId !== origin.id) throw new ForbiddenException('Este grupo não é seu.');
+    }
     const expiresAt = dto.expiraEm ? new Date(dto.expiraEm) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) throw new ConflictException('A validade do convite precisa estar no futuro.');
     const invite = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, expiraEm: expiresAt } });
-      await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, expiraEm: created.expiraEm } });
+      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, grupoId: dto.grupoId, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, expiraEm: expiresAt } });
+      await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, grupoId: created.grupoId, expiraEm: created.expiraEm } });
       return created;
     });
-    return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` };
+    return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, grupoId: invite.grupoId, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` };
   }
 
   async listInvites(query: AdminListQueryDto = {}, actor: AuthUser) {
@@ -378,11 +387,11 @@ export class AdminService {
   async affiliateWorkspace(actor: AuthUser) {
     const affiliate = await this.requireApprovedAffiliate(actor);
     const [groups, pools, invites] = await Promise.all([
-      this.prisma.grupo.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, include: { _count: { select: { boloes: true } } } }),
+      this.prisma.grupo.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, include: { _count: { select: { boloes: true, membros: true } } } }),
       this.prisma.bolao.findMany({ where: { criadoPor: actor.id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } }, orderBy: { criadoEm: 'desc' }, take: 100 }),
       this.prisma.convite.findMany({ where: { afiliadoOrigemId: affiliate.id }, orderBy: { criadoEm: 'desc' }, take: 100 }),
     ]);
-    return { afiliado: { id: affiliate.id, codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao }, grupos: groups, boloes: pools.map((pool) => this.toPublicPool(pool)), convites: invites.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` })) };
+    return { afiliado: { id: affiliate.id, codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, comissaoPadraoPct: Number(affiliate.comissaoPadraoPct) }, grupos: groups.map((group) => ({ ...group, totalMembros: group._count.membros, capacidade: group._count.membros + group.capacidadeExtra })), boloes: pools.map((pool) => this.toPublicPool(pool)), convites: invites.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, grupoId: invite.grupoId, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` })) };
   }
 
   async createGroup(dto: CreateGroupDto, actor: AuthUser) {
@@ -407,8 +416,45 @@ export class AdminService {
   async listGroups(query: AdminListQueryDto = {}, actor: AuthUser) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const where: Prisma.GrupoWhereInput = actor.papel === 'afiliado' ? { afiliadoId: (await this.requireApprovedAffiliate(actor)).id } : { ...(query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { slug: { contains: query.busca, mode: 'insensitive' } }] } : {}) };
-    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, _count: { select: { boloes: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }), this.prisma.grupo.count({ where })]);
-    return { items, pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, _count: { select: { boloes: true, membros: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }), this.prisma.grupo.count({ where })]);
+    return { items: items.map((group) => ({ ...group, totalMembros: group._count.membros, capacidade: group._count.membros + group.capacidadeExtra })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  /** Quem está no grupo (nome e e-mail mascarado). O afiliado só vê os próprios grupos; o admin vê todos. */
+  async listGroupMembers(groupId: string, actor: AuthUser) {
+    const group = await this.prisma.grupo.findUnique({ where: { id: groupId }, select: { id: true, nome: true, afiliadoId: true, capacidadeExtra: true } });
+    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    if (actor.papel === 'afiliado') {
+      const affiliate = await this.requireApprovedAffiliate(actor);
+      if (group.afiliadoId !== affiliate.id) throw new ForbiddenException('Este grupo não é seu.');
+    }
+    const members = await this.prisma.grupoMembro.findMany({ where: { grupoId: groupId }, include: { usuario: { select: { nome: true, email: true } } }, orderBy: { criadoEm: 'desc' }, take: 1000 });
+    const mask = (email: string) => { const [user, domain] = email.split('@'); return `${(user ?? '').slice(0, 2)}***@${domain ?? ''}`; };
+    return { grupo: { id: group.id, nome: group.nome, capacidadeExtra: group.capacidadeExtra }, totalMembros: members.length, capacidade: members.length + group.capacidadeExtra, membros: members.map((member) => ({ id: member.id, usuarioId: member.usuarioId, nome: member.usuario.nome, email: mask(member.usuario.email), entrouEm: member.criadoEm })) };
+  }
+
+  /** Só o admin: autoriza pessoas a mais na conta do grupo (limita as cotas dos bolões do afiliado). */
+  async updateGroupCapacity(groupId: string, dto: UpdateGroupCapacityDto, actor: AuthUser) {
+    const group = await this.prisma.grupo.findUnique({ where: { id: groupId } });
+    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.grupo.update({ where: { id: groupId }, data: { capacidadeExtra: dto.capacidadeExtra } });
+      await this.audit.record(tx, { entidade: 'grupo', entidadeId: groupId, evento: 'grupo.capacidade_alterada', atorId: actor.id, payloadAntes: { capacidadeExtra: group.capacidadeExtra }, payloadDepois: { capacidadeExtra: result.capacidadeExtra } });
+      return result;
+    });
+    const members = await this.prisma.grupoMembro.count({ where: { grupoId: groupId } });
+    return { id: updated.id, capacidadeExtra: updated.capacidadeExtra, totalMembros: members, capacidade: members + updated.capacidadeExtra };
+  }
+
+  /** Só o admin tira alguém do grupo. */
+  async removeGroupMember(groupId: string, userId: string, actor: AuthUser) {
+    const removed = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.grupoMembro.deleteMany({ where: { grupoId: groupId, usuarioId: userId } });
+      if (result.count) await this.audit.record(tx, { entidade: 'grupo', entidadeId: groupId, evento: 'grupo.membro_removido', atorId: actor.id, payloadDepois: { usuarioId: userId } });
+      return result.count;
+    });
+    if (!removed) throw new NotFoundException('Essa pessoa não está no grupo.');
+    return { removido: true };
   }
 
   private maskCpf(cpf: string): string {

@@ -1,5 +1,5 @@
 export type PublicContest = {
-  status?: string; id: string; modalidade: string; numeroConcurso: number; dataSorteio: string; cutoffAt: string;
+  status?: string; id: string; modalidade: string; numeroConcurso: number; especial?: string | null; nomeEspecial?: string | null; numeroDefinido?: boolean; dataSorteio: string; cutoffAt: string;
   valorEstimadoPremio: string | number | null; acumulado: boolean;
 };
 

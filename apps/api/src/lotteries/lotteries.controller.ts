@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
+import { AuthUser } from '../auth/auth.utils';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { CreateManualContestDto } from './lotteries.dto';
+import { CreateFestaContestDto, CreateManualContestDto, UpdateFestaContestDto } from './lotteries.dto';
 import { LotteriesService } from './lotteries.service';
 
 @Controller()
@@ -43,5 +44,28 @@ export class LotteriesController {
   @Roles('admin')
   createManual(@Body() dto: CreateManualContestDto) {
     return this.lotteries.createManual(dto);
+  }
+
+  @Get('admin/concursos/festas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  festivals() {
+    return this.lotteries.festivalPresets();
+  }
+
+  /** Cria concurso de festa (com ou sem número oficial) para já poder vender cotas. */
+  @Post('admin/concursos/festa')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  createFestival(@Body() dto: CreateFestaContestDto, @CurrentUser() user: AuthUser) {
+    return this.lotteries.createFestival(dto, user.id);
+  }
+
+  /** Informa o número oficial (ou o prêmio estimado) de um concurso de festa. */
+  @Patch('admin/concursos/:id/festa')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  updateFestival(@Param('id') id: string, @Body() dto: UpdateFestaContestDto, @CurrentUser() user: AuthUser) {
+    return this.lotteries.updateFestival(id, dto, user.id);
   }
 }

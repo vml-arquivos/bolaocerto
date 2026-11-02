@@ -151,6 +151,7 @@ model Usuario {
   tokensSenha           TokenSenha[]
   bolaoInteresses       BolaoInteresse[]
   anexosEnviados        Anexo[]          @relation("anexo_enviado_por")
+  gruposMembro          GrupoMembro[]
 
   @@index([desativadoEm, criadoEm])
   @@map("usuarios")
@@ -213,6 +214,11 @@ model Concurso {
   status                String        @default("aberto") @db.VarChar(20)
   fonteSincronizacao    String?       @map("fonte_sincronizacao") @db.VarChar(20)
   sincronizadoEm        DateTime      @default(now()) @map("sincronizado_em")
+  /// Concurso de festa (ex.: mega-da-virada, sao-joao). Nulo nos concursos comuns.
+  especial              String?       @db.VarChar(40)
+  nomeEspecial          String?       @map("nome_especial") @db.VarChar(80)
+  /// Falso enquanto o número oficial não saiu (numeroConcurso guarda um número provisório negativo).
+  numeroDefinido        Boolean       @default(true) @map("numero_definido")
   config                ConfigLoteria @relation(fields: [modalidade], references: [modalidade])
   resultado             Resultado?
   boloes                Bolao[]
@@ -266,6 +272,7 @@ model Convite {
   status              StatusConvite @default(ativo)
   criadoPorUsuarioId  String        @map("criado_por_usuario_id") @db.Uuid
   afiliadoOrigemId    String?       @map("afiliado_origem_id") @db.Uuid
+  grupoId             String?       @map("grupo_id") @db.Uuid
   usadoPorUsuarioId   String?       @map("usado_por_usuario_id") @db.Uuid
   emailDestino        String?       @map("email_destino") @db.VarChar(180)
   expiraEm            DateTime      @map("expira_em")
@@ -273,6 +280,7 @@ model Convite {
   criadoEm            DateTime      @default(now()) @map("criado_em")
   criadoPorUsuario    Usuario       @relation("criador_convite", fields: [criadoPorUsuarioId], references: [id])
   afiliadoOrigem      Afiliado?     @relation("convites_afiliado", fields: [afiliadoOrigemId], references: [id], onDelete: SetNull)
+  grupo               Grupo?        @relation(fields: [grupoId], references: [id], onDelete: SetNull)
   usadoPorUsuario     Usuario?      @relation("usuario_convite_usado", fields: [usadoPorUsuarioId], references: [id], onDelete: SetNull)
 
   @@index([status, expiraEm])
@@ -290,9 +298,13 @@ model Grupo {
   descricao     String?
   criadoPor     String?       @map("criado_por") @db.Uuid
   criadoEm      DateTime      @default(now()) @map("criado_em")
+  /// Pessoas a mais que o admin autoriza a contar no grupo (além das que entraram pelo site).
+  capacidadeExtra Int         @default(0) @map("capacidade_extra")
   afiliado      Afiliado?     @relation(fields: [afiliadoId], references: [id])
   criador       Usuario?      @relation("criador_grupo", fields: [criadoPor], references: [id])
   boloes        Bolao[]
+  membros       GrupoMembro[]
+  convites      Convite[]
 
   @@map("grupos")
 }
@@ -325,6 +337,10 @@ model Bolao {
   liberadoEm            DateTime?           @map("liberado_em")
   editadoPor            String?             @map("editado_por") @db.Uuid
   editadoEm             DateTime?           @map("editado_em")
+  /// Bolão de afiliado só abre para venda depois da aprovação do admin.
+  aprovacaoSolicitadaEm DateTime?           @map("aprovacao_solicitada_em")
+  aprovadoEm            DateTime?           @map("aprovado_em")
+  aprovadoPor           String?             @map("aprovado_por") @db.Uuid
   criadoEm              DateTime            @default(now()) @map("criado_em")
   concurso              Concurso            @relation(fields: [concursoId], references: [id])
   grupo                 Grupo               @relation(fields: [grupoId], references: [id])
@@ -652,4 +668,18 @@ model AceiteLegal {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
   @@unique([usuarioId, tipo, hash])
   @@map("aceites_legais")
+}
+
+/// Pessoas que entraram em um grupo (a capacidade do grupo limita as cotas dos bolões do afiliado).
+model GrupoMembro {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grupoId   String   @map("grupo_id") @db.Uuid
+  usuarioId String   @map("usuario_id") @db.Uuid
+  criadoEm  DateTime @default(now()) @map("criado_em")
+  grupo     Grupo    @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([grupoId, usuarioId])
+  @@index([usuarioId])
+  @@map("grupo_membros")
 }

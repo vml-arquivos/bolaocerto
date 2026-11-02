@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { concursoNo } from '../lib/contest';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -262,7 +263,7 @@ export function ManualSaleForm({ onDone, notify }: { onDone: () => Promise<void>
   if (!open) return <button className="admin-button admin-button-primary" onClick={() => setOpen(true)}>Registrar venda de balcão</button>;
   return <Panel title="Venda de balcão" description="Para participantes que pagam em dinheiro, Pix direto ou transferência. O participante precisa ter cadastro (Usuários)." action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
     <form onSubmit={submit} className="admin-form-grid" style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
-      <label className="admin-field"><span>Bolão aberto</span><select name="bolaoId" required>{pools.map((pool) => <option key={pool.id} value={pool.id}>{label(pool.concurso?.modalidade)} #{pool.concurso?.numeroConcurso} — {brl(pool.valorCota)}/cota</option>)}</select></label>
+      <label className="admin-field"><span>Bolão aberto</span><select name="bolaoId" required>{pools.map((pool) => <option key={pool.id} value={pool.id}>{label(pool.concurso?.modalidade)} {concursoNo(pool.concurso?.numeroConcurso)} — {brl(pool.valorCota)}/cota</option>)}</select></label>
       <label className="admin-field"><span>Buscar participante (nome, CPF ou e-mail)</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Digite ao menos 2 letras" /></label>
       <label className="admin-field"><span>Participante</span><select name="usuarioId" required>{users.map((user) => <option key={user.id} value={user.id}>{user.nome} — {user.email}</option>)}</select></label>
       <label className="admin-field"><span>Quantidade de cotas</span><input name="quantidade" type="number" min={1} defaultValue={1} required /></label>

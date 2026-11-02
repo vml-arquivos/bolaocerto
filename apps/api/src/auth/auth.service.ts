@@ -36,7 +36,7 @@ export class AuthService {
 
     const code = dto.codigoAfiliado?.trim();
     const invite = code
-      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, emailDestino: true } })
+      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true } })
       : null;
     if (invite?.emailDestino && invite.emailDestino.toLowerCase() !== email) throw new ConflictException('Este convite foi direcionado a outro e-mail.');
 
@@ -71,6 +71,10 @@ export class AuthService {
             parentAfiliadoId: originAffiliateId ?? undefined,
           },
         });
+      }
+      // Convite de grupo: a pessoa já entra no grupo do afiliado (isso conta para o limite de cotas do grupo).
+      if (invite?.grupoId && invite.tipo === 'usuario') {
+        await tx.grupoMembro.upsert({ where: { grupoId_usuarioId: { grupoId: invite.grupoId, usuarioId: created.id } }, create: { grupoId: invite.grupoId, usuarioId: created.id }, update: {} });
       }
       if (invite) {
         const marked = await tx.convite.updateMany({ where: { id: invite.id, status: 'ativo' }, data: { status: 'usado', usadoPorUsuarioId: created.id, usadoEm: new Date() } });

@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreatePartnerLotteryDto {
@@ -93,9 +94,23 @@ export class CreateInviteDto {
   @IsUUID()
   afiliadoOrigemId?: string;
 
+  /** Convite que já coloca a pessoa dentro de um grupo do afiliado. */
+  @IsOptional()
+  @IsUUID()
+  grupoId?: string;
+
   @IsOptional()
   @IsDateString()
   expiraEm?: string;
+}
+
+/** O admin autoriza pessoas a mais na conta do grupo (além das que entraram pelo site). */
+export class UpdateGroupCapacityDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  capacidadeExtra!: number;
 }
 
 export class CreateGroupDto {

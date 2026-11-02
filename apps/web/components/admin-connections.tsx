@@ -10,13 +10,13 @@ function StatusList({ items }: { items: Item[] }) {
   return <ul className="health-list">{items.map((item) => <li key={item.title} className={item.ok === null ? '' : item.ok ? 'is-ok' : 'is-warn'}><span aria-hidden="true">{item.ok === null ? '•' : item.ok ? '✓' : '!'}</span><div><strong>{item.title}</strong><small>{item.text}</small>{item.extra}</div></li>)}</ul>;
 }
 
-const SMTP_EXAMPLE = `SMTP_HOST=smtp.seudominio.com.br
+const SMTP_EXAMPLE = `SMTP_HOST=smtp-relay.brevo.com
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_USER=contato@seudominio.com.br
-SMTP_PASS=a-senha-do-e-mail
+SMTP_USER=seu-login-smtp@smtp-brevo.com
+SMTP_PASS=sua-chave-smtp-da-brevo
 MAIL_FROM=Bolão Livre <contato@seudominio.com.br>
-APP_PUBLIC_URL=https://bl.buscarr.com.br`;
+APP_PUBLIC_URL=https://seudominio.com.br`;
 
 /** Painel técnico em linguagem simples: o que está ligado, o que falta e botões de teste. */
 export function ConnectionsView({ notify }: { notify: Notify }) {
@@ -53,7 +53,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
     <div className="admin-dashboard-grid">
       <Panel title="E-mail" description="Recuperação de senha, avisos de pagamento e recibos">
         <StatusList items={[
-          { ok: Boolean(mail.configurado), title: mail.configurado ? 'Ligado' : 'Ainda não ligado', text: mail.configurado ? `Servidor ${mail.servidor}, porta ${mail.porta}${mail.seguro ? ' (seguro)' : ''}` : 'Sem isso, os avisos aparecem só dentro da conta do cliente.' },
+          { ok: Boolean(mail.configurado), title: mail.configurado ? 'Ligado' : 'Ainda não ligado', text: mail.configurado ? `${mail.provedor && mail.provedor !== 'Outro' ? `${mail.provedor} · ` : ''}Servidor ${mail.servidor}, porta ${mail.porta}${mail.seguro ? ' (seguro)' : ''}` : 'Sem isso, os avisos aparecem só dentro da conta do cliente.' },
           ...(mail.configurado ? [
             { ok: Boolean(mail.usuario && mail.temSenha), title: 'Usuário e senha', text: mail.usuario ? `${mail.usuario}${mail.temSenha ? ' · senha preenchida' : ' · senha FALTANDO'}` : 'Sem usuário (servidor aberto)' },
             { ok: Boolean(mail.remetente), title: 'Remetente', text: mail.remetente ?? 'Não definido — preencha MAIL_FROM' },
@@ -71,7 +71,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
         {showHelp && <div className="admin-callout"><strong>Como ligar</strong>
           <p>No servidor (Coolify → Environment Variables), preencha e faça o redeploy:</p>
           <pre className="connections-code">{SMTP_EXAMPLE}</pre>
-          <p>Porta 587 usa <code>SMTP_SECURE=false</code>; porta 465 usa <code>true</code>. No Gmail ou Google Workspace use uma &quot;senha de app&quot;. Depois volte aqui e clique em &quot;Enviar teste&quot;.</p>
+          <p>Exemplo para a <strong>Brevo</strong>: o usuário é o &quot;Login SMTP&quot; e a senha é a &quot;Chave SMTP&quot; (Brevo → SMTP e API). O e-mail de <code>MAIL_FROM</code> precisa estar validado na Brevo, com o domínio verificado. Porta 587 usa <code>SMTP_SECURE=false</code>; porta 465 usa <code>true</code>. Depois volte aqui e clique em &quot;Enviar teste&quot;.</p>
         </div>}
       </Panel>
 

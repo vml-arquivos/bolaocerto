@@ -94,7 +94,7 @@ export class StatisticsService {
       where: { concurso: { modalidade } }, orderBy: { concurso: { numeroConcurso: 'desc' } }, take: 10,
       select: { numerosSorteados: true, numerosSegundoSorteio: true, listaRateioPremio: true, concurso: { select: { numeroConcurso: true, dataSorteio: true, acumulado: true } } },
     });
-    const next = await this.prisma.concurso.findFirst({ where: { modalidade, status: 'aberto' }, orderBy: { numeroConcurso: 'asc' }, select: { numeroConcurso: true, dataSorteio: true, valorEstimadoPremio: true, acumulado: true } });
+    const next = await this.prisma.concurso.findFirst({ where: { modalidade, status: 'aberto', numeroDefinido: true }, orderBy: { numeroConcurso: 'asc' }, select: { numeroConcurso: true, dataSorteio: true, valorEstimadoPremio: true, acumulado: true } });
     return {
       ...stats,
       concursosNaBase: data.contests,
@@ -125,6 +125,45 @@ export class StatisticsService {
     const analysis = analyzeGame(rule, data.draws, dto.numeros);
     if (!analysis.valid) throw new BadRequestException(analysis.errors.join(' '));
     return { modalidade, nome: rule.nome, ...analysis };
+  }
+
+  /**
+   * Gera de 1 a 100 jogos distintos (a sugestão normal entrega até 20 por vez). Usa o mesmo gerador da sugestão:
+   * "equilibrado" evita padrões populares; "aleatorio" é sorteio puro. Nenhum jogo é mais provável que outro.
+   */
+  async generateMany(modalidade: string, options: { quantidade: number; dezenas?: number; estrategia?: SuggestQueryDto['estrategia']; fixos?: string; excluir?: string }) {
+    const rule = this.ruleOrThrow(modalidade);
+    const size = options.dezenas ?? rule.betMin;
+    if (size < rule.betMin || size > rule.betMax) throw new BadRequestException(`${rule.nome}: o jogo tem de ${rule.betMin} a ${rule.betMax} dezenas.`);
+    const fixed = parseNumberList(options.fixos);
+    if (fixed.length > size) throw new BadRequestException('Há mais números fixos do que o tamanho do jogo.');
+    if (fixed.some((value) => value < rule.min || value > rule.max)) throw new BadRequestException(`Os números fixos devem estar entre ${rule.min} e ${rule.max}.`);
+    const exclude = parseNumberList(options.excluir);
+    const data = await this.dataset(rule);
+    const wanted = Math.min(Math.max(Math.trunc(options.quantidade), 1), 100);
+    // Quantas combinações diferentes existem com essas regras? Se não houver o suficiente, avisa na hora.
+    const free = (rule.max - rule.min + 1) - new Set([...exclude.filter((value) => !fixed.includes(value) && value >= rule.min && value <= rule.max)]).size - new Set(fixed).size;
+    const pick = size - new Set(fixed).size;
+    let combos = 1;
+    for (let i = 1; i <= pick && combos < 1000; i += 1) combos = (combos * (free - i + 1)) / i;
+    if (pick > free || Math.round(combos) < wanted) throw new BadRequestException('Não é possível gerar tantos jogos diferentes com essas regras. Reduza a quantidade ou os números fixos/excluídos.');
+    const seen = new Set<string>();
+    const games: Array<{ numbers: number[]; reasons?: string[] }> = [];
+    let strategy = options.estrategia ?? 'equilibrado';
+    let attempts = 0;
+    while (games.length < wanted && attempts < 40) {
+      attempts += 1;
+      const batch = suggestGames(rule, data.draws, { games: Math.min(20, wanted - games.length + 2), size, strategy, fixed, exclude });
+      strategy = batch.strategy;
+      for (const game of batch.games) {
+        const key = [...game.numbers].sort((a, b) => a - b).join('-');
+        if (seen.has(key) || games.length >= wanted) continue;
+        seen.add(key);
+        games.push({ numbers: [...game.numbers].sort((a, b) => a - b), reasons: (game as { reasons?: string[] }).reasons });
+      }
+    }
+    if (games.length < wanted) throw new BadRequestException('Não foi possível gerar tantos jogos diferentes com essas regras. Reduza a quantidade ou os números fixos/excluídos.');
+    return { modalidade, nome: rule.nome, estrategia: strategy, dezenas: size, baseHistorica: data.draws.length, jogos: games, aviso: STATS_DISCLAIMER };
   }
 
   async suggest(modalidade: string, query: SuggestQueryDto) {

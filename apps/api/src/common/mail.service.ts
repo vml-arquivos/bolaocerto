@@ -51,6 +51,15 @@ export class MailService {
     return this.transporter;
   }
 
+  /** Nome do serviço de e-mail pelo endereço do servidor (só para explicar melhor os erros e preencher o painel). */
+  provider(): 'Brevo' | 'Gmail' | 'Outro' | null {
+    const host = (this.config.get<string>('SMTP_HOST') ?? '').trim().toLowerCase();
+    if (!host) return null;
+    if (host.includes('brevo.com') || host.includes('sendinblue.com')) return 'Brevo';
+    if (host.includes('gmail.com') || host.includes('google.com')) return 'Gmail';
+    return 'Outro';
+  }
+
   /** Dados do SMTP para o painel — nunca a senha. */
   describe() {
     const user = this.config.get<string>('SMTP_USER')?.trim() ?? '';
@@ -59,6 +68,7 @@ export class MailService {
     const masked = user ? (user.includes('@') ? `${user.slice(0, 2)}***${user.slice(user.indexOf('@'))}` : `${user.slice(0, 2)}***`) : null;
     return {
       configurado: this.isConfigured(),
+      provedor: this.provider(),
       servidor: this.config.get<string>('SMTP_HOST')?.trim() || null,
       porta: port,
       seguro: secureRaw !== undefined && secureRaw !== '' ? secureRaw === 'true' : port === 465,
@@ -73,6 +83,10 @@ export class MailService {
   explainError(error: unknown): string {
     const code = (error as { code?: string; responseCode?: number })?.code ?? '';
     const responseCode = (error as { responseCode?: number })?.responseCode ?? 0;
+    const brevo = this.provider() === 'Brevo';
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    if (brevo && (code === 'EAUTH' || responseCode === 535 || responseCode === 534)) return 'A Brevo recusou o login. Em SMTP_USER vai o "Login SMTP" (parece com 9a1b2c@smtp-brevo.com) e em SMTP_PASS vai a "Chave SMTP" — não é a senha da conta nem a chave de API. Gere uma em Brevo → SMTP e API → SMTP.';
+    if (brevo && (message.includes('sender') || message.includes('not valid') || message.includes('not yet validated') || responseCode === 554)) return 'A Brevo recusou o remetente. O endereço de MAIL_FROM precisa estar validado na Brevo (Remetentes, domínios e IPs) e o domínio com os registros DKIM e SPF verificados.';
     if (code === 'EAUTH' || responseCode === 535 || responseCode === 534) return 'O servidor recusou o usuário ou a senha do e-mail. Confira SMTP_USER e SMTP_PASS (em Gmail/Google Workspace use uma "senha de app").';
     if (code === 'ENOTFOUND') return 'Não encontrei o servidor de e-mail. Confira o endereço em SMTP_HOST.';
     if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ESOCKET' || code === 'ECONNECTION') return 'Não consegui conectar ao servidor de e-mail. Confira SMTP_HOST, SMTP_PORT e SMTP_SECURE (587 costuma ser "false", 465 costuma ser "true") e se o servidor libera a porta.';

@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { PublicPool, modalityNames, shortDate } from '../lib/domain';
+import { concursoNo, festaPrefix } from '../lib/contest';
 export function PoolHistory({ pools }: { pools: PublicPool[] }) {
   if (!pools.length) return <p className="muted">Os bolões encerrados e os resultados oficiais aparecerão aqui.</p>;
   return <div className="pool-grid">{pools.map(pool => {
     const numbers = pool.resultado?.numerosSorteados ?? pool.transparencia?.apuracao?.sorteados ?? [];
     const second = pool.resultado?.numerosSegundoSorteio ?? pool.transparencia?.apuracao?.segundoSorteio ?? [];
     return <article key={pool.id} className="pool-card"><div className="pool-card-body">
-      <span className="overline">{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Bolão'} · concurso {pool.concurso?.numeroConcurso}</span>
+      <span className="overline">{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Bolão'} · {festaPrefix(pool.concurso)}concurso {concursoNo(pool.concurso?.numeroConcurso)}</span>
       <h3>{pool.grupo?.nome ?? 'Bolão BL'}</h3><p className="muted">Sorteio: {shortDate(pool.concurso?.dataSorteio)}</p>
       <strong>{numbers.length ? 'Números sorteados' : 'Vendas encerradas · aguardando resultado oficial'}</strong>
       {numbers.length > 0 && <div className="result-balls" aria-label="Números sorteados">{numbers.map((n,i) => <span className="number-ball" key={i}>{String(n).padStart(2,'0')}</span>)}</div>}

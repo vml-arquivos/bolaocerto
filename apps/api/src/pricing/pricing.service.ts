@@ -10,6 +10,21 @@ export class PricingService {
     const now = new Date();
     return this.prisma.precoLoteria.findMany({ where: { vigenteDesde: { lte: now }, OR: [{ vigenteAte: null }, { vigenteAte: { gt: now } }] }, orderBy: [{ modalidade: 'asc' }, { chave: 'asc' }] });
   }
+  /** Quanto custa registrar cada jogo na CAIXA (tabela vigente). Não depende de bolão nem de cotas. */
+  async priceGames(modalidade: string, games: GameSelection[], tx: Prisma.TransactionClient = this.prisma) {
+    try {
+      if (!games.length || games.length > 100) throw new Error('Informe de 1 a 100 jogos.');
+      const keys = games.map((game) => selectionKey(modalidade, game));
+      const now = new Date();
+      const prices = await tx.precoLoteria.findMany({ where: { modalidade, chave: { in: [...new Set(keys)] }, vigenteDesde: { lte: now }, OR: [{ vigenteAte: null }, { vigenteAte: { gt: now } }] } });
+      const rows = games.map((game, index) => {
+        const matches = prices.filter((price) => price.chave === keys[index]);
+        if (matches.length !== 1) throw new Error(`Preço vigente ausente ou ambíguo: ${modalidade}/${keys[index]}.`);
+        return { ordem: index + 1, numeros: game.numeros, quantidadeDezenas: game.numeros.length, custoCentavos: matches[0]!.valorCentavos, chave: keys[index]! };
+      });
+      return { jogos: rows, custoTotalCentavos: rows.reduce((sum, row) => sum + row.custoCentavos, 0) };
+    } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Cotação inválida.'); }
+  }
   async quote(modalidade: string, games: GameSelection[], shares: number, feePct: number, tx: Prisma.TransactionClient = this.prisma) {
     try {
       if (!games.length || games.length > 100) throw new Error('Informe de 1 a 100 jogos.');

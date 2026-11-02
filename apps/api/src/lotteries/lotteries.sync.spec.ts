@@ -11,7 +11,7 @@ const payload = (n: number) => JSON.stringify({
 function build(env: Record<string, string> = {}) {
   const upserts: Array<{ modalidade: string; numero: number; fonte: string }> = [];
   const tx = {
-    concurso: { upsert: jest.fn(async (args: { where: { modalidade_numeroConcurso: { modalidade: string; numeroConcurso: number } }; create: { fonteSincronizacao: string } }) => { upserts.push({ modalidade: args.where.modalidade_numeroConcurso.modalidade, numero: args.where.modalidade_numeroConcurso.numeroConcurso, fonte: args.create.fonteSincronizacao }); return { id: 'c1' }; }) },
+    concurso: { findMany: jest.fn(async () => []), upsert: jest.fn(async (args: { where: { modalidade_numeroConcurso: { modalidade: string; numeroConcurso: number } }; create: { fonteSincronizacao: string } }) => { upserts.push({ modalidade: args.where.modalidade_numeroConcurso.modalidade, numero: args.where.modalidade_numeroConcurso.numeroConcurso, fonte: args.create.fonteSincronizacao }); return { id: 'c1' }; }) },
     resultado: { upsert: jest.fn(async () => ({})) },
   };
   const prisma = {

@@ -1,11 +1,17 @@
 import { PricingService } from '../pricing/pricing.service';
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { IsString, Length } from 'class-validator';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { CreatePoolDto, UpdatePoolDto } from './pools.dto';
+import { CreatePoolDto, GenerateGamesDto, UpdatePoolDto } from './pools.dto';
 import { PoolsService } from './pools.service';
+
+class RejectPoolDto {
+  @IsString() @Length(3, 300)
+  motivo!: string;
+}
 
 @Controller()
 export class PoolsController {
@@ -19,6 +25,12 @@ export class PoolsController {
   @Roles('admin', 'afiliado')
   async quote(@Body() dto: CreatePoolDto) { return this.pools.quote(dto); }
 
+  /** Gera de 1 a 100 jogos e calcula o custo do registro na CAIXA. */
+  @Post('admin/boloes/gerar-jogos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'afiliado')
+  generateGames(@Body() dto: GenerateGamesDto) { return this.pools.generateGames(dto); }
+
   @Get('boloes')
   list() {
     return this.pools.listPublic();
@@ -29,8 +41,32 @@ export class PoolsController {
     return this.pools.getGroupBySlug(slug);
   }
 
+  @Get('grupos/:slug/minha-participacao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('cotista', 'afiliado', 'admin', 'operacao')
+  groupMembership(@Param('slug') slug: string, @CurrentUser() user: AuthUser) { return this.pools.groupMembership(slug, user.id); }
+
+  @Post('grupos/:slug/entrar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('cotista', 'afiliado', 'admin', 'operacao')
+  joinGroup(@Param('slug') slug: string, @CurrentUser() user: AuthUser) { return this.pools.joinGroup(slug, user); }
+
+  @Delete('grupos/:slug/sair')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('cotista', 'afiliado', 'admin', 'operacao')
+  leaveGroup(@Param('slug') slug: string, @CurrentUser() user: AuthUser) { return this.pools.leaveGroup(slug, user); }
+
+  /** Admin devolve ao afiliado um bolão que pediu aprovação, com o motivo. */
+  @Post('admin/boloes/:id/recusar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  rejectApproval(@Param('id') id: string, @Body() dto: RejectPoolDto, @CurrentUser() user: AuthUser) { return this.pools.rejectApproval(id, dto.motivo.trim(), user); }
+
   @Get('boloes/disponiveis')
   available() { return this.pools.listAvailable(); }
+
+  @Get('boloes/sorteados')
+  drawn() { return this.pools.listDrawn(); }
 
   @Get('boloes/historico')
   history() { return this.pools.listHistory(); }

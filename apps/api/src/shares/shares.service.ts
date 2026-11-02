@@ -26,11 +26,11 @@ export class SharesService {
     const expirationMinutes = Number(process.env.SHARE_RESERVATION_MINUTES ?? 15);
     const expiresAt = new Date(Date.now() + expirationMinutes * 60_000);
     const affiliate = dto.codigoAfiliado
-      ? await this.prisma.afiliado.findFirst({ where: { codigoAfiliado: dto.codigoAfiliado.trim(), statusAprovacao: 'aprovado' }, select: { id: true } })
+      ? await this.prisma.afiliado.findFirst({ where: { codigoAfiliado: dto.codigoAfiliado.trim(), statusAprovacao: 'aprovado' }, select: { id: true, usuarioId: true } })
       : null;
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId}::uuid FOR UPDATE`;
-      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } } } });
+      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } }, grupo: { select: { afiliado: { select: { id: true, usuarioId: true, statusAprovacao: true } } } } } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
       if (pool.comprovanteAntesVenda && !await hasSaleProof(tx, pool.id)) throw new ConflictException('Comprovante oficial ainda indisponível para esta venda.');
       const contestDeadline = await tx.concurso.findUniqueOrThrow({ where: { id: pool.concursoId }, select: { cutoffAt: true, status: true, resultado: { select: { id: true } } } });
@@ -45,6 +45,10 @@ export class SharesService {
           await this.audit.record(tx, { entidade: 'bolao', entidadeId: pool.id, evento: 'bolao.liberado_por_premio', payloadDepois: { gatilho: gate.gatilho, premioAtual: gate.premioAtual } });
         }
       }
+      // Comissão: o afiliado dono do grupo do bolão é o vendedor; senão vale o código de indicação. Nunca comissiona a própria compra.
+      const groupAffiliate = pool.grupo?.afiliado && pool.grupo.afiliado.statusAprovacao === 'aprovado' ? pool.grupo.afiliado : null;
+      const seller = groupAffiliate ?? affiliate;
+      const referenceAffiliateId = seller && seller.usuarioId !== user.id ? seller.id : undefined;
       const share = await tx.cota.create({
         data: {
           bolaoId: pool.id,
@@ -52,7 +56,7 @@ export class SharesService {
           titularCpf,
           titularNome: dto.titularNome.trim(),
           quantidade: dto.quantidade,
-          afiliadoReferenciaId: affiliate?.id,
+          afiliadoReferenciaId: referenceAffiliateId,
           status: StatusCota.reservada,
           expiraReservaEm: new Date(Math.min(expiresAt.getTime(), contestDeadline.cutoffAt.getTime())),
           mandato: { create: { usuarioId: user.id, textoHash: document.hash, textoSnapshot: document.texto, versao: document.versao, pedidoSnapshot: { bolaoId: pool.id, concursoId: pool.concursoId, quantidade: dto.quantidade, valorCota: pool.valorCota.toString(), taxaAdministracaoPct: pool.taxaAdministracaoPct.toString(), modeloOperacional: pool.modeloOperacional, numerosApostados: pool.numerosApostados, jogos: (pool.jogos ?? []).map(j => ({ ordem: j.ordem, numeros: j.numeros, custo: j.custo.toString() })), precificacao: pool.precificacao }, ipAceite: requestMeta.ip, userAgent: requestMeta.userAgent } },
@@ -61,7 +65,7 @@ export class SharesService {
       });
       const updatedPool = await tx.bolao.update({ where: { id: pool.id }, data: { cotasVendidas: { increment: dto.quantidade } } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: pool.id, evento: 'cota.reservada', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: updatedPool as unknown as Prisma.InputJsonValue });
-      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'mandato.aceito', atorId: user.id, payloadDepois: { cotaId: share.id, termoHash: share.mandato?.textoHash, afiliadoId: affiliate?.id ?? null } });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'mandato.aceito', atorId: user.id, payloadDepois: { cotaId: share.id, termoHash: share.mandato?.textoHash, afiliadoId: referenceAffiliateId ?? null } });
       return share;
     });
     return { id: result.id, bolaoId: result.bolaoId, status: result.status, quantidade: result.quantidade, expiraReservaEm: result.expiraReservaEm };

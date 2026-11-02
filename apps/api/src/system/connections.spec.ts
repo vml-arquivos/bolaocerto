@@ -37,3 +37,21 @@ describe('ConnectionsService', () => {
     expect(second.detalhe).toMatch(/Aguarde/);
   });
 });
+
+describe('MailService (Brevo)', () => {
+  const { MailService } = require('../common/mail.service');
+  const make = (env: Record<string, string>) => new MailService({ get: (key: string, def?: string) => env[key] ?? def } as never);
+  it('reconhece a Brevo pelo servidor e explica o erro de login com as palavras da Brevo', () => {
+    const mail = make({ SMTP_HOST: 'smtp-relay.brevo.com', SMTP_USER: 'abc123@smtp-brevo.com', SMTP_PASS: 'x' });
+    expect(mail.provider()).toBe('Brevo');
+    expect(mail.describe()).toMatchObject({ provedor: 'Brevo', servidor: 'smtp-relay.brevo.com', porta: 587, seguro: false, temSenha: true });
+    expect(mail.describe().usuario).toBe('ab***@smtp-brevo.com');
+    expect(mail.explainError({ code: 'EAUTH', responseCode: 535 })).toMatch(/Chave SMTP/);
+    expect(mail.explainError({ responseCode: 554, message: 'Sender is not valid' })).toMatch(/validado na Brevo/);
+  });
+  it('outros servidores mantêm a mensagem genérica; sem servidor não há provedor', () => {
+    expect(make({ SMTP_HOST: 'smtp.gmail.com' }).provider()).toBe('Gmail');
+    expect(make({ SMTP_HOST: 'mail.exemplo.com' }).explainError({ code: 'EAUTH' })).toMatch(/usuário ou a senha/);
+    expect(make({}).provider()).toBeNull();
+  });
+});
