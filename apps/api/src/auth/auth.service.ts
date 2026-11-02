@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { AuditService } from '../common/audit.service';
+import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
 import { RegisterDto, LoginDto } from './auth.dto';
 import { assertAdult, AuthUser, isValidCpf, normalizeCpf } from './auth.utils';
@@ -19,6 +20,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     @Optional() private readonly audit?: AuditService,
+    @Optional() private readonly mail?: MailService,
   ) {}
 
   private dummyHash?: Promise<string>;
@@ -82,6 +84,17 @@ export class AuthService {
       }
       return created;
     });
+    // Boas-vindas por e-mail (não atrapalha o cadastro se o envio falhar).
+    if (this.mail?.isConfigured()) {
+      const first = dto.nome.trim().split(' ')[0] ?? '';
+      const url = this.mail.publicUrl();
+      void this.mail.send({
+        to: user.email,
+        subject: 'Bem-vindo ao BL — Bolão Livre',
+        text: `Olá, ${first}!\n\nSua conta no BL — Bolão Livre foi criada. Você já pode escolher um bolão e reservar suas cotas.\n\n${url}\n\nSe não foi você, responda este e-mail.`,
+        html: wrapEmailHtml('Sua conta está pronta', `<p>Olá, ${escapeHtml(first)}!</p><p>Sua conta no BL — Bolão Livre foi criada. Você já pode escolher um bolão e reservar suas cotas.</p><p style="color:#646b86">Se não foi você, responda este e-mail.</p>`, { label: 'Ver bolões', url }),
+      }).catch(() => undefined);
+    }
     return this.issueTokens({ ...user, tokenVersion: 0 });
   }
 

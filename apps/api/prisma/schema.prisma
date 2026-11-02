@@ -131,6 +131,7 @@ model Usuario {
   mandatos              Mandato[]
   aceitesLegais         AceiteLegal[]
   notificacoes          Notificacao[]
+  pushInscricoes        PushInscricao[]
   auditorias            AuditoriaEvento[]
   documentosRevisados   KycDocumento[] @relation("revisor_kyc")
   boloesEditados        Bolao[]       @relation("editor_bolao")
@@ -536,6 +537,7 @@ model Notificacao {
   leaseToken String? @map("lease_token") @db.Uuid
   ultimoErro String? @map("ultimo_erro")
   lidoEm     DateTime? @map("lido_em")
+  pushEnviadoEm DateTime? @map("push_enviado_em")
   criadoEm   DateTime @default(now()) @map("criado_em")
   usuario    Usuario @relation(fields: [usuarioId], references: [id])
 
@@ -682,4 +684,48 @@ model GrupoMembro {
   @@unique([grupoId, usuarioId])
   @@index([usuarioId])
   @@map("grupo_membros")
+}
+
+/// Aparelho/navegador que aceitou receber avisos (Web Push / PWA).
+model PushInscricao {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId  String    @map("usuario_id") @db.Uuid
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  agente     String?   @db.VarChar(200)
+  falhas     Int       @default(0)
+  criadoEm   DateTime  @default(now()) @map("criado_em")
+  ultimoEnvioEm DateTime? @map("ultimo_envio_em")
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("push_inscricoes")
+}
+
+/// Mensagem enviada pela equipe a um grupo de clientes.
+model Comunicado {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  titulo     String   @db.VarChar(120)
+  mensagem   String   @db.VarChar(600)
+  link       String?  @db.VarChar(200)
+  publico    String   @db.VarChar(30)
+  bolaoId    String?  @map("bolao_id") @db.Uuid
+  grupoId    String?  @map("grupo_id") @db.Uuid
+  enviarEmail Boolean @default(false) @map("enviar_email")
+  totalDestinatarios Int @map("total_destinatarios")
+  criadoPor  String   @map("criado_por") @db.Uuid
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  @@index([criadoEm])
+  @@map("comunicados")
+}
+
+/// Pequenas configurações geradas pelo sistema (ex.: chaves VAPID do push).
+model ConfiguracaoSistema {
+  chave        String   @id @db.VarChar(60)
+  valor        String
+  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em")
+
+  @@map("configuracoes_sistema")
 }

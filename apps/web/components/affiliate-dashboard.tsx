@@ -52,6 +52,7 @@ export function AffiliateDashboard() {
   const [editingPool, setEditingPool] = useState<Pool | null>(null);
   const [tab, setTab] = useState<'visao' | 'grupos' | 'boloes' | 'comissoes'>('visao');
   const [inviteGroupId, setInviteGroupId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
   const [groupForm, setGroupForm] = useState({ nome: '', slug: '', descricao: '' });
 
   async function refresh() {
@@ -72,7 +73,14 @@ export function AffiliateDashboard() {
   async function mutate(path: string, options: RequestInit, success: string) { setBusy(true); setNotice(''); try { await load(path, options); setNotice(success); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao concluir.'); } finally { setBusy(false); } }
 
   async function createInvite() {
-    await mutate('/api/v1/afiliados/me/convites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tipo: 'usuario', ...(inviteGroupId ? { grupoId: inviteGroupId } : {}) }) }, inviteGroupId ? 'Convite do grupo criado. Quem entrar por ele passa a fazer parte do grupo.' : 'Convite criado.');
+    setBusy(true); setNotice(''); setError('');
+    try {
+      const invite = await load('/api/v1/afiliados/me/convites', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tipo: 'usuario', ...(inviteGroupId ? { grupoId: inviteGroupId } : {}), ...(inviteEmail.trim() ? { emailDestino: inviteEmail.trim() } : {}) }) });
+      setNotice(invite.emailEnviado ? `Convite enviado por e-mail para ${invite.emailDestino}.` : inviteEmail.trim() ? 'Convite criado, mas o e-mail não saiu. Copie o link em "Convites recentes" e envie você mesmo.' : inviteGroupId ? 'Convite do grupo criado. Quem entrar por ele passa a fazer parte do grupo.' : 'Convite criado.');
+      setInviteEmail('');
+      await refresh();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Falha ao criar convite.'); }
+    finally { setBusy(false); }
   }
   async function showMembers(groupId: string) {
     if (members?.groupId === groupId) { setMembers(null); return; }
@@ -91,7 +99,7 @@ export function AffiliateDashboard() {
 
     {tab === 'visao' && <>
       <section className="affiliate-link-card"><div><span className="overline">Link principal de convite</span><strong>{referralUrl}</strong><small>Quem se cadastra por este link fica ligado a você. Sua comissão é {data.comissaoPadraoPct ?? workspace.afiliado.comissaoPadraoPct ?? 0}% da taxa de administração de cada cota paga.</small></div><div className="affiliate-card-actions"><button className="button button-primary" onClick={() => copyText(referralUrl, 'principal')}>{copied === 'principal' ? 'Link copiado' : 'Copiar link'}</button><button className="button button-secondary" disabled={busy} onClick={() => void createInvite()}>Gerar convite</button></div></section>
-      <div className="affiliate-invite-tools"><label><span>Convidar para o grupo</span><select value={inviteGroupId} onChange={(event) => setInviteGroupId(event.target.value)}><option value="">Sem grupo (só vínculo comigo)</option>{workspace.grupos.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label><span className="muted">Convite com grupo coloca a pessoa direto no grupo quando ela se cadastra. O tamanho do grupo limita as cotas dos seus bolões.</span></div>
+      <div className="affiliate-invite-tools"><label><span>Convidar para o grupo</span><select value={inviteGroupId} onChange={(event) => setInviteGroupId(event.target.value)}><option value="">Sem grupo (só vínculo comigo)</option>{workspace.grupos.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label><label><span>Mandar por e-mail (opcional)</span><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="email@da-pessoa.com" /></label><span className="muted">Convite com grupo coloca a pessoa direto no grupo quando ela se cadastra. O tamanho do grupo limita as cotas dos seus bolões.</span></div>
       <div className="affiliate-kpis"><article><span>Cadastros atribuídos</span><strong>{data.cadastrosAtribuidos ?? 0}</strong></article><article><span>Pessoas nos grupos</span><strong>{workspace.grupos.reduce((sum, group) => sum + (group.totalMembros ?? 0), 0)}</strong></article><article><span>Grupos próprios</span><strong>{workspace.grupos.length}</strong></article><article><span>Bolões próprios</span><strong>{ownPools.length}</strong></article><article><span>Volume confirmado</span><strong>{money(data.volume)}</strong></article><article><span>Comissão pendente</span><strong>{money(data.comissaoPendente)}</strong></article></div>
       <div className="affiliate-workspace-grid"><section className="affiliate-table-card"><div className="affiliate-card-heading"><div><h2>Atalhos da operação</h2><p>Comece pela ação que precisa executar.</p></div></div><div className="affiliate-action-grid"><button onClick={() => setTab('grupos')}><strong>Criar grupo</strong><small>Organize e convide sua comunidade.</small></button><button onClick={() => setTab('boloes')}><strong>Criar bolão</strong><small>Escolha concurso e cotas.</small></button><button onClick={() => setTab('comissoes')}><strong>Conferir comissões</strong><small>Base, percentual e status.</small></button></div></section><section className="affiliate-table-card"><div className="affiliate-card-heading"><div><h2>Convites recentes</h2><p>{workspace.convites.length} convites gerados no workspace.</p></div></div>{workspace.convites.length ? <div className="affiliate-invite-list">{workspace.convites.slice(0, 5).map((invite) => <div key={invite.id}><div><strong>{invite.grupoId ? `Grupo ${workspace.grupos.find((g) => g.id === invite.grupoId)?.nome ?? ''}` : 'Convite'} · {invite.codigo}</strong><small>Expira em {date(invite.expiraEm)} · {statusText(invite.status)}</small></div><button className="text-link" onClick={() => copyText(`${window.location.origin}${invite.caminho}`, invite.id)}>{copied === invite.id ? 'Copiado' : 'Copiar'}</button></div>)}</div> : <div className="affiliate-empty"><strong>Nenhum convite gerado ainda.</strong><p>Crie um convite para trazer pessoas ao seu grupo.</p></div>}</section></div>
     </>}

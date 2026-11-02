@@ -63,6 +63,11 @@ export function AttachmentsPanel({ poolId, shares = [], forceShareId, defaultTyp
     try { await api(`/api/v1/operacao/anexos/${file.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visivelParticipantes: !file.visivelParticipantes }) }); await load(); }
     catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível alterar.'); }
   }
+  async function resend(file: Rec) {
+    if (!window.confirm(`Reenviar "${file.nome}" para ${file.cotaId ? 'o dono desta cota' : 'todos os cotistas que já pagaram'}? Eles recebem aviso, notificação no celular e e-mail com o arquivo.`)) return;
+    try { const result = await api(`/api/v1/operacao/anexos/${file.id}/reenviar`, { method: 'POST' }); notify('success', `Comprovante reenviado para ${result.destinatarios} ${result.destinatarios === 1 ? 'pessoa' : 'pessoas'}. O e-mail sai em poucos minutos.`); }
+    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível reenviar.'); }
+  }
   async function remove(file: Rec) {
     if (!window.confirm(`Remover "${file.nome}"? Ele deixa de aparecer, mas fica guardado no histórico.`)) return;
     try { await api(`/api/v1/operacao/anexos/${file.id}`, { method: 'DELETE' }); notify('success', 'Arquivo removido.'); await load(); }
@@ -103,6 +108,7 @@ export function AttachmentsPanel({ poolId, shares = [], forceShareId, defaultTyp
         <div className="attach-actions">
           <OpenFileButton id={file.id} className="admin-button admin-button-small" />
           <button type="button" className={`admin-button admin-button-small ${file.visivelParticipantes ? '' : 'admin-button-ghost'}`} onClick={() => void toggle(file)} title="Quem participa do bolão pode ver?">{file.visivelParticipantes ? 'Visível' : 'Oculto'}</button>
+          {file.visivelParticipantes && <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => void resend(file)} title="Manda o aviso, o push e o e-mail com o arquivo anexado para os cotistas">Reenviar aos cotistas</button>}
           <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => void remove(file)}>Remover</button>
         </div>
       </li>)}

@@ -1,6 +1,6 @@
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
@@ -9,6 +9,7 @@ import { isValidNewPassword } from '../auth/password-policy';
 import { hasProofFile } from '../attachments/proof';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
+import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import {
   AdminListQueryDto,
   ApproveAffiliateDto,
@@ -31,7 +32,7 @@ import {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly mail?: MailService) {}
 
   private pagination(query?: AdminListQueryDto) {
     const page = Math.max(1, Number(query?.page ?? 1));
@@ -354,7 +355,19 @@ export class AdminService {
       await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, grupoId: created.grupoId, expiraEm: created.expiraEm } });
       return created;
     });
-    return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, grupoId: invite.grupoId, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}` };
+    // Convite com e-mail: já sai por e-mail, com o link (o link também continua disponível para copiar).
+    let emailEnviado = false;
+    if (invite.emailDestino && this.mail?.isConfigured()) {
+      const link = `${this.mail.publicUrl()}/r/${invite.codigo}`;
+      const who = actor.papel === 'afiliado' ? 'Um vendedor parceiro do BL' : 'A equipe do BL';
+      emailEnviado = await this.mail.send({
+        to: invite.emailDestino,
+        subject: 'Você foi convidado para o BL — Bolão Livre',
+        text: `Olá!\n\n${who} convidou você para criar sua conta no BL — Bolão Livre e participar de bolões.\n\nCrie sua conta por este link (vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}):\n${link}\n\nPlataforma independente, não oficial da CAIXA. Jogue com responsabilidade (18+).`,
+        html: wrapEmailHtml('Você foi convidado', `<p>${escapeHtml(who)} convidou você para criar sua conta no BL — Bolão Livre e participar de bolões.</p><p style="color:#646b86">O convite vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}.</p>`, { label: 'Criar minha conta', url: link }),
+      }).catch(() => false);
+    }
+    return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, grupoId: invite.grupoId, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}`, emailDestino: invite.emailDestino, emailEnviado };
   }
 
   async listInvites(query: AdminListQueryDto = {}, actor: AuthUser) {

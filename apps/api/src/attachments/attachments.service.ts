@@ -54,7 +54,7 @@ export class AttachmentsService {
         });
         await this.audit.record(tx, { entidade: 'bolao', entidadeId: poolId, evento: 'anexo.enviado', atorId: user.id, payloadDepois: { anexoId: row.id, tipo: row.tipo, nome: row.nomeOriginal, tamanho: row.tamanho, sha256, cotaId: row.cotaId } as unknown as Prisma.InputJsonValue });
         if (buyerId && row.visivelParticipantes) {
-          await this.notifications.notify(buyerId, 'cota.recibo', { titulo: 'Recibo da sua cota disponível', mensagem: 'O recibo da sua cota já está na sua conta. Guarde-o: é a sua prova de participação.', link: '/minha-conta' }, tx);
+          await this.notifications.notify(buyerId, 'cota.recibo', { titulo: 'Recibo da sua cota disponível', mensagem: 'O recibo da sua cota já está na sua conta e vai anexado neste e-mail. Guarde-o: é a sua prova de participação.', anexoId: row.id, cotaId: row.cotaId, bolaoId: poolId, link: '/minha-conta' }, tx);
         }
         if (!row.cotaId && row.visivelParticipantes) await this.notifyParticipants(tx, row.bolaoId, row.id);
         return row;
@@ -66,9 +66,29 @@ export class AttachmentsService {
     }
   }
 
-  private async notifyParticipants(tx: Prisma.TransactionClient, poolId: string, attachmentId: string, shareId?: string | null) {
+  /** Reenvia aos participantes (aviso, celular e e-mail com o arquivo) um comprovante que já está no bolão. */
+  async resend(id: string, user: AuthUser) {
+    const file = await this.prisma.anexo.findFirst({ where: { id, removidoEm: null }, select: { id: true, bolaoId: true, cotaId: true, visivelParticipantes: true, cota: { select: { compradorId: true, status: true } } } });
+    if (!file) throw new NotFoundException('Arquivo não encontrado.');
+    if (!file.visivelParticipantes) throw new ConflictException('Este arquivo está oculto dos participantes. Torne-o visível antes de reenviar.');
+    let total = 0;
+    await this.prisma.$transaction(async (tx) => {
+      if (file.cotaId && file.cota) {
+        if (file.cota.status === 'cancelada' || file.cota.status === 'estornada') throw new ConflictException('Esta cota foi cancelada.');
+        await this.notifications.notify(file.cota.compradorId, 'cota.recibo', { titulo: 'Recibo da sua cota disponível', mensagem: 'O recibo da sua cota já está na sua conta e vai anexado neste e-mail. Guarde-o: é a sua prova de participação.', anexoId: file.id, cotaId: file.cotaId, bolaoId: file.bolaoId, link: '/minha-conta' }, tx);
+        total = 1;
+      } else {
+        total = await this.notifyParticipants(tx, file.bolaoId, file.id);
+      }
+      await this.audit.record(tx, { entidade: 'bolao', entidadeId: file.bolaoId, evento: 'anexo.reenviado', atorId: user.id, payloadDepois: { anexoId: file.id, destinatarios: total } as unknown as Prisma.InputJsonValue });
+    });
+    return { ok: true, destinatarios: total };
+  }
+
+  private async notifyParticipants(tx: Prisma.TransactionClient, poolId: string, attachmentId: string, shareId?: string | null): Promise<number> {
     const buyers = await tx.cota.findMany({ where: { bolaoId: poolId, ...(shareId ? { id: shareId } : {}), status: { in: ['paga', 'registrada', 'apurada', 'premiada'] } }, select: { compradorId: true }, distinct: ['compradorId'] });
-    for (const buyer of buyers) await this.notifications.notify(buyer.compradorId, 'cota.recibo', { titulo: 'Comprovante disponível', mensagem: 'Um comprovante da sua participação foi disponibilizado. Entre na sua conta para consultar e baixar o arquivo.', bolaoId: poolId, anexoId: attachmentId, link: '/minha-conta' }, tx);
+    for (const buyer of buyers) await this.notifications.notify(buyer.compradorId, 'cota.recibo', { titulo: 'Comprovante disponível', mensagem: 'O comprovante da sua participação foi disponibilizado e vai anexado neste e-mail. Ele também fica guardado na sua conta.', bolaoId: poolId, anexoId: attachmentId, link: '/minha-conta' }, tx);
+    return buyers.length;
   }
 
   async listForPool(poolId: string) {

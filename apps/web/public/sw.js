@@ -1,6 +1,6 @@
 /* BL client app. Never cache navigation, account, payment, contract or API responses.
  * A new worker waits for consent; no automatic reload during checkout. */
-const CACHE = 'bl-static-v2';
+const CACHE = 'bl-static-v3';
 const OFFLINE_URL = '/offline.html';
 const PRECACHE = [OFFLINE_URL, '/brand/bl-icon-192.png', '/brand/bl-icon-512.png'];
 self.addEventListener('install', event => {
@@ -35,4 +35,28 @@ self.addEventListener('fetch', event => {
       return response;
     })());
   }
+});
+
+/* Avisos do BL (Web Push). Mostra a mensagem mesmo com o site fechado e abre a conta ao tocar. */
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { titulo: 'BL — Bolão Livre', mensagem: event.data ? event.data.text() : '' }; }
+  const title = data.titulo || 'BL — Bolão Livre';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.mensagem || 'Você tem uma novidade na sua conta.',
+    icon: '/brand/bl-icon-192.png',
+    badge: '/brand/bl-icon-192.png',
+    tag: data.tag || undefined,
+    data: { link: typeof data.link === 'string' && data.link.startsWith('/') ? data.link : '/minha-conta' },
+  }));
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.link) || '/minha-conta', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const client of list) {
+      if ('focus' in client) { if ('navigate' in client) client.navigate(target); return client.focus(); }
+    }
+    return self.clients.openWindow(target);
+  }));
 });

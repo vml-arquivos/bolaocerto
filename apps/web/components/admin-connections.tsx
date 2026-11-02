@@ -60,6 +60,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
             { ok: Boolean(mail.enderecoDoSite && !String(mail.enderecoDoSite).includes('localhost')), title: 'Endereço do site nos e-mails', text: String(mail.enderecoDoSite) },
           ] : []),
         ]} />
+        {mail.configurado && <p className="admin-help">Saem por e-mail: nova senha (esqueci minha senha), boas-vindas, convites com e-mail, pagamento confirmado e comprovante do jogo (com o arquivo anexado) e as mensagens que você marcar para e-mail.</p>}
         <div className="connections-test">
           <label className="admin-field"><span>Enviar e-mail de teste para</span><input type="email" value={to} onChange={(event) => setTo(event.target.value)} placeholder="deixe vazio para enviar para o seu e-mail" /></label>
           <div className="admin-row-actions">
@@ -91,6 +92,9 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
       <Panel title="Alertas no celular" description="Aviso quando algo precisa de atenção">
         <StatusList items={[{ ok: Boolean(data.alertas?.configurado), title: data.alertas?.configurado ? 'Ligados' : 'Desligados', text: data.alertas?.configurado ? `Canal: ${data.alertas.rotulo}` : 'Peça ao suporte para preencher ALERT_WEBHOOK_URL (Slack ou Discord).' }]} />
         <button className="admin-button admin-button-small" disabled={busy === 'alert' || !data.alertas?.configurado} onClick={() => void test('/api/v1/admin/conexoes/alertas/testar', 'alert')}>{busy === 'alert' ? 'Enviando…' : 'Enviar alerta de teste'}</button>
+      </Panel>
+      <Panel title="Avisos no celular (PWA)" description="Push para quem instalou o aplicativo ou ligou os avisos no site">
+        <StatusList items={[{ ok: Boolean(data.push?.disponivel), title: data.push?.disponivel ? 'Pronto para enviar' : 'Indisponível', text: data.push?.disponivel ? `${data.push.pessoas ?? 0} ${(data.push.pessoas ?? 0) === 1 ? 'pessoa' : 'pessoas'} com avisos ligados (${data.push.aparelhos ?? 0} ${(data.push.aparelhos ?? 0) === 1 ? 'aparelho' : 'aparelhos'}). Envie em Mensagens aos clientes.` : 'O serviço de avisos não respondeu. Veja os logs da API.' }]} />
       </Panel>
       <Panel title="Banco de dados" description="Onde tudo fica guardado">
         <StatusList items={[{ ok: Boolean(db.ok), title: db.ok ? 'Respondendo' : 'Sem resposta', text: db.ok ? `${db.latenciaMs} ms` : db.detalhe ?? 'Verifique o servidor do banco' }]} />

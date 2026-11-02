@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StorageService } from '../attachments/storage.service';
 import { AlertService } from '../common/alert.service';
 import { MailService } from '../common/mail.service';
+import { PushService } from '../notifications/push.service';
 import { PrismaService } from '../common/prisma.service';
 import { AuthUser } from '../auth/auth.utils';
 
@@ -13,7 +14,7 @@ const COOLDOWN_MS = 20_000;
 export class ConnectionsService {
   private readonly lastTest = new Map<string, number>();
 
-  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService, private readonly mail: MailService, private readonly alerts: AlertService, private readonly storage: StorageService) {}
+  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService, private readonly mail: MailService, private readonly alerts: AlertService, private readonly storage: StorageService, @Optional() private readonly push?: PushService) {}
 
   private secretLooksWeak(value: string | undefined): boolean {
     return !value || value.length < 32 || /gere-um|gere-outro|change-?me|secret|senha/i.test(value);
@@ -42,6 +43,7 @@ export class ConnectionsService {
       geradoEm: new Date(),
       banco: database,
       email: this.mail.describe(),
+      push: this.push ? await this.push.stats().then((stats) => ({ disponivel: true, ...stats })).catch(() => ({ disponivel: false, aparelhos: 0, pessoas: 0 })) : { disponivel: false, aparelhos: 0, pessoas: 0 },
       pagamentos: { provedor: provider, habilitado: paymentsOn, ambiente: this.config.get<string>('CORA_ENV') ?? null, credenciais: provider === 'cora' ? coraCreds : null, avisosConfigurados: Boolean(this.config.get<string>('PAYMENT_WEBHOOK_SECRET')) },
       caixa: { ultimaAtualizacao: lastSync, idadeMinutos: syncAge, ok: syncAge !== null && syncAge <= 90 },
       alertas: { configurado: this.alerts.isConfigured(), rotulo: this.config.get<string>('ALERT_ENV_LABEL') || 'BL' },

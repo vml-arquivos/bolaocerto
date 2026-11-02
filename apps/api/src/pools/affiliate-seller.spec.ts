@@ -197,3 +197,28 @@ describe('afiliado vendedor: comissão na compra', () => {
     expect((await reserve(null, 'cliente-1', { id: 'aff-9', usuarioId: 'u-9' })).afiliadoReferenciaId).toBe('aff-9');
   });
 });
+
+describe('convite por e-mail', () => {
+  function build(mail: any) {
+    const prisma: any = {
+      afiliado: { findUnique: jest.fn(async () => ({ id: 'aff-1', statusAprovacao: 'aprovado' })) },
+      convite: { create: jest.fn(async ({ data }: any) => ({ id: 'i1', ...data, status: 'ativo' })) },
+      $transaction: async (cb: any) => cb(prisma),
+    };
+    return new AdminService(prisma, { record: jest.fn() } as any, mail);
+  }
+  it('envia o link por e-mail quando há endereço e SMTP', async () => {
+    const mail: any = { isConfigured: () => true, publicUrl: () => 'https://bl.exemplo', send: jest.fn(async () => true) };
+    const out = await build(mail).createInvite({ tipo: 'usuario', emailDestino: 'Maria@Exemplo.com' } as any, affiliateUser);
+    expect(out.emailEnviado).toBe(true);
+    expect(mail.send.mock.calls[0][0].to).toBe('maria@exemplo.com');
+    expect(mail.send.mock.calls[0][0].text).toContain('https://bl.exemplo/r/');
+  });
+  it('sem SMTP o convite é criado e o link continua disponível', async () => {
+    const mail: any = { isConfigured: () => false, publicUrl: () => 'x', send: jest.fn() };
+    const out = await build(mail).createInvite({ tipo: 'usuario', emailDestino: 'maria@exemplo.com' } as any, affiliateUser);
+    expect(out.emailEnviado).toBe(false);
+    expect(out.caminho).toMatch(/^\/r\//);
+    expect(mail.send).not.toHaveBeenCalled();
+  });
+});

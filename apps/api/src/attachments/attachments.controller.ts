@@ -39,6 +39,12 @@ export class AttachmentsStaffController {
     return this.attachments.update(id, dto, user);
   }
 
+  /** Manda de novo o comprovante aos cotistas (aviso, celular e e-mail com o arquivo). */
+  @Post('anexos/:id/reenviar')
+  resend(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.attachments.resend(id, user);
+  }
+
   /** Só administrador remove (a equipe de operação envia, mas não apaga). */
   @Delete('anexos/:id')
   @Roles('admin')

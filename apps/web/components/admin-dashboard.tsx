@@ -8,6 +8,7 @@ import { AdminShell } from './admin-shell';
 import { AdminGroupForm, AffiliateNetworkTable, InviteManager, ManagedUserForm } from './admin-people-tools';
 import { PoolWizard as SimplePoolWizard } from './pool-wizard';
 import { CrmView, PoolControlView } from './admin-crm-tools';
+import { ComunicadosView } from './admin-comunicados';
 import { HealthPanel } from './admin-health';
 import { AdminModal, AttachmentsPanel, RegisterBetDialog } from './admin-attachments';
 import { ConnectionsView } from './admin-connections';
@@ -46,7 +47,7 @@ const modalityLimits: Record<string, { max: number; min: number; pick: number }>
 };
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['relatorios', 'notas-fiscais', 'conexoes', 'crm', 'controle', 'configuracoes']);
+const selfLoadingViews = new Set(['relatorios', 'notas-fiscais', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'participantes', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'rede', 'convites']);
 
 function money(value: unknown) {
@@ -343,6 +344,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'jogos') return <GamesView />;
     if (view === 'cotas') return <SharesView />;
     if (view === 'crm') return <CrmView notify={notify} />;
+    if (view === 'comunicados') return <ComunicadosView notify={notify} />;
     if (view === 'controle') return <PoolControlView notify={notify} />;
     if (view === 'participantes') return <ParticipantsView />;
     if (view === 'recebimentos' || view === 'pagamentos') return <PaymentsView />;

@@ -8,6 +8,7 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>;
 }
 
 /** Escapa texto para uso em HTML de e-mail. */
@@ -124,7 +125,7 @@ export class MailService {
       return false;
     }
     try {
-      await transporter.sendMail({ from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', messageId: message.messageId, to: message.to, subject: message.subject, text: message.text, html: message.html });
+      await transporter.sendMail({ from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', messageId: message.messageId, to: message.to, subject: message.subject, text: message.text, html: message.html, attachments: message.attachments });
       return true;
     } catch (error) {
       this.logger.error(`Falha ao enviar e-mail "${message.subject}": ${error instanceof Error ? error.message : String(error)}`);

@@ -2,7 +2,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { createReadStream, ReadStream } from 'fs';
-import { access, constants, mkdir, readdir, stat, unlink, writeFile } from 'fs/promises';
+import { access, constants, mkdir, readdir, readFile, stat, unlink, writeFile } from 'fs/promises';
 import { dirname, join, resolve, sep } from 'path';
 
 /** Guarda os arquivos enviados em disco (volume do Docker). O banco só guarda o caminho relativo. */
@@ -45,6 +45,11 @@ export class StorageService {
 
   open(key: string): ReadStream {
     return createReadStream(this.absolute(key));
+  }
+
+  /** Lê o arquivo inteiro (para anexar em e-mails). */
+  async read(key: string): Promise<Buffer> {
+    return readFile(this.absolute(key));
   }
 
   async remove(key: string): Promise<void> {

@@ -14,6 +14,7 @@ import { NotificationsService } from './notifications.service';
 export class PoolReleaseWatcher {
   private readonly logger = new Logger(PoolReleaseWatcher.name);
   private running = false;
+  private delivering = false;
 
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
 
@@ -24,11 +25,28 @@ export class PoolReleaseWatcher {
     try {
       await this.releaseReachedPools();
       await this.notifyAlreadyReleased();
-      await this.notifications.dispatchPending();
     } catch (error) {
       this.logger.error(`Rotina de liberação/avisos falhou: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.running = false;
+    }
+  }
+
+  /** A cada minuto: avisos no celular (push) e e-mails pendentes (inclusive comprovantes e comunicados). */
+  @Cron('* * * * *')
+  async deliver(): Promise<void> {
+    if (this.delivering) return;
+    this.delivering = true;
+    try {
+      await this.notifications.dispatchPushes();
+      for (let round = 0; round < 6; round += 1) {
+        const result = await this.notifications.dispatchPending(100);
+        if (result.enviados + result.falhas < 100) break;
+      }
+    } catch (error) {
+      this.logger.error(`Entrega de avisos falhou: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.delivering = false;
     }
   }
 
