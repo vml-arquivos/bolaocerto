@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
@@ -23,15 +23,47 @@ export function wrapEmailHtml(title: string, bodyHtml: string, button?: { label:
 }
 
 @Injectable()
-export class MailService {
+export class MailService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter | null | undefined;
 
   constructor(private readonly config: ConfigService) {}
 
+  /** Ao subir a API, confere o login do e-mail e deixa o resultado claro nos logs (sem travar a subida). */
+  onApplicationBootstrap(): void {
+    if (!this.isConfigured() || process.env.NODE_ENV === 'test') return;
+    const transporter = this.getTransporter();
+    void transporter?.verify().then(
+      () => this.logger.log(`E-mail pronto: ${this.provider() ?? 'SMTP'} em ${this.config.get<string>('SMTP_HOST')}:${this.config.get<string>('SMTP_PORT', '587')}.`),
+      (error) => this.logger.error(`E-mail NÃO está funcionando: ${this.explainError(error)}`),
+    );
+  }
+
   /** Há SMTP configurado? Sem ele o sistema funciona normalmente, apenas sem e-mails. */
   isConfigured(): boolean {
+    if (this.config.get<string>('SMTP_ENABLED')?.trim().toLowerCase() === 'false') return false;
     return Boolean(this.config.get<string>('SMTP_HOST')?.trim());
+  }
+
+  /** Senha do SMTP: aceita SMTP_PASS e também SMTP_PASSWORD. */
+  private smtpPass(): string | undefined {
+    return this.config.get<string>('SMTP_PASS') || this.config.get<string>('SMTP_PASSWORD') || undefined;
+  }
+
+  /** Remetente: MAIL_FROM, ou então SMTP_FROM_NAME + SMTP_FROM_EMAIL. */
+  private fromAddress(): string {
+    const explicit = this.config.get<string>('MAIL_FROM')?.trim();
+    if (explicit) return explicit;
+    const email = this.config.get<string>('SMTP_FROM_EMAIL')?.trim();
+    if (email) {
+      const name = this.config.get<string>('SMTP_FROM_NAME')?.trim() || 'BL — Bolão Livre';
+      return `${name.replace(/[<>"]/g, '')} <${email}>`;
+    }
+    return 'BL — Bolão Livre <no-reply@localhost>';
+  }
+
+  private replyTo(): string | undefined {
+    return this.config.get<string>('SMTP_REPLY_TO')?.trim() || undefined;
   }
 
   /** Endereço público do site (para links nos e-mails). */
@@ -47,8 +79,9 @@ export class MailService {
     const secureRaw = this.config.get<string>('SMTP_SECURE');
     const secure = secureRaw !== undefined && secureRaw !== '' ? secureRaw === 'true' : port === 465;
     const user = this.config.get<string>('SMTP_USER')?.trim();
-    const pass = this.config.get<string>('SMTP_PASS');
-    this.transporter = nodemailer.createTransport({ host, port, secure, ...(user ? { auth: { user, pass } } : {}), connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000 });
+    const pass = this.smtpPass();
+    const requireTLS = !secure && this.config.get<string>('SMTP_REQUIRE_TLS')?.trim().toLowerCase() === 'true';
+    this.transporter = nodemailer.createTransport({ host, port, secure, ...(requireTLS ? { requireTLS: true } : {}), ...(user ? { auth: { user, pass } } : {}), connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000 });
     return this.transporter;
   }
 
@@ -74,8 +107,8 @@ export class MailService {
       porta: port,
       seguro: secureRaw !== undefined && secureRaw !== '' ? secureRaw === 'true' : port === 465,
       usuario: masked,
-      temSenha: Boolean(this.config.get<string>('SMTP_PASS')),
-      remetente: this.config.get<string>('MAIL_FROM') || null,
+      temSenha: Boolean(this.smtpPass()),
+      remetente: this.config.get<string>('MAIL_FROM')?.trim() || this.config.get<string>('SMTP_FROM_EMAIL')?.trim() ? this.fromAddress() : null,
       enderecoDoSite: this.publicUrl(),
     };
   }
@@ -106,7 +139,7 @@ export class MailService {
     }
     try {
       await transporter.sendMail({
-        from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', to,
+        from: this.fromAddress(), replyTo: this.replyTo(), to,
         subject: 'Teste de e-mail — BL Bolão Livre',
         text: 'Se você recebeu esta mensagem, o envio de e-mails do BL está funcionando.',
         html: wrapEmailHtml('O e-mail está funcionando', '<p>Se você recebeu esta mensagem, o envio de e-mails do BL está funcionando. Avisos de pagamento, recibos e recuperação de senha vão sair por aqui.</p>'),
@@ -125,7 +158,7 @@ export class MailService {
       return false;
     }
     try {
-      await transporter.sendMail({ from: this.config.get<string>('MAIL_FROM') || 'BL — Bolão Livre <no-reply@localhost>', messageId: message.messageId, to: message.to, subject: message.subject, text: message.text, html: message.html, attachments: message.attachments });
+      await transporter.sendMail({ from: this.fromAddress(), replyTo: this.replyTo(), messageId: message.messageId, to: message.to, subject: message.subject, text: message.text, html: message.html, attachments: message.attachments });
       return true;
     } catch (error) {
       this.logger.error(`Falha ao enviar e-mail "${message.subject}": ${error instanceof Error ? error.message : String(error)}`);

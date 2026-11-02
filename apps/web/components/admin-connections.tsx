@@ -56,7 +56,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
           { ok: Boolean(mail.configurado), title: mail.configurado ? 'Ligado' : 'Ainda não ligado', text: mail.configurado ? `${mail.provedor && mail.provedor !== 'Outro' ? `${mail.provedor} · ` : ''}Servidor ${mail.servidor}, porta ${mail.porta}${mail.seguro ? ' (seguro)' : ''}` : 'Sem isso, os avisos aparecem só dentro da conta do cliente.' },
           ...(mail.configurado ? [
             { ok: Boolean(mail.usuario && mail.temSenha), title: 'Usuário e senha', text: mail.usuario ? `${mail.usuario}${mail.temSenha ? ' · senha preenchida' : ' · senha FALTANDO'}` : 'Sem usuário (servidor aberto)' },
-            { ok: Boolean(mail.remetente), title: 'Remetente', text: mail.remetente ?? 'Não definido — preencha MAIL_FROM' },
+            { ok: Boolean(mail.remetente), title: 'Remetente', text: mail.remetente ?? 'Não definido — preencha MAIL_FROM ou SMTP_FROM_EMAIL' },
             { ok: Boolean(mail.enderecoDoSite && !String(mail.enderecoDoSite).includes('localhost')), title: 'Endereço do site nos e-mails', text: String(mail.enderecoDoSite) },
           ] : []),
         ]} />
@@ -72,7 +72,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
         {showHelp && <div className="admin-callout"><strong>Como ligar</strong>
           <p>No servidor (Coolify → Environment Variables), preencha e faça o redeploy:</p>
           <pre className="connections-code">{SMTP_EXAMPLE}</pre>
-          <p>Exemplo para a <strong>Brevo</strong>: o usuário é o &quot;Login SMTP&quot; e a senha é a &quot;Chave SMTP&quot; (Brevo → SMTP e API). O e-mail de <code>MAIL_FROM</code> precisa estar validado na Brevo, com o domínio verificado. Porta 587 usa <code>SMTP_SECURE=false</code>; porta 465 usa <code>true</code>. Depois volte aqui e clique em &quot;Enviar teste&quot;.</p>
+          <p>Exemplo para a <strong>Brevo</strong>: o usuário é o &quot;Login SMTP&quot; e a senha (<code>SMTP_PASS</code> ou <code>SMTP_PASSWORD</code>) é a &quot;Chave SMTP&quot; (Brevo → SMTP e API). O e-mail do remetente (<code>MAIL_FROM</code> ou <code>SMTP_FROM_EMAIL</code>) precisa estar validado na Brevo, com o domínio verificado. Porta 587 usa <code>SMTP_SECURE=false</code>; porta 465 usa <code>true</code>. Depois volte aqui e clique em &quot;Enviar teste&quot;.</p>
         </div>}
       </Panel>
 

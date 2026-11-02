@@ -8,7 +8,7 @@
    - `SMTP_PORT=587`
    - `SMTP_SECURE=false`
    - `SMTP_USER=<Login SMTP>`
-   - `SMTP_PASS=<Chave SMTP>`
+   - `SMTP_PASS=<Chave SMTP>` (ou `SMTP_PASSWORD`)
    - `MAIL_FROM=BL - Bolão Livre <contato@seudominio.com.br>` (o remetente precisa estar validado na Brevo)
 4. Em Admin → Conexões, use "Testar e-mail". O painel mostra o provedor detectado e explica o erro, se houver.
 

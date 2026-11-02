@@ -26,7 +26,7 @@ export class PushService {
   private subject(): string {
     const explicit = this.config.get<string>('VAPID_SUBJECT')?.trim();
     if (explicit) return explicit;
-    const from = this.config.get<string>('MAIL_FROM') ?? '';
+    const from = this.config.get<string>('MAIL_FROM') ?? this.config.get<string>('SMTP_FROM_EMAIL') ?? '';
     const match = from.match(/<([^>]+@[^>]+)>/) ?? from.match(/([^\s<>]+@[^\s<>]+)/);
     if (match?.[1]) return `mailto:${match[1]}`;
     const site = this.config.get<string>('APP_PUBLIC_URL') ?? this.config.get<string>('WEB_ORIGIN') ?? '';
