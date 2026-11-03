@@ -10,6 +10,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { StatisticsService } from '../statistics/statistics.service';
 import { CreatePoolDto, GenerateGamesDto, PoolGameDto, UpdatePoolDto } from './pools.dto';
 import { evaluateReleaseGate } from './release-gate';
+import { parseSalesRules, saleWindow } from './sales-rules';
 
 @Injectable()
 export class PoolsService {
@@ -117,10 +118,14 @@ export class PoolsService {
     if (quote && !['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(contest.modalidade)) throw new ConflictException('Matriz disponível para consulta; habilitação desta modalidade depende da apuração dos prognósticos adicionais.');
     if (quote && dto.modeloOperacional === 'loterica_parceira' && new Set(quote.jogos.map(g => g.quantidadeDezenas)).size > 1) throw new ConflictException('Recibo de bolão Caixa exige jogos com a mesma quantidade de números. Separe os recibos.');
     const games = quote?.jogos ?? this.normalizeGames(dto.jogos, dto.numerosApostados);
+    if (dto.vendaAntecipada && user.papel !== 'admin') throw new ForbiddenException('Somente o administrador pode abrir pré-venda.');
+    const rules = parseSalesRules(dto, { cutoffAt: contest.cutoffAt, totalCotas: dto.cotasIlimitadas ? null : dto.totalCotas ?? null });
     const pool = await this.prisma.$transaction(async (tx) => {
       const created = await tx.bolao.create({
         data: {
-          comprovanteAntesVenda: true,
+          comprovanteAntesVenda: !dto.vendaAntecipada,
+          vendaAntecipada: dto.vendaAntecipada === true,
+          ...rules,
           concursoId: dto.concursoId,
           grupoId: dto.grupoId,
           criadoPor: user.id,
@@ -162,6 +167,11 @@ export class PoolsService {
     if (!nextUnlimited && nextTotal !== null && nextTotal !== undefined && nextTotal < pool.cotasVendidas) throw new ConflictException('Total de cotas não pode ficar abaixo das cotas já vendidas.');
     if (user.papel === 'afiliado' && dto.totalCotas !== undefined && nextTotal) await this.assertWithinGroupCapacity(pool.grupoId, nextTotal, pool.concurso.config.minCotasBolao);
 
+    if (dto.vendaAntecipada !== undefined && dto.vendaAntecipada !== pool.vendaAntecipada) {
+      if (user.papel !== 'admin') throw new ForbiddenException('Somente o administrador pode ligar ou desligar a pré-venda.');
+      if (hasPaid) throw new ConflictException('A pré-venda não pode mudar depois que houver reservas ou compras.');
+    }
+    const rules = parseSalesRules(dto, { cutoffAt: pool.concurso.cutoffAt, totalCotas: nextTotal ?? null, current: pool });
     const games = dto.jogos !== undefined || dto.numerosApostados !== undefined ? this.normalizeGames(dto.jogos, dto.numerosApostados ?? pool.numerosApostados) : null;
     const before = pool as unknown as Prisma.InputJsonValue;
     await this.prisma.$transaction(async (tx) => {
@@ -176,6 +186,8 @@ export class PoolsService {
         ...(dto.valorCota !== undefined ? { valorCota: new Prisma.Decimal(dto.valorCota) } : {}),
         ...(dto.taxaAdministracaoPct !== undefined ? { taxaAdministracaoPct: new Prisma.Decimal(dto.taxaAdministracaoPct) } : {}),
         ...(dto.premioMinimoLiberacao !== undefined ? { premioMinimoLiberacao: dto.premioMinimoLiberacao === null ? null : new Prisma.Decimal(dto.premioMinimoLiberacao), liberadoEm: null } : {}),
+        ...rules,
+        ...(dto.vendaAntecipada !== undefined ? { vendaAntecipada: dto.vendaAntecipada, comprovanteAntesVenda: !dto.vendaAntecipada } : {}),
         editadoPor: user.id,
         editadoEm: new Date(),
       } });
@@ -252,7 +264,7 @@ export class PoolsService {
     if (pool.cotasIlimitadas) throw new ConflictException('Este bolão legado possui cotas ilimitadas. Crie um novo lote com quantidade finita.');
     if (pool.concurso.cutoffAt <= new Date() || pool.concurso.status !== 'aberto' || pool.concurso.resultado) throw new ConflictException('O concurso encerrou. Crie um bolão para o próximo concurso.');
     const created = await this.prisma.$transaction(async (tx) => {
-      const copy = await tx.bolao.create({ data: { comprovanteAntesVenda: true, concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, premioMinimoLiberacao: pool.premioMinimoLiberacao, ...(pool.precificacao ? { precificacao: pool.precificacao } : {}), status: StatusBolao.rascunho } });
+      const copy = await tx.bolao.create({ data: { comprovanteAntesVenda: pool.comprovanteAntesVenda, vendaAntecipada: pool.vendaAntecipada, vendaInicioEm: pool.vendaInicioEm, vendaFimEm: pool.vendaFimEm, maxCotasPorPessoa: pool.maxCotasPorPessoa, regrasVenda: pool.regrasVenda, concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, premioMinimoLiberacao: pool.premioMinimoLiberacao, ...(pool.precificacao ? { precificacao: pool.precificacao } : {}), status: StatusBolao.rascunho } });
       if (pool.jogos.length) await tx.jogoBolao.createMany({ data: pool.jogos.map((game) => ({ bolaoId: copy.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custo, status: 'ativo' })) });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: copy.id, evento: 'bolao.duplicado', atorId: user.id, payloadDepois: { origemId: id, copiaId: copy.id } });
       return copy;
@@ -387,6 +399,14 @@ export class PoolsService {
       taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
       modeloOperacional: pool.modeloOperacional,
       comprovanteAntesVenda: pool.comprovanteAntesVenda,
+      regrasVenda: {
+        antecipada: pool.vendaAntecipada === true,
+        inicioEm: pool.vendaInicioEm ?? null,
+        fimEm: pool.vendaFimEm ?? null,
+        maxCotasPorPessoa: pool.maxCotasPorPessoa ?? null,
+        texto: pool.regrasVenda ?? null,
+        janela: saleWindow(pool),
+      },
       status: pool.status,
       teveGanhador: pool.teveGanhador,
       resultado: pool.concurso?.resultado ? {

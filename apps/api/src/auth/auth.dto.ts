@@ -1,4 +1,5 @@
 import { IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
+import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from './password-policy';
 
 export class RegisterDto {
   @IsString()
@@ -20,8 +21,8 @@ export class RegisterDto {
   dataNascimento!: string;
 
   @IsString()
-  @Length(6, 8, { message: 'A senha deve ter de 6 a 8 caracteres.' })
-  @Matches(/^\d{6,8}$/, { message: 'A senha deve conter somente números.' })
+  @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE })
+  @Matches(NEW_PASSWORD_PATTERN, { message: NEW_PASSWORD_MESSAGE })
   senha!: string;
 
   @IsOptional()

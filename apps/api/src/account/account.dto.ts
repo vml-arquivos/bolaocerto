@@ -1,4 +1,5 @@
 import { IsBoolean, IsEmail, IsIn, IsNumber, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from '../auth/password-policy';
 
 export class ForgotPasswordDto {
   @IsEmail() @MaxLength(180) email!: string;
@@ -6,12 +7,12 @@ export class ForgotPasswordDto {
 
 export class ResetPasswordDto {
   @IsString() @Length(20, 200) token!: string;
-  @IsString() @Length(6, 8, { message: 'A nova senha deve ter de 6 a 8 caracteres.' }) @Matches(/^\d{6,8}$/, { message: 'A nova senha deve conter somente números.' }) novaSenha!: string;
+  @IsString() @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE }) @Matches(NEW_PASSWORD_PATTERN, { message: NEW_PASSWORD_MESSAGE }) novaSenha!: string;
 }
 
 export class ChangePasswordDto {
   @IsString() @MinLength(1) @MaxLength(128) senhaAtual!: string;
-  @IsString() @Length(6, 8, { message: 'A nova senha deve ter de 6 a 8 caracteres.' }) @Matches(/^\d{6,8}$/, { message: 'A nova senha deve conter somente números.' }) novaSenha!: string;
+  @IsString() @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE }) @Matches(NEW_PASSWORD_PATTERN, { message: NEW_PASSWORD_MESSAGE }) novaSenha!: string;
 }
 
 export class DeletionRequestDto {

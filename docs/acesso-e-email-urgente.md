@@ -1,7 +1,7 @@
 # Sem acesso e sem e-mail: passo a passo
 
 ## 1. Voltar a entrar agora (sem depender de e-mail)
-No Coolify: abra a aplicação da **API** → aba **Terminal** → entre no terminal do container e rode (troque o e-mail e escolha uma senha só com números, de 6 a 8 dígitos):
+No Coolify: abra a aplicação da **API** → aba **Terminal** → entre no terminal do container e rode (troque o e-mail e escolha uma senha com no mínimo 6 caracteres, com letras e números):
 
 ```
 cd /app/apps/api

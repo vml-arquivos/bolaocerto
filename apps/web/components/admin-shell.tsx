@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
+import { InstallAppButton } from './pwa-register';
 
 const groups = [
   {
@@ -139,6 +140,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
           <span aria-hidden="true">{collapsed ? '»' : '«'}</span><span>{collapsed ? 'Expandir' : 'Recolher menu'}</span>
         </button>
         <div className="admin-sidebar-footer">
+          <div className="admin-install"><InstallAppButton label="Instalar painel como app" hideWhenInstalled className="admin-button admin-button-ghost" /></div>
           <Link href="/" className="admin-footer-link"><span>Voltar ao site</span></Link>
           <Link href="/minha-conta" className="admin-footer-link"><span>Minha conta</span></Link>
           <span className="admin-footer-note">BL — Bolão Livre</span>

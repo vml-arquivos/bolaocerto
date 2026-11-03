@@ -18,7 +18,7 @@ async function call(path: string, options?: RequestInit) {
   return data as any;
 }
 
-const MODALIDADES: Array<[string, string]> = [['megasena', 'Mega-Sena'], ['lotofacil', 'Lotofácil'], ['quina', 'Quina'], ['duplasena', 'Dupla Sena'], ['lotomania', 'Lotomania']];
+const MODALIDADES: Array<[string, string]> = [['megasena', 'Mega-Sena'], ['lotofacil', 'Lotofácil'], ['quina', 'Quina'], ['duplasena', 'Dupla Sena'], ['lotomania', 'Lotomania'], ['timemania', 'Timemania'], ['diadesorte', 'Dia de Sorte'], ['supersete', 'Super Sete'], ['loteca', 'Loteca']];
 
 /** Cria concurso de festa (Mega da Virada, São João...) mesmo sem número oficial nem prêmio previsto. */
 export function FestivalForm({ onDone, notify }: { onDone: () => Promise<void> | void; notify: Notify }) {

@@ -6,7 +6,7 @@ const source = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8
 function worker() {
   const listeners = {}; const saved = []; const removed = []; let skipped = 0;
   const cache = { addAll: async () => {}, put: async (req) => { saved.push(req.url); }, keys: async () => [], delete: async () => true };
-  const ctx = { URL, Response, self: { location: { origin: 'https://bl.example' }, addEventListener: (name, fn) => { listeners[name] = fn; }, skipWaiting: async () => { skipped++; }, clients: { claim: async () => {} } }, caches: { open: async () => cache, match: async () => undefined, keys: async () => ['other-app-cache', 'bl-static-v1', 'bl-static-v2'], delete: async key => { removed.push(key); } }, fetch: async () => new Response('network') };
+  const ctx = { URL, Response, self: { location: { origin: 'https://bl.example' }, addEventListener: (name, fn) => { listeners[name] = fn; }, skipWaiting: async () => { skipped++; }, clients: { claim: async () => {} } }, caches: { open: async () => cache, match: async () => undefined, keys: async () => ['other-app-cache', 'bl-static-v1', 'bl-static-v2', 'bl-static-v3'], delete: async key => { removed.push(key); } }, fetch: async () => new Response('network') };
   vm.runInNewContext(source, ctx);
   async function request(path, method = 'GET', mode = 'cors') {
     let result; const req = { url: 'https://bl.example' + path, method, mode };
@@ -32,9 +32,40 @@ test('updates wait for explicit activation and do not delete other applications 
   const w = worker(); let done;
   w.listeners.install({ waitUntil: p => { done = p; } }); await done; assert.equal(w.skipped(), 0);
   w.listeners.message({ data: { type: 'ACTIVATE_UPDATE' }, waitUntil: p => { done = p; } }); await done; assert.equal(w.skipped(), 1);
-  w.listeners.activate({ waitUntil: p => { done = p; } }); await done; assert.deepEqual(w.removed, ['bl-static-v1']);
+  w.listeners.activate({ waitUntil: p => { done = p; } }); await done; assert.deepEqual(w.removed, ['bl-static-v1', 'bl-static-v2']);
 });
 test('only static public assets are stored', async () => {
   const w = worker(); await w.request('/brand/bl-icon-192.png'); assert.deepEqual(w.saved, ['https://bl.example/brand/bl-icon-192.png']);
   assert.equal(await w.request('/anexos/private.pdf'), undefined);
+});
+test('manifest has maskable icons and the install banner has one single CSS definition', async () => {
+  const manifest = await readFile(new URL('../app/manifest.webmanifest/route.ts', import.meta.url), 'utf8');
+  assert.match(manifest, /bl-icon-maskable-512\.png[^}]*maskable/);
+  assert.match(manifest, /bl-icon-maskable-192\.png[^}]*maskable/);
+  const details = await readFile(new URL('../app/details.css', import.meta.url), 'utf8');
+  assert.ok(!/\.install-banner\s*\{/.test(details), 'details.css não pode redefinir .install-banner (ele ficava atrás da barra de baixo)');
+});
+test('painel e cliente são dois aplicativos separados (id, escopo, ícone e manifesto próprios)', async () => {
+  const admin = await readFile(new URL('../app/admin/manifest.webmanifest/route.ts', import.meta.url), 'utf8');
+  const client = await readFile(new URL('../app/manifest.webmanifest/route.ts', import.meta.url), 'utf8');
+  assert.match(admin, /id: '\/admin'/); assert.match(admin, /scope: '\/admin'/); assert.match(admin, /start_url: '\/admin/);
+  assert.match(client, /id: '\/'/); assert.match(client, /scope: '\/'/);
+  assert.match(admin, /bl-admin-icon-maskable-512\.png/);
+  const layout = await readFile(new URL('../app/admin/layout.tsx', import.meta.url), 'utf8');
+  assert.match(layout, /manifest: '\/admin\/manifest\.webmanifest'/);
+  const root = await readFile(new URL('../app/layout.tsx', import.meta.url), 'utf8');
+  assert.match(root, /manifest: '\/manifest\.webmanifest'/);
+});
+test('senha: regra única (mínimo 6, letra e número) no formulário', async () => {
+  const lib = await readFile(new URL('../lib/password.ts', import.meta.url), 'utf8');
+  assert.match(lib, /PASSWORD_MIN = 6/); assert.match(lib, /\\p\{L\}/);
+  for (const file of ['auth-form', 'password-forms', 'account-extras']) {
+    const code = await readFile(new URL(`../components/${file}.tsx`, import.meta.url), 'utf8');
+    assert.ok(!/pattern="\[0-9\]\{6,8\}"/.test(code), `${file} ainda exige só números`);
+  }
+});
+test('install page button asks the browser to install instead of only opening hints', async () => {
+  const code = await readFile(new URL('../components/pwa-register.tsx', import.meta.url), 'utf8');
+  assert.match(code, /event\.prompt\(\)/);
+  assert.match(code, /startInstallCapture\(\)/);
 });

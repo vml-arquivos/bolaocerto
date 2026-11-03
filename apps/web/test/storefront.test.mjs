@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canPurchase, withinSaleWindow } from '../lib/pool-availability.ts';
+import { canPurchase, saleRuleState, withinSaleWindow } from '../lib/pool-availability.ts';
 const now = Date.parse('2026-10-29T20:00:00Z');
 const pool = { status: 'aberto', cotasDisponiveis: 10, concurso: { status: 'aberto', cutoffAt: '2026-10-29T21:00:00Z' } };
 test('current and newly published contests can sell', () => assert.equal(canPurchase(pool, now), true));
@@ -22,4 +22,15 @@ test('sold out and conditional pools cannot be purchased', () => {
 test('old pool is hidden without hiding another open pool of the same modality', () => {
   const old = {...pool, concurso:{...pool.concurso, cutoffAt:'2026-10-28T21:00:00Z'}};
   assert.deepEqual([old,pool].filter(p=>withinSaleWindow(p,now)),[pool]);
+});
+
+test('regras de venda do administrador: início futuro e fim passado bloqueiam a compra', () => {
+  const soon = { ...pool, regrasVenda: { inicioEm: '2026-10-29T20:30:00Z', fimEm: null } };
+  assert.equal(saleRuleState(soon, now), 'em_breve');
+  assert.equal(canPurchase(soon, now), false);
+  assert.equal(canPurchase(soon, now + 31 * 60000), true);
+  const ended = { ...pool, regrasVenda: { inicioEm: null, fimEm: '2026-10-29T20:10:00Z' } };
+  assert.equal(saleRuleState(ended, now), 'aberta');
+  assert.equal(canPurchase(ended, now + 11 * 60000), false);
+  assert.equal(saleRuleState(pool, now), 'aberta');
 });

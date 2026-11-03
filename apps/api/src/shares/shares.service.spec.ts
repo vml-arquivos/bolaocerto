@@ -96,4 +96,57 @@ describe('SharesService stock safety', () => {
     estimate = '70000000.00'; // oscilou para baixo: continua liberado
     await expect(service.reserve(dto as any, { id: 'u2', papel: 'cotista' } as any, { ip: '2' })).resolves.toMatchObject({ id: 'share-c' });
   });
+
+  describe('regras de venda do administrador', () => {
+    const future = (ms: number) => new Date(Date.now() + ms);
+    function setup(poolExtra: Record<string, unknown>, alreadyHas = 0) {
+      const pool: any = { id: 'pool-1', status: 'aberto', valorCota: '6.00', taxaAdministracaoPct: '10.00', cotasVendidas: 0, totalCotas: 50, comprovanteAntesVenda: false, ...poolExtra };
+      const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        concurso: { findUniqueOrThrow: jest.fn().mockResolvedValue({ cutoffAt: future(86400000 * 30) }) },
+        bolao: { findUnique: jest.fn().mockResolvedValue(pool), update: jest.fn().mockResolvedValue(pool) },
+        cota: { create: jest.fn().mockResolvedValue({ id: 'share-1', bolaoId: 'pool-1', status: 'reservada', quantidade: 1, expiraReservaEm: new Date() }), aggregate: jest.fn().mockResolvedValue({ _sum: { quantidade: alreadyHas } }) },
+      };
+      const prisma = { afiliado: { findFirst: jest.fn().mockResolvedValue(null) }, $transaction: serializedTransaction(tx) };
+      const service = new SharesService(prisma as any, { record: jest.fn() } as any);
+      const dto = (quantidade: number) => ({ bolaoId: 'pool-1', titularCpf: '52998224725', titularNome: 'Pessoa', quantidade, termoMandatoHash: legalDocument('participacao').hash, aceitoTermos: true });
+      return { tx, reserve: (quantidade: number) => service.reserve(dto(quantidade) as any, { id: 'user-1', papel: 'cotista' } as any, { ip: '127.0.0.1' }) };
+    }
+    it('pré-venda (sem comprovante prévio) permite reservar', async () => {
+      const { reserve, tx } = setup({ vendaAntecipada: true });
+      await expect(reserve(1)).resolves.toBeDefined();
+      expect(tx.cota.create).toHaveBeenCalled();
+    });
+    it('antes do início da venda recusa e informa a data', async () => {
+      const { reserve, tx } = setup({ vendaInicioEm: future(3600_000) });
+      await expect(reserve(1)).rejects.toThrow(/começa em/);
+      expect(tx.cota.create).not.toHaveBeenCalled();
+    });
+    it('depois do fim da venda recusa', async () => {
+      const { reserve } = setup({ vendaFimEm: new Date(Date.now() - 1000) });
+      await expect(reserve(1)).rejects.toThrow(/encerrada/);
+    });
+    it('dentro da janela permite', async () => {
+      const { reserve } = setup({ vendaInicioEm: new Date(Date.now() - 1000), vendaFimEm: future(3600_000) });
+      await expect(reserve(1)).resolves.toBeDefined();
+    });
+    it('respeita o máximo de cotas por pessoa, somando o que a pessoa já tem', async () => {
+      const { reserve, tx } = setup({ maxCotasPorPessoa: 5 }, 4);
+      await expect(reserve(2)).rejects.toThrow(/ainda pode pegar 1/);
+      expect(tx.cota.create).not.toHaveBeenCalled();
+    });
+    it('quem já está no limite não compra mais', async () => {
+      const { reserve } = setup({ maxCotasPorPessoa: 5 }, 5);
+      await expect(reserve(1)).rejects.toThrow(/atingiu o limite/);
+    });
+    it('dentro do limite por pessoa permite', async () => {
+      const { reserve } = setup({ maxCotasPorPessoa: 5 }, 3);
+      await expect(reserve(2)).resolves.toBeDefined();
+    });
+    it('sem limite por pessoa não consulta as cotas da pessoa', async () => {
+      const { reserve, tx } = setup({});
+      await reserve(3);
+      expect(tx.cota.aggregate).not.toHaveBeenCalled();
+    });
+  });
 });

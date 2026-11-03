@@ -1,13 +1,55 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> };
-export function InstallAppButton() { return <button type="button" className="button button-primary" onClick={() => window.dispatchEvent(new Event('bl:install'))}>Instalar aplicativo</button>; }
+import { clearInstallPrompt, getInstallPrompt, isAndroid, isStandalone, startInstallCapture, subscribeInstall, type InstallEvent } from './pwa-install';
+startInstallCapture();
+
+function useInstallState() {
+  const [prompt, setPrompt] = useState<InstallEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const sync = () => { setPrompt(getInstallPrompt()); setInstalled(isStandalone()); };
+    sync();
+    const media = matchMedia('(display-mode: standalone)');
+    media.addEventListener('change', sync);
+    const off = subscribeInstall(sync);
+    return () => { media.removeEventListener('change', sync); off(); };
+  }, []);
+  return { prompt, installed };
+}
+
+// Botão da página /instalar: abre o instalador do navegador quando ele estiver disponível;
+// senão mostra, logo abaixo do botão, o passo a passo do aparelho.
+export function InstallAppButton({ label = 'Instalar aplicativo', hideWhenInstalled = false, className = 'button button-primary' }: { label?: string; hideWhenInstalled?: boolean; className?: string }) {
+  const { prompt, installed } = useInstallState();
+  const [hint, setHint] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function click() {
+    setHint('');
+    const event = getInstallPrompt();
+    if (!event) {
+      const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      setHint(ios
+        ? 'No iPhone/iPad: abra no Safari, toque em Compartilhar e escolha “Adicionar à Tela de Início”.'
+        : isAndroid()
+          ? 'No Android: abra o menu ⋮ do Chrome e toque em “Instalar aplicativo” (ou “Adicionar à tela inicial”). Se a opção não aparecer, atualize o Chrome e abra este site direto no Chrome, fora do navegador do WhatsApp ou Instagram.'
+          : 'Abra o menu do navegador e procure “Instalar aplicativo”. No Chrome ou Edge atualizado, o ícone de instalar também aparece na barra de endereço.');
+      return;
+    }
+    setBusy(true);
+    try { await event.prompt(); const choice = await event.userChoice; if (choice.outcome === 'dismissed') setHint('Instalação cancelada. Você pode tentar de novo quando quiser.'); }
+    catch { setHint('Use o menu do navegador e toque em “Instalar aplicativo”.'); }
+    finally { clearInstallPrompt(); setBusy(false); }
+  }
+  if (installed) return hideWhenInstalled ? null : <p className="install-state" role="status">✓ Você já está usando o aplicativo instalado.</p>;
+  return <div className="install-action"><button type="button" className={className} disabled={busy} onClick={() => void click()}>{busy ? 'Aguarde…' : label}</button>{!prompt && !hint && <small className="muted">Se nada abrir, toque no botão para ver o passo a passo do seu aparelho.</small>}{hint && <p className="install-hint" role="status">{hint}</p>}</div>;
+}
 export function PwaRegister() {
   const pathname = usePathname();
   const staff = /^\/(admin|afiliado|operacao)(\/|$)/.test(pathname);
-  const [prompt, setPrompt] = useState<InstallEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
+  const adminApp = /^\/admin(\/|$)/.test(pathname);
+  const { prompt, installed } = useInstallState();
+  const onInstallPage = pathname === '/instalar';
   const [ios, setIos] = useState(false);
   const [hidden, setHidden] = useState(true);
   const [instructions, setInstructions] = useState(false);
@@ -17,16 +59,12 @@ export function PwaRegister() {
   const [busy, setBusy] = useState(false);
   const acceptedUpdate = useRef(false);
   useEffect(() => {
-    const media = matchMedia('(display-mode: standalone)');
-    const detectInstalled = () => setInstalled(media.matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
-    detectInstalled(); media.addEventListener('change', detectInstalled);
     setIos(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
     try { setHidden(Number(localStorage.getItem('bl-install-dismissed-until') ?? 0) > Date.now()); } catch { setHidden(false); }
-    const capture = (event: Event) => { event.preventDefault(); setPrompt(event as InstallEvent); };
-    const onInstalled = () => { setInstalled(true); setPrompt(null); setInstructions(false); };
+    const onInstalled = () => { setInstructions(false); };
     const open = () => { setInstructions(true); setHidden(false); };
     const network = () => setOffline(!navigator.onLine); network();
-    window.addEventListener('beforeinstallprompt', capture); window.addEventListener('appinstalled', onInstalled);
+    window.addEventListener('appinstalled', onInstalled);
     window.addEventListener('bl:install', open); window.addEventListener('online', network); window.addEventListener('offline', network);
     let disposed = false;
     let registration: ServiceWorkerRegistration | undefined;
@@ -45,8 +83,8 @@ export function PwaRegister() {
       document.addEventListener('visibilitychange', checkUpdate);
     }
     return () => {
-      disposed = true; media.removeEventListener('change', detectInstalled);
-      window.removeEventListener('beforeinstallprompt', capture); window.removeEventListener('appinstalled', onInstalled);
+      disposed = true;
+      window.removeEventListener('appinstalled', onInstalled);
       window.removeEventListener('bl:install', open); window.removeEventListener('online', network); window.removeEventListener('offline', network);
       registration?.removeEventListener('updatefound', updateFound); installingWorker?.removeEventListener('statechange', stateChange);
       navigator.serviceWorker?.removeEventListener('controllerchange', controllerChange); document.removeEventListener('visibilitychange', checkUpdate);
@@ -58,12 +96,12 @@ export function PwaRegister() {
     setBusy(true);
     try { await prompt.prompt(); const choice = await prompt.userChoice; if (choice.outcome === 'accepted') { setHidden(true); setInstructions(false); } }
     catch { setInstructions(true); setMessage('Use o menu do navegador para adicionar à tela de início.'); }
-    finally { setPrompt(null); setBusy(false); }
+    finally { clearInstallPrompt(); setBusy(false); }
   }
   return <>
     {offline && <div className="app-network-status" role="status">Sem conexão. Compras, pagamentos e saldos precisam de conexão. Consulte sua conta ao reconectar antes de repetir uma operação.</div>}
-    {!staff && waiting && <div className="pwa-update" role="status"><span>Nova versão disponível. Conclua compras e edições antes de atualizar.</span><button className="button button-secondary" onClick={() => { if (window.confirm('Atualizar e recarregar o aplicativo agora? Conclua operações em andamento antes de continuar.')) { acceptedUpdate.current = true; waiting.postMessage({ type: 'ACTIVATE_UPDATE' }); } }}>Atualizar aplicativo</button></div>}
-    {!staff && !installed && !hidden && (prompt || ios || instructions) && <section className="install-banner" aria-label="Instalar Bolão Livre"><strong>Bolão Livre no seu celular</strong>{instructions || ios ? <p>{ios ? 'No iPhone/iPad: abra no Safari, toque em Compartilhar → Adicionar à Tela de Início. Se aparecer “Abrir como App”, mantenha ativado.' : 'No menu do navegador, procure “Instalar aplicativo” ou “Adicionar à tela inicial”. Se não aparecer, abra este site no Chrome ou Edge atualizado.'}</p> : <span>Instale para acessar bolões, cotas e resultados pela tela inicial.</span>}{prompt && <button className="button button-primary" disabled={busy} onClick={() => void install()}>{busy ? 'Aguarde…' : 'Instalar'}</button>}<button className="button button-ghost" onClick={dismiss}>Agora não</button>{message && <p role="status">{message}</p>}</section>}
-    {!staff && installed && instructions && <div className="install-banner"><p>Você já está usando o aplicativo instalado.</p><button className="button" onClick={() => setInstructions(false)}>Fechar</button></div>}
+    {(!staff || adminApp) && waiting && <div className="pwa-update" role="status"><span>Nova versão disponível. Conclua compras e edições antes de atualizar.</span><button className="button button-secondary" onClick={() => { if (window.confirm('Atualizar e recarregar o aplicativo agora? Conclua operações em andamento antes de continuar.')) { acceptedUpdate.current = true; waiting.postMessage({ type: 'ACTIVATE_UPDATE' }); } }}>Atualizar aplicativo</button></div>}
+    {!staff && !onInstallPage && !installed && !hidden && (prompt || ios || instructions) && <section className="install-banner" aria-label="Instalar Bolão Livre"><strong>Bolão Livre no seu celular</strong>{instructions || ios ? <p>{ios ? 'No iPhone/iPad: abra no Safari, toque em Compartilhar → Adicionar à Tela de Início. Se aparecer “Abrir como App”, mantenha ativado.' : 'No menu do navegador, procure “Instalar aplicativo” ou “Adicionar à tela inicial”. Se não aparecer, abra este site no Chrome ou Edge atualizado.'}</p> : <span>Instale para acessar bolões, cotas e resultados pela tela inicial.</span>}{prompt && <button className="button button-primary" disabled={busy} onClick={() => void install()}>{busy ? 'Aguarde…' : 'Instalar'}</button>}<button className="button button-ghost" onClick={dismiss}>Agora não</button>{message && <p role="status">{message}</p>}</section>}
+    {!staff && !onInstallPage && installed && instructions && <div className="install-banner"><p>Você já está usando o aplicativo instalado.</p><button className="button" onClick={() => setInstructions(false)}>Fechar</button></div>}
   </>;
 }

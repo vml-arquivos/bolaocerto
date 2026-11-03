@@ -1,8 +1,11 @@
 'use client';
 import Link from 'next/link';
 import { FormEvent, useState } from 'react';
+import { PasswordField } from './password-field';
+import { rememberLogin } from './header-auth';
+import { passwordProblem } from '../lib/password';
 
-export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
+export function AuthForm({ mode, audience = 'cliente' }: { mode: 'login' | 'register'; audience?: 'cliente' | 'admin' }) {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [needs2fa, setNeeds2fa] = useState(false);
@@ -10,20 +13,27 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     event.preventDefault(); setLoading(true); setMessage('');
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
+    if (mode === 'register') { const problem = passwordProblem(String(payload.senha ?? '')); if (problem) { setMessage(problem); setLoading(false); return; } }
     try {
       const response = await fetch(`/api/v1/auth/${mode === 'login' ? 'login' : 'registrar'}`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       const result = await response.json().catch(() => ({})) as { message?: string | string[]; requer2fa?: boolean };
       if (result.requer2fa) setNeeds2fa(true);
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || 'Não foi possível concluir.');
       const authenticatedUser = (result as { user?: { papel?: string } }).user;
+      rememberLogin();
+      if (audience === 'admin') {
+        if (authenticatedUser?.papel === 'admin' || authenticatedUser?.papel === 'operacao') { window.location.href = '/admin'; return; }
+        await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
+        throw new Error('Esta conta não tem acesso ao painel. Para participar de bolões, use o aplicativo Bolão Livre.');
+      }
       window.location.href = authenticatedUser?.papel === 'admin' ? '/admin' : authenticatedUser?.papel === 'afiliado' ? '/afiliado' : '/minha-conta';
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
   return <form onSubmit={submit}>
     {mode === 'register' && <><div className="field"><label htmlFor="nome">Nome completo</label><input id="nome" name="nome" minLength={2} required autoComplete="name" /></div><div className="form-row"><div className="field"><label htmlFor="cpf">CPF (somente números)</label><input id="cpf" name="cpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div><div className="field"><label htmlFor="dataNascimento">Data de nascimento</label><input id="dataNascimento" name="dataNascimento" type="date" required /></div></div><div className="field"><label htmlFor="telefone">Telefone</label><input id="telefone" name="telefone" type="tel" autoComplete="tel" /></div></>}
-    <div className="field"><label htmlFor="email">E-mail</label><input id="email" name="email" type="email" required autoComplete="email" /></div><div className="field"><label htmlFor="senha">Senha {mode === 'register' && '(6 a 8 números)'}</label><input id="senha" name="senha" type="password" minLength={mode === 'register' ? 6 : 1} maxLength={mode === 'register' ? 8 : undefined} pattern={mode === 'register' ? '[0-9]{6,8}' : undefined} inputMode={mode === 'register' ? 'numeric' : undefined} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />{mode === 'login' && <small className="field-hint"><Link href="/esqueci-senha">Esqueci minha senha</Link></small>}</div>
+    <div className="field"><label htmlFor="email">E-mail</label><input id="email" name="email" type="email" required autoComplete="email" /></div><PasswordField id="senha" name="senha" label="Senha" create={mode === 'register'}>{mode === 'login' && <small className="field-hint"><Link href="/esqueci-senha">Esqueci minha senha</Link></small>}</PasswordField>
     {mode === 'login' && needs2fa && <div className="field"><label htmlFor="codigo">Código do aplicativo autenticador</label><input id="codigo" name="codigo" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={20} required autoFocus /><small className="field-hint">Perdeu o celular? Use um código de recuperação (formato XXXXX-XXXXX).</small></div>}
-    {message && <div className="form-message form-error" role="alert">{message}</div>}<button className="button button-primary" disabled={loading}>{loading ? 'Aguarde…' : mode === 'login' ? 'Entrar no BL' : 'Criar minha conta'}</button>
-    <p className="form-foot">{mode === 'login' ? <>Ainda não tem conta? <Link href="/cadastro">Cadastre-se</Link></> : <>Já possui conta? <Link href="/login">Entrar</Link></>}</p>
+    {message && <div className="form-message form-error" role="alert">{message}</div>}<button className="button button-primary" disabled={loading}>{loading ? 'Aguarde…' : audience === 'admin' ? 'Entrar no painel' : mode === 'login' ? 'Entrar no BL' : 'Criar minha conta'}</button>
+    {audience !== 'admin' && <p className="form-foot">{mode === 'login' ? <>Ainda não tem conta? <Link href="/cadastro">Cadastre-se</Link></> : <>Já possui conta? <Link href="/login">Entrar</Link></>}</p>}
   </form>;
 }

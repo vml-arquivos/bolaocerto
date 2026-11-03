@@ -13,12 +13,14 @@ export type PoolTransparency = {
   apuracao: { concurso: number; sorteados: number[]; segundoSorteio: number[]; melhorFaixa: string | null; jogos: PoolGameResult[] } | null;
 };
 
+export type PoolSalesRules = { antecipada: boolean; inicioEm: string | null; fimEm: string | null; maxCotasPorPessoa: number | null; texto: string | null; janela?: 'em_breve' | 'aberta' | 'encerrada' };
 export type PublicPool = {
   id: string; concursoId: string; grupoId: string; numerosApostados: number[]; totalCotas: number | null;
   cotasIlimitadas: boolean; cotasVendidas?: number; cotasDisponiveis: number | null; valorCota: string; taxaAdministracaoPct: string; modeloOperacional: string;
   status: string; teveGanhador: boolean; concurso?: Omit<PublicContest, 'id'>;
   resultado?: { numerosSorteados: number[]; numerosSegundoSorteio: number[]; atualizadoEm: string } | null;
   liberacao?: PoolRelease;
+  regrasVenda?: PoolSalesRules;
   jogos?: Array<{ id: string; ordem: number; numeros: number[] }>;
   transparencia?: PoolTransparency | null;
   grupo?: { nome: string; slug: string; descricao: string | null };

@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: { default: 'BL — Bolão Livre', template: '%s | BL — Bolão Livre' },
   description: 'Acompanhe concursos oficiais, escolha seu bolão e gerencie suas cotas com transparência e rastreabilidade.',
   applicationName: 'BL — Bolão Livre',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: '/brand/bl-app-icon.png',
     apple: '/brand/bl-app-icon.png',

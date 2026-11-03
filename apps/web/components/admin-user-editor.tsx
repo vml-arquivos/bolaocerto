@@ -9,6 +9,7 @@ async function api(path: string, options?: RequestInit) {
   if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || 'Não foi possível concluir.');
   return result;
 }
+const roleLabels: Record<string, string> = { cotista: 'Cliente / cotista', afiliado: 'Afiliado', operacao: 'Equipe de operação', admin: 'Administrador' };
 export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: () => void; onDone: () => Promise<void> }) {
   const [user, setUser] = useState<User | null>(null);
   const [message, setMessage] = useState('');
@@ -48,8 +49,9 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao alterar acesso.'); } finally { setBusy(false); }
   }
   return <AdminModal title="Usuário, equipe e acessos" onClose={() => { if (!busy) onClose(); }}>
+    {message && <p role="alert" className="notice admin-editor-message">{message}</p>}
     {!user && !message && <p>Carregando cadastro…</p>}
-    {user && <><p><strong>{user.papel}</strong> · {user.desativadoEm ? 'Acesso removido' : 'Conta ativa'} · {user._count.cotasCompradas} participações · {user._count.boloesCriados} bolões criados</p>
+    {user && <><p><strong>{roleLabels[user.papel] ?? user.papel}</strong> · {user.desativadoEm ? 'Acesso removido' : 'Conta ativa'} · {user._count.cotasCompradas} participações · {user._count.boloesCriados} bolões criados</p>
       <form className="admin-form-grid" onSubmit={save}>
         <label className="admin-field"><span>Nome</span><input required minLength={2} maxLength={150} value={user.nome} onChange={e => setUser({ ...user, nome: e.target.value })}/></label>
         <label className="admin-field"><span>E-mail</span><input required type="email" maxLength={180} value={user.email} onChange={e => setUser({ ...user, email: e.target.value })}/></label>
@@ -69,6 +71,5 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       {user.desativadoEm && <button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void action('delete')}>Excluir definitivamente conta sem histórico</button>}
       <p className="admin-help">A remoção desativa o acesso; não apaga a pessoa do histórico financeiro. Solicitações de eliminação de dados exigem análise de retenção.</p>
     </>}
-    {message && <p role="status" className="notice">{message}</p>}
   </AdminModal>;
 }

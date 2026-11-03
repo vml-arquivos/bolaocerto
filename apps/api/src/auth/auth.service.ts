@@ -8,7 +8,7 @@ import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
 import { RegisterDto, LoginDto } from './auth.dto';
 import { assertAdult, AuthUser, isValidCpf, normalizeCpf } from './auth.utils';
-import { isValidNewPassword } from './password-policy';
+import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from './password-policy';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, openSecret, otpauthUrl, sealSecret, verifyTotp } from './totp';
 
 const GENERIC_LOGIN_ERROR = 'E-mail ou senha incorretos, ou conta temporariamente bloqueada por excesso de tentativas. Tente novamente em alguns minutos.';
@@ -31,7 +31,7 @@ export class AuthService {
     const dataNascimento = new Date(dto.dataNascimento);
     if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
     assertAdult(dataNascimento);
-    if (!isValidNewPassword(dto.senha)) throw new ConflictException('A senha deve ter de 6 a 8 caracteres, somente números.');
+    if (!isValidNewPassword(dto.senha)) throw new ConflictException(NEW_PASSWORD_MESSAGE);
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');

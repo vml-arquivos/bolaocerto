@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsObject, ArrayMaxSize, IsPositive, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsObject, ArrayMaxSize, IsPositive, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested } from 'class-validator';
 
 export class PoolGameDto {
   @IsInt()
@@ -86,6 +86,36 @@ export class CreatePoolDto {
   @Max(100_000_000_000)
   premioMinimoLiberacao?: number;
 
+  /** Pré-venda: vende as cotas antes de apostar (sem comprovante prévio). Só o administrador pode ligar. */
+  @IsOptional()
+  @IsBoolean()
+  vendaAntecipada?: boolean;
+
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsDateString()
+  vendaInicioEm?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsDateString()
+  vendaFimEm?: string | null;
+
+  /** Máximo de cotas que uma mesma pessoa pode comprar neste bolão. */
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  maxCotasPorPessoa?: number | null;
+
+  /** Texto livre mostrado ao cliente antes de comprar. */
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsString()
+  @MaxLength(1200)
+  regrasVenda?: string | null;
+
   @IsOptional()
   @IsUUID()
   lotericaParceiraId?: string;
@@ -135,6 +165,36 @@ export class UpdatePoolDto {
   @IsPositive()
   @Max(100_000_000_000)
   premioMinimoLiberacao?: number | null;
+
+  /** Pré-venda: vende as cotas antes de apostar (sem comprovante prévio). Só o administrador pode ligar. */
+  @IsOptional()
+  @IsBoolean()
+  vendaAntecipada?: boolean;
+
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsDateString()
+  vendaInicioEm?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsDateString()
+  vendaFimEm?: string | null;
+
+  /** Máximo de cotas que uma mesma pessoa pode comprar neste bolão. */
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  maxCotasPorPessoa?: number | null;
+
+  /** Texto livre mostrado ao cliente antes de comprar. */
+  @IsOptional()
+  @ValidateIf((_dto: object, value: unknown) => value !== null)
+  @IsString()
+  @MaxLength(1200)
+  regrasVenda?: string | null;
 }
 
 /** Pedido do gerador de jogos do bolão: quantos jogos, quantos números em cada um, e como escolher. */

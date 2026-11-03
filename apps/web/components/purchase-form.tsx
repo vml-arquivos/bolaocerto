@@ -1,6 +1,7 @@
 'use client';
 import { useSaleClock } from './live-storefront';
-import { canPurchase, withinSaleWindow } from '../lib/pool-availability';
+import { canPurchase, saleRuleState, withinSaleWindow } from '../lib/pool-availability';
+import type { PoolSalesRules } from '../lib/domain';
 import Link from 'next/link';
 import type { LegalDocumentData } from './legal-document';
 import { FormEvent, useEffect, useState } from 'react';
@@ -12,9 +13,9 @@ import { PaymentInstructions, PaymentView } from './payment-instructions';
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito', pix_automatico: 'Pix Automático (recorrente)' };
 
-export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled, release, cutoffAt, contestStatus, hasResult, serverNow }: { cutoffAt?: string; contestStatus?: string; hasResult: boolean; serverNow: number; poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean; release?: PoolRelease }) {
+export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled, release, cutoffAt, contestStatus, hasResult, serverNow, rules }: { rules?: PoolSalesRules; cutoffAt?: string; contestStatus?: string; hasResult: boolean; serverNow: number; poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean; release?: PoolRelease }) {
   const now = useSaleClock(serverNow);
-  const sale = { status, cotasDisponiveis: available, concurso: { cutoffAt, status: contestStatus }, resultado: hasResult, liberacao: release };
+  const sale = { status, cotasDisponiveis: available, concurso: { cutoffAt, status: contestStatus }, resultado: hasResult, liberacao: release, regrasVenda: rules };
   const [message, setMessage] = useState('');
   const [contract, setContract] = useState<LegalDocumentData | null>(null);
   const [accepted, setAccepted] = useState(false);
@@ -26,6 +27,10 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const unlimited = available === null;
   const locked = withinSaleWindow(sale, now) && Boolean(release?.condicional && !release.liberado);
   const enabled = paymentsEnabled && canPurchase(sale, now);
+  const ruleState = withinSaleWindow(sale, now) ? saleRuleState(sale, now) : 'aberta';
+  const maxPerPerson = rules?.maxCotasPorPessoa ?? null;
+  const maxQuantity = maxPerPerson === null ? (unlimited ? undefined : available ?? undefined) : unlimited ? maxPerPerson : Math.min(maxPerPerson, available ?? maxPerPerson);
+  const when = (value?: string | null) => value ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).format(new Date(value)) : '';
 
   useEffect(() => {
     if (!paymentsEnabled) return;
@@ -56,16 +61,20 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   }
 
   return <aside className="purchase-card"><span className="overline">Participar agora</span><p className="price">{money(unitPrice)}</p><p className="muted">por cota · {unlimited ? 'cotas ilimitadas' : `${available} disponíveis`}</p>
+    {rules?.antecipada && <div className="notice presale-notice"><strong>Pré-venda</strong><span>O jogo será registrado na lotérica depois do fim das vendas e o comprovante será enviado a todos os cotistas.</span></div>}
+    {(rules?.inicioEm || rules?.fimEm) && <p className="muted sale-window">{rules?.inicioEm ? `Venda de ${when(rules.inicioEm)}` : 'Venda'}{rules?.fimEm ? ` até ${when(rules.fimEm)}` : ''}</p>}
+    {rules?.texto && <div className="sale-rules-text"><strong>Regras de venda</strong><p>{rules.texto}</p></div>}
     {release?.condicional && <ReleaseMeter release={release} />}
     {!paymentsEnabled ? <div className="notice payment-disabled"><strong>Reservas temporariamente indisponíveis</strong><span>As reservas deste bolão estão pausadas no momento. Tente novamente em alguns instantes.</span></div>
       : enabled ? <form onSubmit={submit}>
-        <div className="field"><label htmlFor="quantidade">Quantidade de cotas</label><input id="quantidade" name="quantidade" type="number" min={1} {...(unlimited ? {} : { max: available ?? undefined })} defaultValue={1} required /></div>
+        <div className="field"><label htmlFor="quantidade">Quantidade de cotas</label><input id="quantidade" name="quantidade" type="number" min={1} {...(maxQuantity === undefined ? {} : { max: maxQuantity })} defaultValue={1} required />{maxPerPerson !== null && <small>Máximo de {maxPerPerson} {maxPerPerson === 1 ? 'cota' : 'cotas'} por pessoa.</small>}</div>
         <div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required /></div>
         <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div>
         {methods.length > 1 && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
         <details><summary>Contrato desta compra · {contract?.versao ?? 'carregando'}</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito os <Link href="/termos" target="_blank"><u>termos de participação</u></Link>, confirmo ser maior de 18 anos e autorizo o registro.</span></label>
         <button className="button button-primary" disabled={loading || !accepted || !contract?.aprovado}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : 'Reservar e gerar Pix'}</button>
-      </form> : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
+      </form> : ruleState === 'em_breve' ? <div className="notice"><strong>A venda ainda não começou</strong><span>As cotas abrem em {when(rules?.inicioEm)}.</span></div>
+        : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
         : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}
     {locked && <NotifyMe poolId={poolId} />}
     {message && <div className={`form-message ${created ? 'form-success' : 'form-error'}`}>{message}</div>}

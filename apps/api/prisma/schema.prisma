@@ -338,6 +338,12 @@ model Bolao {
   liberadoEm            DateTime?           @map("liberado_em")
   editadoPor            String?             @map("editado_por") @db.Uuid
   editadoEm             DateTime?           @map("editado_em")
+  /// Regras de venda definidas pelo administrador (todas opcionais).
+  vendaAntecipada       Boolean             @default(false) @map("venda_antecipada")
+  vendaInicioEm         DateTime?           @map("venda_inicio_em")
+  vendaFimEm            DateTime?           @map("venda_fim_em")
+  maxCotasPorPessoa     Int?                @map("max_cotas_por_pessoa")
+  regrasVenda           String?             @map("regras_venda") @db.VarChar(1200)
   /// Bolão de afiliado só abre para venda depois da aprovação do admin.
   aprovacaoSolicitadaEm DateTime?           @map("aprovacao_solicitada_em")
   aprovadoEm            DateTime?           @map("aprovado_em")

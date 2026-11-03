@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from '../auth/password-policy';
 
 export class CreatePartnerLotteryDto {
   @IsString()
@@ -63,8 +64,8 @@ export class CreateManagedUserDto {
   dataNascimento!: string;
 
   @IsString()
-  @Length(6, 8, { message: 'A senha deve ter de 6 a 8 caracteres.' })
-  @Matches(/^\d{6,8}$/, { message: 'A senha deve conter somente números.' })
+  @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE })
+  @Matches(NEW_PASSWORD_PATTERN, { message: NEW_PASSWORD_MESSAGE })
   senha!: string;
 
   @IsOptional()
@@ -237,8 +238,8 @@ export class UpdateAffiliateCommissionDto {
 }
 
 export class UpdateUserRoleDto {
-  @IsEnum(['cotista', 'afiliado', 'admin'])
-  papel!: 'cotista' | 'afiliado' | 'admin';
+  @IsEnum(['cotista', 'afiliado', 'operacao', 'admin'], { message: 'Perfil de acesso inválido.' })
+  papel!: 'cotista' | 'afiliado' | 'operacao' | 'admin';
 }
 
 export class UpdateUserKycDto {

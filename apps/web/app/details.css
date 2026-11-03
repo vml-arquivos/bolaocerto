@@ -137,8 +137,6 @@
 .soft-divider { border: 0; border-top: 1px solid var(--border); margin: 18px 0 14px; }
 
 /* Banner de instalação do app (PWA) */
-.install-banner{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:16px;background:var(--surface-2,#111a3a);border:1px solid color-mix(in srgb,currentColor 14%,transparent);box-shadow:0 12px 40px rgba(0,0,0,.35);font-size:.92rem}
-@media (min-width:720px){.install-banner{left:auto;max-width:460px}}
 
 /* ---------- Arquivos anexados (comprovantes) ---------- */
 .attach-panel { display: grid; gap: 16px; }

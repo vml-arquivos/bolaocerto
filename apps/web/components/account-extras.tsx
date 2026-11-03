@@ -6,6 +6,8 @@ import { shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
 import { ATTACHMENT_LABELS, fileSize } from '../lib/files';
 import { OpenFileButton } from './open-file-button';
+import { PasswordField } from './password-field';
+import { passwordProblem } from '../lib/password';
 import { modalityNames } from '../lib/domain';
 
 type Notice = { id: string; titulo: string; mensagem: string; link: string | null; lida: boolean; criadoEm: string };
@@ -53,6 +55,7 @@ export function PasswordCard() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const novaSenha = String(form.get('novaSenha') ?? '');
+    const problem = passwordProblem(novaSenha); if (problem) { setOk(false); setMessage(problem); return; }
     if (novaSenha !== String(form.get('confirmacao') ?? '')) { setMessage('As duas senhas novas precisam ser iguais.'); return; }
     setBusy(true);
     try {
@@ -65,9 +68,9 @@ export function PasswordCard() {
   return <article className="dashboard-card wide"><h2>Segurança</h2>
     <p className="muted">Troque a senha com regularidade e não a repita em outros serviços.</p>
     <form onSubmit={submit} className="admin-form-grid">
-      <div className="field"><label htmlFor="senhaAtual">Senha atual</label><input id="senhaAtual" name="senhaAtual" type="password" required autoComplete="current-password" /></div>
-      <div className="field"><label htmlFor="novaSenhaConta">Nova senha (6 a 8 números)</label><input id="novaSenhaConta" name="novaSenha" type="password" minLength={6} maxLength={8} pattern="[0-9]{6,8}" inputMode="numeric" required autoComplete="new-password" /></div>
-      <div className="field"><label htmlFor="confirmacaoConta">Repita a nova senha</label><input id="confirmacaoConta" name="confirmacao" type="password" minLength={6} maxLength={8} pattern="[0-9]{6,8}" inputMode="numeric" required autoComplete="new-password" /></div>
+      <PasswordField id="senhaAtual" name="senhaAtual" label="Senha atual" />
+      <PasswordField id="novaSenhaConta" name="novaSenha" label="Nova senha" create />
+      <PasswordField id="confirmacaoConta" name="confirmacao" label="Repita a nova senha" create />
       <div className="field" style={{ alignSelf: 'end' }}><button className="button button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Alterar senha'}</button></div>
     </form>
     {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}

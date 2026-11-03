@@ -9,6 +9,7 @@ import { ResponsiblePlayService } from '../common/responsible-play.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { buildReceiptData, buildReceiptPdf, MODALITY_NAMES, receiptCode, receiptCodeMatches, ReceiptData } from './receipt';
 import { ReserveShareDto } from './shares.dto';
+import { remainingForPerson, saleWindowMessage } from '../pools/sales-rules';
 
 @Injectable()
 export class SharesService {
@@ -33,6 +34,14 @@ export class SharesService {
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } }, grupo: { select: { afiliado: { select: { id: true, usuarioId: true, statusAprovacao: true } } } } } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
       if (pool.comprovanteAntesVenda && !await hasSaleProof(tx, pool.id)) throw new ConflictException('Comprovante oficial ainda indisponível para esta venda.');
+      const windowMessage = saleWindowMessage(pool);
+      if (windowMessage) throw new ConflictException(windowMessage);
+      if (pool.maxCotasPorPessoa !== null && pool.maxCotasPorPessoa !== undefined) {
+        const now = new Date();
+        const mine = await tx.cota.aggregate({ _sum: { quantidade: true }, where: { bolaoId: pool.id, compradorId: user.id, OR: [{ status: { in: [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] } }, { status: StatusCota.reservada, expiraReservaEm: { gt: now } }] } });
+        const left = remainingForPerson(pool.maxCotasPorPessoa, mine._sum.quantidade ?? 0) ?? 0;
+        if (dto.quantidade > left) throw new ConflictException(left > 0 ? `Cada pessoa pode ter no máximo ${pool.maxCotasPorPessoa} cotas neste bolão. Você ainda pode pegar ${left}.` : `Cada pessoa pode ter no máximo ${pool.maxCotasPorPessoa} cotas neste bolão e você já atingiu o limite.`);
+      }
       const contestDeadline = await tx.concurso.findUniqueOrThrow({ where: { id: pool.concursoId }, select: { cutoffAt: true, status: true, resultado: { select: { id: true } } } });
       if (contestDeadline.cutoffAt <= new Date() || contestDeadline.resultado || (contestDeadline.status && contestDeadline.status !== 'aberto')) throw new ConflictException('O prazo de compra deste concurso encerrou.');
       if (pool.status !== StatusBolao.aberto || (!pool.cotasIlimitadas && (pool.totalCotas === null || pool.cotasVendidas + dto.quantidade > pool.totalCotas))) throw new ConflictException('Cotas insuficientes ou bolão indisponível.');

@@ -14,6 +14,8 @@ type PoolWizardProps = {
   editPool?: RecordValue | null;
   onCancelEdit?: () => void;
   onSuccess: () => Promise<void> | void;
+  /** Chamado depois de criar um concurso de data comemorativa, para a lista de concursos recarregar. */
+  onContestCreated?: () => Promise<void> | void;
 };
 
 const modalityNames: Record<string, string> = {
@@ -59,7 +61,15 @@ async function authFetch(path: string, options?: RequestInit) {
   return response;
 }
 
-export function PoolWizard({ contests, groupId, groups = [], role = 'admin', editPool, onCancelEdit, onSuccess }: PoolWizardProps) {
+function toLocalInput(value: unknown) {
+  if (!value) return '';
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function PoolWizard({ contests, groupId, groups = [], role = 'admin', editPool, onCancelEdit, onSuccess, onContestCreated }: PoolWizardProps) {
   const editing = Boolean(editPool?.id);
   const [modality, setModality] = useState('megasena');
   const [contestId, setContestId] = useState('');
@@ -89,6 +99,18 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [genError, setGenError] = useState('');
   const [generated, setGenerated] = useState<RecordValue | null>(null);
   const [priceTable, setPriceTable] = useState<Record<string, number>>({});
+  // Data comemorativa (sem concurso aberto) e regras de venda
+  const [newDate, setNewDate] = useState(false);
+  const [festaChoice, setFestaChoice] = useState('personalizado');
+  const [festaName, setFestaName] = useState('');
+  const [festaDate, setFestaDate] = useState('');
+  const [festaBusy, setFestaBusy] = useState(false);
+  const [festaPresets, setFestaPresets] = useState<Array<{ chave: string; nome: string; modalidade: string }>>([]);
+  const [presale, setPresale] = useState(false);
+  const [saleStart, setSaleStart] = useState('');
+  const [saleEnd, setSaleEnd] = useState('');
+  const [maxPerPerson, setMaxPerPerson] = useState('');
+  const [saleText, setSaleText] = useState('');
 
   useEffect(() => {
     if (!editPool) {
@@ -105,6 +127,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setDescription('');
       setConditional(false);
       setTrigger('100000000');
+      setPresale(false); setSaleStart(''); setSaleEnd(''); setMaxPerPerson(''); setSaleText(''); setNewDate(false);
       return;
     }
     const existingModality = String(editPool.concurso?.modalidade ?? editPool.modalidade ?? 'megasena');
@@ -122,6 +145,12 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setDescription(String(editPool.grupo?.descricao ?? ''));
     setConditional(Boolean(editPool.liberacao?.condicional));
     setTrigger(editPool.liberacao?.gatilho ? String(editPool.liberacao.gatilho) : '100000000');
+    setPresale(Boolean(editPool.regrasVenda?.antecipada));
+    setSaleStart(toLocalInput(editPool.regrasVenda?.inicioEm));
+    setSaleEnd(toLocalInput(editPool.regrasVenda?.fimEm));
+    setMaxPerPerson(editPool.regrasVenda?.maxCotasPorPessoa ? String(editPool.regrasVenda.maxCotasPorPessoa) : '');
+    setSaleText(String(editPool.regrasVenda?.texto ?? ''));
+    setNewDate(false);
     setMessage('');
   }, [editPool, groupId]);
 
@@ -170,6 +199,29 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     }, 350);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [automatic, editing, canPrice, contestId, selectedGroupId, numbers, totalCotas, taxa, unlimited]);
+  useEffect(() => {
+    if (!newDate || festaPresets.length) return;
+    authFetch('/api/v1/admin/concursos/festas').then(async (response) => { if (response.ok) setFestaPresets(await response.json()); }).catch(() => undefined);
+  }, [newDate, festaPresets.length]);
+  const modalityPresets = festaPresets.filter((preset) => preset.modalidade === modality);
+  useEffect(() => { setFestaChoice(modalityPresets[0]?.chave ?? 'personalizado'); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modality, festaPresets]);
+  async function createDateContest() {
+    setMessage('');
+    if (!festaDate) { setMessage('Escolha o dia do sorteio.'); return; }
+    const preset = modalityPresets.find((item) => item.chave === festaChoice);
+    if (!preset && !festaName.trim()) { setMessage('Dê um nome para a data (ex.: Quina do Natal).'); return; }
+    setFestaBusy(true);
+    try {
+      const response = await authFetch('/api/v1/admin/concursos/festa', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ especial: preset ? preset.chave : 'personalizado', dataSorteio: festaDate, ...(preset ? {} : { modalidade: modality, nomeEspecial: festaName.trim() }) }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível criar o concurso desta data.');
+      await onContestCreated?.();
+      setContestId(String(data.id)); setNewDate(false); setFestaDate(''); setFestaName('');
+      setMessage('Concurso da data criado e selecionado. Agora é só definir os jogos e as cotas.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao criar o concurso desta data.'); }
+    finally { setFestaBusy(false); }
+  }
   async function suggestGame() {
     setSuggesting(true);
     try {
@@ -196,6 +248,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setDescription('');
     setConditional(false);
     setTrigger('100000000');
+    setPresale(false); setSaleStart(''); setSaleEnd(''); setMaxPerPerson(''); setSaleText('');
     setMessage('');
   }
 
@@ -228,7 +281,17 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     if (!editing && automatic && (!quote || !canPrice || unlimited)) { setMessage('Aguarde uma cotação válida.'); return; }
     setSaving(true);
     try {
-      const body = {
+      const salesRules = {
+        vendaInicioEm: saleStart ? new Date(saleStart).toISOString() : null,
+        vendaFimEm: saleEnd ? new Date(saleEnd).toISOString() : null,
+        maxCotasPorPessoa: maxPerPerson.trim() ? Number(maxPerPerson) : null,
+        regrasVenda: saleText.trim() || null,
+        ...(role === 'admin' && (presale || editPool?.regrasVenda?.antecipada) ? { vendaAntecipada: presale } : {}),
+      };
+      if (salesRules.maxCotasPorPessoa !== null && (!Number.isInteger(salesRules.maxCotasPorPessoa) || salesRules.maxCotasPorPessoa < 1)) { setMessage('O limite por pessoa precisa ser um número inteiro de 1 em diante.'); setSaving(false); return; }
+      if (saleStart && saleEnd && new Date(saleStart) >= new Date(saleEnd)) { setMessage('O início da venda precisa ser antes do fim.'); setSaving(false); return; }
+      const body = editing && editPool?.precificacao ? { ...salesRules, ...(description.trim() ? { descricao: description.trim() } : {}) } : {
+        ...salesRules,
         ...(editing ? {} : { concursoId: selectedContest.id, grupoId: selectedGroupId }),
         numerosApostados: uniqueNumbers,
         jogos: games.map((g, i) => ({ ...g, quantidadeDezenas: g.numeros.length, custo: Number(quote?.jogos[i]?.custo ?? editPool?.jogos?.[i]?.custo ?? custo ?? 0) })),
@@ -263,6 +326,18 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
       <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
       <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateOnly(contest.dataSorteio)} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
+      {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
+        <button type="button" className="admin-button" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}>{newDate ? 'Fechar' : 'Criar para uma data comemorativa (sem concurso aberto)'}</button>
+        {newDate && <div className="festa-inline-body">
+          <p className="admin-muted">Serve para Mega da Virada, Quina de São João, Lotofácil da Independência ou qualquer data. O concurso fica provisório e assume o número oficial quando a CAIXA publicar. Você já pode abrir a venda de cotas.</p>
+          <div className="admin-form-grid admin-form-grid-three">
+            <label className="admin-field"><span>Data comemorativa</span><select value={festaChoice} onChange={(event) => setFestaChoice(event.target.value)}>{modalityPresets.map((preset) => <option key={preset.chave} value={preset.chave}>{preset.nome}</option>)}<option value="personalizado">Outra data (informar nome)</option></select></label>
+            {(festaChoice === 'personalizado' || !modalityPresets.some((preset) => preset.chave === festaChoice)) && <label className="admin-field"><span>Nome da data</span><input value={festaName} maxLength={80} onChange={(event) => setFestaName(event.target.value)} placeholder="Ex.: Quina do Natal" /></label>}
+            <label className="admin-field"><span>Dia do sorteio</span><input type="date" value={festaDate} onChange={(event) => setFestaDate(event.target.value)} /></label>
+          </div>
+          <button type="button" className="admin-button admin-button-primary" disabled={festaBusy} onClick={() => void createDateContest()}>{festaBusy ? 'Criando…' : `Criar concurso de ${modalityNames[modality] ?? modality}`}</button>
+        </div>}
+      </div>}
       {canPrice && !editing && <div className="admin-field admin-field-wide game-generator" aria-label="Gerador de jogos">
         <strong>Gerar jogos automaticamente</strong>
         <div className="admin-form-grid admin-form-grid-four">
@@ -297,9 +372,20 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. Opção legada, indisponível para novos lotes.</small></span></label>}
     <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
     {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
+    <fieldset className="sales-rules">
+      <legend>Regras de venda</legend>
+      <p className="admin-muted">Opcional. Defina quando as cotas ficam à venda e o limite por pessoa. Sem datas, a venda vale até o prazo do concurso.</p>
+      <div className="admin-form-grid admin-form-grid-three">
+        <label className="admin-field"><span>Venda começa em</span><input type="datetime-local" value={saleStart} onChange={(event) => setSaleStart(event.target.value)} /></label>
+        <label className="admin-field"><span>Venda termina em</span><input type="datetime-local" value={saleEnd} onChange={(event) => setSaleEnd(event.target.value)} /></label>
+        <label className="admin-field"><span>Máximo de cotas por pessoa</span><input type="number" min="1" step="1" inputMode="numeric" value={maxPerPerson} onChange={(event) => setMaxPerPerson(event.target.value)} placeholder="Sem limite" /></label>
+      </div>
+      <label className="admin-field"><span>Regras para o cliente (aparecem no bolão)</span><textarea rows={3} maxLength={2000} value={saleText} onChange={(event) => setSaleText(event.target.value)} placeholder="Ex.: Cotas de R$ 10. O jogo é registrado após o encerramento das vendas e o comprovante é enviado a todos." /></label>
+      {role === 'admin' && <label className="admin-toggle-row"><input type="checkbox" checked={presale} disabled={editing && Boolean(editPool?.cotasVendidas)} onChange={(event) => setPresale(event.target.checked)} /><span><strong>Pré-venda (vender antes de registrar o jogo)</strong><small>As cotas são vendidas sem comprovante prévio. Depois de registrar a aposta na lotérica, o comprovante é enviado a todos os cotistas. Use para datas comemorativas antes de o concurso abrir.</small></span></label>}
+    </fieldset>
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
     <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? (selectedContest.nomeEspecial ? `${selectedContest.nomeEspecial}${selectedContest.numeroConcurso > 0 ? ` #${selectedContest.numeroConcurso}` : ' (número a definir)'}` : `#${selectedContest.numeroConcurso}`) : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
     {role === 'admin' && <LotteryPriceAdmin />}
-    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && automatic && !quote) || (editing && Boolean(editPool?.precificacao))}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
+    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && automatic && !quote) || false}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
   </form>;
 }

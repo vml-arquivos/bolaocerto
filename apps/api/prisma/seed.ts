@@ -4,7 +4,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const isValidNewPassword = (password: string): boolean => /^\d{6,8}$/.test(password);
+// Regra atual: mínimo 6 caracteres com letra e número. A regra antiga (6 a 8 números) segue aceita só aqui,
+// para não quebrar quem já tem ADMIN_BOOTSTRAP_PASSWORD numérico configurado.
+const isValidNewPassword = (password: string): boolean => (password.length >= 6 && password.length <= 128 && /^(?=.*\p{L})(?=.*\d).+$/u.test(password)) || /^\d{6,8}$/.test(password);
 
 const modalities = [
   ['megasena', 'Mega-Sena', '19:00'],
@@ -34,7 +36,7 @@ async function main() {
 
   if (email && password && cpf?.length === 11) {
     const existing = await prisma.usuario.findUnique({ where: { email }, select: { id: true } });
-    if (!existing && !isValidNewPassword(password)) throw new Error('ADMIN_BOOTSTRAP_PASSWORD deve ter de 6 a 8 caracteres numéricos para criar o administrador inicial.');
+    if (!existing && !isValidNewPassword(password)) throw new Error('ADMIN_BOOTSTRAP_PASSWORD deve ter no mínimo 6 caracteres, com letra e número, para criar o administrador inicial.');
     const admin = await prisma.usuario.upsert({
       where: { email },
       create: {

@@ -21,3 +21,11 @@
 
 ## 4. Home
 A seção **Bolões já sorteados** aparece na página inicial sempre que existir concurso sorteado: números oficiais, acertos de cada jogo e se o bolão foi premiado.
+
+## Datas comemorativas, regras de venda e pré-venda (v9)
+
+- **Qualquer loteria da CAIXA** pode ter concurso de festa (Mega da Virada, Quina de São João, Lotofácil da Independência, Timemania, Dia de Sorte, Super Sete, Loteca…). A cotação automática e o gerador de jogos continuam só para Mega-Sena, Lotofácil, Quina, Dupla Sena e Lotomania; nas demais o administrador informa os jogos e o valor.
+- No formulário **Novo bolão** o administrador usa "Criar para uma data comemorativa": escolhe a data pronta ou digita um nome, informa o dia do sorteio e o concurso provisório já aparece selecionado. Quando a CAIXA publicar o concurso oficial, o número é adotado e os bolões continuam valendo.
+- **Regras de venda** (por bolão): início e fim da venda (o fim não passa do prazo do concurso), máximo de cotas por pessoa (conta cotas pagas e reservas ainda válidas) e um texto de regras que o cliente vê. Podem ser editadas mesmo em bolão precificado.
+- **Pré-venda** (só administrador): vende as cotas sem comprovante prévio. O jogo é registrado depois do fim das vendas e o comprovante vai para todos os cotistas. Sem pré-venda, continua valendo a regra de só vender com comprovante anexado.
+- Migração nova: `20261103000000_regras_venda_pre_venda` (campos em `boloes`). Roda sozinha no deploy.
