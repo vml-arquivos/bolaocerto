@@ -11,6 +11,7 @@ import { buildReceiptData, buildReceiptPdf, MODALITY_NAMES, receiptCode, receipt
 import { ReserveShareDto } from './shares.dto';
 import { remainingForPerson, saleWindowMessage } from '../pools/sales-rules';
 
+import { joinAffiliateGroup, joinGroup } from '../common/affiliate-groups';
 @Injectable()
 export class SharesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly responsible?: ResponsiblePlayService) {}
@@ -31,7 +32,7 @@ export class SharesService {
       : null;
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId}::uuid FOR UPDATE`;
-      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } }, grupo: { select: { afiliado: { select: { id: true, usuarioId: true, statusAprovacao: true } } } } } });
+      const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } }, grupo: { select: { id: true, tipo: true, afiliado: { select: { id: true, usuarioId: true, statusAprovacao: true } } } } } });
       if (!pool) throw new NotFoundException('Bolão não encontrado.');
       if (pool.comprovanteAntesVenda && !await hasSaleProof(tx, pool.id)) throw new ConflictException('Comprovante oficial ainda indisponível para esta venda.');
       const windowMessage = saleWindowMessage(pool);
@@ -58,6 +59,9 @@ export class SharesService {
       const groupAffiliate = pool.grupo?.afiliado && pool.grupo.afiliado.statusAprovacao === 'aprovado' ? pool.grupo.afiliado : null;
       const seller = groupAffiliate ?? affiliate;
       const referenceAffiliateId = seller && seller.usuarioId !== user.id ? seller.id : undefined;
+      // Quem compra num bolão de afiliado (ou chegou pelo link dele) passa a fazer parte do grupo desse afiliado.
+      if (pool.grupo?.tipo === 'afiliado' && groupAffiliate && groupAffiliate.usuarioId !== user.id) await joinGroup(tx, pool.grupo.id, user.id);
+      else if (affiliate && affiliate.usuarioId !== user.id) await joinAffiliateGroup(tx, affiliate.id, user.id);
       const share = await tx.cota.create({
         data: {
           bolaoId: pool.id,

@@ -5,6 +5,9 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { InstallAppButton } from './pwa-register';
+import { useStaffRole } from './staff-gate';
+import { PushPrompt } from './push-prompt';
+import { STAFF_VIEWS } from '../lib/roles';
 
 const groups = [
   {
@@ -77,6 +80,10 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
   const pathname = usePathname();
   const params = useSearchParams();
   const current = params.get('view') || 'visao-geral';
+  const staffRole = useStaffRole();
+  const visibleGroups = staffRole === 'operacao'
+    ? groups.map((group) => ({ ...group, items: group.items.filter(([key]) => (STAFF_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length)
+    : groups;
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
@@ -114,7 +121,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
         {testMode && <div className="admin-environment is-test-mode"><span className="admin-status-dot" /><span>Modo de teste</span></div>}
         {testMode && <p className="admin-environment-note">Não faça pagamentos de verdade.</p>}
         <nav className="admin-nav" aria-label="Menu do painel">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <details className="admin-nav-group" key={`${group.label}-${current}-${collapsed}`} open={collapsed || group.items.some(([key]) => key === current)}><summary className="admin-nav-label">{group.label}</summary>
               {group.items.map(([key, label, icon]) => (
                 <Link
@@ -166,7 +173,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
             <Link href="/" className="admin-topbar-link">Ver o site</Link>
           </div>
         </header>
-        <main className="admin-main" id="admin-main-content">{children}</main>
+        <main className="admin-main" id="admin-main-content"><PushPrompt audience="equipe" />{children}</main>
       </section>
     </div>
   );

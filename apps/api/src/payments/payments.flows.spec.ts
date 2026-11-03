@@ -20,6 +20,7 @@ function setup(options: { payment?: unknown; cota?: unknown; provider?: Partial<
     cota: { findUniqueOrThrow: jest.fn().mockResolvedValue(options.cota ?? cota()), update: jest.fn().mockResolvedValue({}) },
     bolao: { update: jest.fn().mockResolvedValue({}) },
     notificacao: { create: jest.fn().mockResolvedValue({}) },
+    afiliado: { findUnique: jest.fn().mockResolvedValue({ usuarioId: 'seller-user' }) },
     pagamento: { findUniqueOrThrow: jest.fn().mockImplementation(() => Promise.resolve({ ...(options.payment as object ?? payment()), cota: options.cota ?? cota() })), update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...payment(), ...data, valorBruto: new Prisma.Decimal(100) })) },
     comissao: { upsert: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
   };

@@ -13,6 +13,7 @@ import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, openSecret
 
 const GENERIC_LOGIN_ERROR = 'E-mail ou senha incorretos, ou conta temporariamente bloqueada por excesso de tentativas. Tente novamente em alguns minutos.';
 
+import { ensureAffiliateGroup, joinAffiliateGroup } from '../common/affiliate-groups';
 @Injectable()
 export class AuthService {
   constructor(
@@ -38,7 +39,7 @@ export class AuthService {
 
     const code = dto.codigoAfiliado?.trim();
     const invite = code
-      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true } })
+      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true, criadoPorUsuario: { select: { papel: true, id: true } } } })
       : null;
     if (invite?.emailDestino && invite.emailDestino.toLowerCase() !== email) throw new ConflictException('Este convite foi direcionado a outro e-mail.');
 
@@ -65,19 +66,29 @@ export class AuthService {
         select: { id: true, email: true, papel: true },
       });
       if (invite?.tipo === 'afiliado') {
-        await tx.afiliado.create({
+        // Convite feito por um administrador já vale como aprovação; convite de outro afiliado fica aguardando o admin.
+        const approvedByAdmin = invite.criadoPorUsuario?.papel === 'admin';
+        const affiliate = await tx.afiliado.create({
           data: {
             usuarioId: created.id,
             codigoAfiliado: this.makeCode('BL'),
-            statusAprovacao: 'pendente',
+            statusAprovacao: approvedByAdmin ? 'aprovado' : 'pendente',
             parentAfiliadoId: originAffiliateId ?? undefined,
+            chavePixRepasse: dto.chavePixRepasse?.trim() || undefined,
+            ...(approvedByAdmin ? { aprovadoPor: invite.criadoPorUsuario!.id, aprovadoEm: new Date() } : {}),
           },
         });
+        if (approvedByAdmin) {
+          await ensureAffiliateGroup(tx, affiliate, dto.nome, invite.criadoPorUsuario!.id);
+          await tx.notificacao.create({ data: { usuarioId: created.id, canal: 'push', tipo: 'afiliado.aprovado', payload: { titulo: 'Seu cadastro de afiliado foi aprovado', mensagem: 'Seu grupo já está pronto. Crie seu bolão e envie o link de venda aos seus cotistas.', link: '/afiliado' } } });
+        }
       }
       // Convite de grupo: a pessoa já entra no grupo do afiliado (isso conta para o limite de cotas do grupo).
       if (invite?.grupoId && invite.tipo === 'usuario') {
         await tx.grupoMembro.upsert({ where: { grupoId_usuarioId: { grupoId: invite.grupoId, usuarioId: created.id } }, create: { grupoId: invite.grupoId, usuarioId: created.id }, update: {} });
       }
+      // Cotista trazido por um afiliado (link de indicação ou convite sem grupo): entra no grupo do afiliado.
+      if (papel === 'cotista' && originAffiliateId && !invite?.grupoId) await joinAffiliateGroup(tx, originAffiliateId, created.id);
       if (invite) {
         const marked = await tx.convite.updateMany({ where: { id: invite.id, status: 'ativo' }, data: { status: 'usado', usadoPorUsuarioId: created.id, usadoEm: new Date() } });
         if (marked.count !== 1) throw new ConflictException('Este convite já foi utilizado.');
@@ -96,6 +107,24 @@ export class AuthService {
       }).catch(() => undefined);
     }
     return this.issueTokens({ ...user, tokenVersion: 0 });
+  }
+
+  /** Explica o código do link: convite (afiliado ou cliente) ou indicação de afiliado. Não revela nada se não existir. */
+  async inviteInfo(rawCode: string) {
+    const code = (rawCode ?? '').trim().slice(0, 40);
+    const invalid = { valido: false as const };
+    if (code.length < 3) return invalid;
+    const invite = await this.prisma.convite.findFirst({
+      where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } },
+      select: { tipo: true, emailDestino: true, criadoPorUsuario: { select: { nome: true, papel: true } }, afiliadoOrigem: { select: { usuario: { select: { nome: true } } } }, grupo: { select: { nome: true } } },
+    });
+    const firstName = (name?: string | null) => (name ?? '').trim().split(/\s+/)[0] || null;
+    if (invite) {
+      return { valido: true as const, tipo: invite.tipo === 'afiliado' ? 'afiliado' as const : 'cliente' as const, convidadoPor: firstName(invite.afiliadoOrigem?.usuario.nome ?? invite.criadoPorUsuario.nome), email: invite.emailDestino ?? null, grupo: invite.grupo?.nome ?? null };
+    }
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: code }, select: { statusAprovacao: true, usuario: { select: { nome: true } } } });
+    if (affiliate?.statusAprovacao === 'aprovado') return { valido: true as const, tipo: 'indicacao' as const, convidadoPor: firstName(affiliate.usuario.nome), email: null, grupo: null };
+    return invalid;
   }
 
   async login(dto: LoginDto): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {

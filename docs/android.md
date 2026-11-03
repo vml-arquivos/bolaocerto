@@ -54,7 +54,7 @@ São dois apps separados, cada um com seu ícone, nome e endereço de entrada:
 | Bolão Livre (cliente) | `https://SEU-DOMINIO/instalar` | azul | `br.com.bolaolivre.app` |
 | BL Admin (equipe) | `https://SEU-DOMINIO/admin/entrar` | verde com "ADMIN" | `br.com.bolaolivre.admin` |
 
-No PWABuilder, gere um pacote para cada endereço (cliente: o site; painel: `https://SEU-DOMINIO/admin`). Cada um tem sua chave de assinatura. As variáveis do painel no Coolify:
+No PWABuilder, gere um pacote para cada endereço (cliente: o site; painel: `https://SEU-DOMINIO/admin` (ou `https://admin.SEU-DOMINIO/admin` se usar `ADMIN_HOST`)). Cada um tem sua chave de assinatura. As variáveis do painel no Coolify:
 
 ```
 ANDROID_ADMIN_PACKAGE_NAME=br.com.bolaolivre.admin

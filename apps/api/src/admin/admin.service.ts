@@ -30,6 +30,7 @@ import {
   UpdateUserRoleDto,
 } from './admin.dto';
 
+import { ensureAffiliateGroup } from '../common/affiliate-groups';
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly mail?: MailService) {}
@@ -296,6 +297,13 @@ export class AdminService {
       await this.audit.record(tx, { entidade: 'repasse', entidadeId: id, evento: 'repasse.lote.pago', atorId: user.id, payloadAntes: current as unknown as Prisma.InputJsonValue, payloadDepois: batch as unknown as Prisma.InputJsonValue });
       return batch;
     });
+    // Avisa cada afiliado do valor que acabou de receber (não atrapalha o pagamento se falhar).
+    try {
+      const totals = new Map<string, number>();
+      for (const commission of current.comissoes) if (commission.status === StatusComissao.pendente) totals.set(commission.afiliadoId, (totals.get(commission.afiliadoId) ?? 0) + Number(commission.valor));
+      const owners = await this.prisma.afiliado.findMany({ where: { id: { in: [...totals.keys()] } }, select: { id: true, usuarioId: true } });
+      if (owners.length) await this.prisma.notificacao.createMany({ data: owners.map((owner) => ({ usuarioId: owner.usuarioId, canal: 'push', tipo: 'comissao.paga', payload: { titulo: 'Comissão paga', mensagem: `Enviamos ${(totals.get(owner.id) ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de comissão para a sua chave Pix.`, link: '/afiliado' } })) });
+    } catch { /* aviso é complemento */ }
     return { ...result, valorTotal: result.valorTotal.toFixed(2) };
   }
 
@@ -328,6 +336,7 @@ export class AdminService {
       const affiliate = papel === 'afiliado'
         ? await tx.afiliado.create({ data: { usuarioId: user.id, codigoAfiliado: this.makeCode('BL'), statusAprovacao: 'aprovado', comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct ?? 10), parentAfiliadoId: parent?.id, aprovadoPor: actor.id, aprovadoEm: new Date() } })
         : null;
+      if (affiliate) await ensureAffiliateGroup(tx, affiliate, user.nome, actor.id);
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: user.id, evento: 'usuario.criado.admin', atorId: actor.id, payloadDepois: { id: user.id, email: user.email, papel: user.papel, afiliadoId: affiliate?.id ?? null, parentAfiliadoId: parent?.id ?? null } });
       return { user, affiliate };
     });
@@ -362,9 +371,9 @@ export class AdminService {
       const who = actor.papel === 'afiliado' ? 'Um vendedor parceiro do BL' : 'A equipe do BL';
       emailEnviado = await this.mail.send({
         to: invite.emailDestino,
-        subject: 'Você foi convidado para o BL — Bolão Livre',
-        text: `Olá!\n\n${who} convidou você para criar sua conta no BL — Bolão Livre e participar de bolões.\n\nCrie sua conta por este link (vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}):\n${link}\n\nPlataforma independente, não oficial da CAIXA. Jogue com responsabilidade (18+).`,
-        html: wrapEmailHtml('Você foi convidado', `<p>${escapeHtml(who)} convidou você para criar sua conta no BL — Bolão Livre e participar de bolões.</p><p style="color:#646b86">O convite vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}.</p>`, { label: 'Criar minha conta', url: link }),
+        subject: invite.tipo === 'afiliado' ? 'Convite para ser afiliado do BL — Bolão Livre' : 'Você foi convidado para o BL — Bolão Livre',
+        text: `Olá!\n\n${who} convidou você ${invite.tipo === 'afiliado' ? 'para ser afiliado do BL — Bolão Livre. Complete seu cadastro, monte seu grupo e venda cotas pelo seu link' : 'para criar sua conta no BL — Bolão Livre e participar de bolões'}.\n\nCrie sua conta por este link (vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}):\n${link}\n\nPlataforma independente, não oficial da CAIXA. Jogue com responsabilidade (18+).`,
+        html: wrapEmailHtml(invite.tipo === 'afiliado' ? 'Convite para ser afiliado' : 'Você foi convidado', `<p>${escapeHtml(who)} convidou você ${invite.tipo === 'afiliado' ? 'para ser afiliado do BL — Bolão Livre. Complete seu cadastro, monte seu grupo e venda cotas pelo seu link.' : 'para criar sua conta no BL — Bolão Livre e participar de bolões.'}</p><p style="color:#646b86">O convite vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}.</p>`, { label: invite.tipo === 'afiliado' ? 'Completar meu cadastro' : 'Criar minha conta', url: link }),
       }).catch(() => false);
     }
     return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, grupoId: invite.grupoId, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}`, emailDestino: invite.emailDestino, emailEnviado };
@@ -399,6 +408,11 @@ export class AdminService {
 
   async affiliateWorkspace(actor: AuthUser) {
     const affiliate = await this.requireApprovedAffiliate(actor);
+    // Afiliado aprovado sempre tem um grupo (onde entram os cotistas dele), inclusive os cadastrados antes desta regra.
+    if (!(await this.prisma.grupo.count({ where: { afiliadoId: affiliate.id } }))) {
+      const owner = await this.prisma.usuario.findUnique({ where: { id: actor.id }, select: { nome: true } });
+      await this.prisma.$transaction((tx) => ensureAffiliateGroup(tx, affiliate, owner?.nome ?? 'Afiliado', actor.id));
+    }
     const [groups, pools, invites] = await Promise.all([
       this.prisma.grupo.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, include: { _count: { select: { boloes: true, membros: true } } } }),
       this.prisma.bolao.findMany({ where: { criadoPor: actor.id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } }, orderBy: { criadoEm: 'desc' }, take: 100 }),
@@ -499,7 +513,12 @@ export class AdminService {
       const result = await tx.usuario.update({ where: { id }, data: { papel: dto.papel, tokenVersion: { increment: 1 } } });
       const affiliate = await tx.afiliado.findUnique({ where: { usuarioId: id } });
       if (dto.papel === 'afiliado' && !affiliate) {
-        await tx.afiliado.create({ data: { usuarioId: id, codigoAfiliado: this.makeCode('BL'), statusAprovacao: 'aprovado', aprovadoPor: user.id, aprovadoEm: new Date() } });
+        const createdAffiliate = await tx.afiliado.create({ data: { usuarioId: id, codigoAfiliado: this.makeCode('BL'), statusAprovacao: 'aprovado', aprovadoPor: user.id, aprovadoEm: new Date() } });
+        await ensureAffiliateGroup(tx, createdAffiliate, target.nome, user.id);
+      } else if (dto.papel === 'afiliado' && affiliate && affiliate.statusAprovacao !== 'aprovado') {
+        // Voltou a ser afiliado (estava inativo, pendente ou recusado): o administrador acabou de aprovar.
+        await tx.afiliado.update({ where: { id: affiliate.id }, data: { statusAprovacao: 'aprovado', aprovadoPor: user.id, aprovadoEm: new Date() } });
+        await ensureAffiliateGroup(tx, affiliate, target.nome, user.id);
       } else if (dto.papel !== 'afiliado' && affiliate && affiliate.statusAprovacao !== 'inativo') {
         await tx.afiliado.update({ where: { id: affiliate.id }, data: { statusAprovacao: 'inativo' } });
       }
@@ -562,6 +581,8 @@ export class AdminService {
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.afiliado.update({ where: { id }, data: { statusAprovacao: 'aprovado', comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct), aprovadoPor: user.id, aprovadoEm: new Date() } });
       await tx.usuario.update({ where: { id: affiliate.usuarioId }, data: { papel: 'afiliado' } });
+      await ensureAffiliateGroup(tx, updated, affiliate.usuario.nome, user.id);
+      await tx.notificacao.create({ data: { usuarioId: affiliate.usuarioId, canal: 'push', tipo: 'afiliado.aprovado', payload: { titulo: 'Seu cadastro de afiliado foi aprovado', mensagem: 'Seu grupo já está pronto. Crie seu bolão e envie o link de venda aos seus cotistas.', link: '/afiliado' } } });
       await this.audit.record(tx, { entidade: 'afiliado', entidadeId: id, evento: 'afiliado.aprovado', atorId: user.id, payloadAntes: affiliate as unknown as Prisma.InputJsonValue, payloadDepois: { ...updated, usuarioPapel: 'afiliado' } as unknown as Prisma.InputJsonValue });
       return updated;
     });

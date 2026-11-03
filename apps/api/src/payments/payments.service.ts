@@ -261,6 +261,13 @@ export class PaymentsService {
         create: { afiliadoId: cota.afiliadoReferenciaId, cotaId: cota.id, valor: payment.valorComissaoAfiliado, baseCalculo: payment.valorTaxaAdmin, percentual: new Prisma.Decimal(fee > 0 ? round2((Number(payment.valorComissaoAfiliado) / fee) * 100) : 0), status: StatusComissao.pendente },
         update: {},
       });
+      if (transitioned) {
+        const seller = await tx.afiliado.findUnique({ where: { id: cota.afiliadoReferenciaId }, select: { usuarioId: true } });
+        if (seller && seller.usuarioId !== cota.compradorId) {
+          const comissao = Number(payment.valorComissaoAfiliado).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          await tx.notificacao.create({ data: { usuarioId: seller.usuarioId, canal: 'push', tipo: 'venda.confirmada', payload: { titulo: 'Venda confirmada', mensagem: `${cota.quantidade} ${cota.quantidade === 1 ? 'cota vendida' : 'cotas vendidas'} pelo seu link. Sua comissão: ${comissao}.`, link: '/afiliado' } } });
+        }
+      }
     }
     return updatedPayment;
   }

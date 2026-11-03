@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { DisableTwoFactorDto, LoginDto, RegisterDto, TwoFactorCodeDto } from './auth.dto';
@@ -16,6 +16,12 @@ export class AuthController {
     const result = await this.auth.register(dto);
     setAuthCookies(response, result.accessToken, result.refreshToken);
     return { user: result.user };
+  }
+
+  /** Tela de cadastro por link: mostra quem convidou e se o convite ainda vale (público, sem dados sensíveis). */
+  @Get('convite/:codigo')
+  inviteInfo(@Param('codigo') codigo: string) {
+    return this.auth.inviteInfo(codigo);
   }
 
   @Post('login')

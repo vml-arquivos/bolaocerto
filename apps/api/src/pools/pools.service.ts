@@ -216,10 +216,13 @@ export class PoolsService {
       if (user.papel === 'afiliado') {
         const requested = await tx.bolao.update({ where: { id }, data: { aprovacaoSolicitadaEm: new Date(), editadoPor: user.id, editadoEm: new Date() } });
         await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: 'bolao.aprovacao_solicitada', atorId: user.id, payloadDepois: { aprovacaoSolicitadaEm: requested.aprovacaoSolicitadaEm } });
+        const admins = await tx.usuario.findMany({ where: { papel: 'admin', desativadoEm: null }, select: { id: true } });
+        if (admins.length) await tx.notificacao.createMany({ data: admins.map((admin) => ({ usuarioId: admin.id, canal: 'push', tipo: 'bolao.aprovacao_solicitada', payload: { titulo: 'Bolão aguardando aprovação', mensagem: 'Um afiliado pediu para abrir a venda de um bolão. Analise e libere.', link: '/admin?view=boloes' } })) });
         return { ...requested, aguardandoAprovacao: true };
       }
       const result = await tx.bolao.update({ where: { id }, data: { status: StatusBolao.aberto, editadoPor: user.id, editadoEm: new Date(), ...(current.tipoOrganizador === 'afiliado' ? { aprovadoEm: new Date(), aprovadoPor: user.id } : {}) } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: id, evento: current.tipoOrganizador === 'afiliado' ? 'bolao.aprovado_e_publicado' : 'bolao.publicado', atorId: user.id, payloadDepois: result as unknown as Prisma.InputJsonValue });
+      if (current.tipoOrganizador === 'afiliado' && current.criadoPor && current.criadoPor !== user.id) await tx.notificacao.create({ data: { usuarioId: current.criadoPor, canal: 'push', tipo: 'bolao.aprovado', payload: { titulo: 'Seu bolão foi aprovado', mensagem: 'A venda já está aberta. Copie o link de venda e envie aos seus cotistas.', link: '/afiliado' } } });
       return { ...result, aguardandoAprovacao: false };
     });
     if (updated.aguardandoAprovacao) return { id: updated.id, status: updated.status, aguardandoAprovacao: true };

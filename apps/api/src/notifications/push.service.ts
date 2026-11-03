@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import * as webpush from 'web-push';
 import { PrismaService } from '../common/prisma.service';
 
+import { presentPush } from './push-presentation';
+
 export interface PushMessage { titulo: string; mensagem: string; link?: string | null; tag?: string }
 export interface PushSubscriptionInput { endpoint: string; keys: { p256dh: string; auth: string } }
 
@@ -95,7 +97,8 @@ export class PushService {
     try { subs = await this.prisma.pushInscricao.findMany({ where: { usuarioId: userId }, select: { id: true, endpoint: true, p256dh: true, auth: true, falhas: true } }); } catch { return 0; }
     if (!subs.length) return 0;
     const keys = await this.getKeys();
-    const payload = JSON.stringify({ titulo: message.titulo.slice(0, 120), mensagem: message.mensagem.slice(0, 300), link: message.link || '/minha-conta', tag: message.tag });
+    const shown = presentPush(message.tag, message.titulo, message.mensagem);
+    const payload = JSON.stringify({ ...shown, link: message.link || '/minha-conta' });
     let delivered = 0;
     for (const sub of subs) {
       try {

@@ -69,3 +69,41 @@ test('install page button asks the browser to install instead of only opening hi
   assert.match(code, /event\.prompt\(\)/);
   assert.match(code, /startInstallCapture\(\)/);
 });
+
+function pushWorker() {
+  const shown = []; const opened = []; const listeners = {};
+  const self = {
+    location: { origin: 'https://bl.example' },
+    addEventListener: (name, fn) => { listeners[name] = fn; },
+    registration: { showNotification: async (title, options) => { shown.push({ title, options }); } },
+    clients: { matchAll: async () => [], openWindow: async url => { opened.push(url); } },
+    skipWaiting: async () => {},
+  };
+  vm.runInNewContext(source, { URL, Response, Date, JSON, self, caches: {}, fetch: async () => ({ ok: false }) });
+  const push = async data => { let p; listeners.push({ data: { json: () => data, text: () => '' }, waitUntil: v => { p = v; } }); await p; };
+  const click = async (data, action = '') => { let p; listeners.notificationclick({ action, notification: { close() {}, data }, waitUntil: v => { p = v; } }); await p; };
+  return { shown, opened, push, click };
+}
+test('push mostra aviso com ícone, selo monocromático, imagem e botão', async () => {
+  const w = pushWorker();
+  await w.push({ titulo: '🎉 Você tem uma cota premiada!', mensagem: 'Parabéns', link: '/minha-conta', tag: 'cota.premiada', urgente: true, imagem: '/brand/push-hero-premio.png', acoes: [{ action: 'abrir', title: 'Ver minha cota' }] });
+  const { title, options } = w.shown[0];
+  assert.equal(title, '🎉 Você tem uma cota premiada!');
+  assert.equal(options.badge, '/brand/bl-push-badge-96.png');
+  assert.equal(options.image, '/brand/push-hero-premio.png');
+  assert.equal(options.requireInteraction, true);
+  assert.equal(JSON.stringify(options.actions), JSON.stringify([{ action: 'abrir', title: 'Ver minha cota' }]));
+  assert.equal(options.data.link, '/minha-conta');
+});
+test('push ignora imagem externa e link de outro site', async () => {
+  const w = pushWorker();
+  await w.push({ titulo: 'Oi', mensagem: 'x', link: 'https://evil.example', imagem: 'https://evil.example/x.png' });
+  assert.equal(w.shown[0].options.image, undefined);
+  assert.equal(w.shown[0].options.data.link, '/aplicativo');
+  assert.equal(w.shown[0].options.requireInteraction, false);
+});
+test('tocar no aviso abre a tela certa', async () => {
+  const w = pushWorker();
+  await w.click({ link: '/afiliado' }, 'abrir');
+  assert.deepEqual(w.opened, ['https://bl.example/afiliado']);
+});

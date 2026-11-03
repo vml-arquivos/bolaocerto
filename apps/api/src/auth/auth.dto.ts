@@ -29,6 +29,12 @@ export class RegisterDto {
   @IsString()
   @Length(3, 20)
   codigoAfiliado?: string;
+
+  /** Chave Pix para receber comissões (convite de afiliado). */
+  @IsOptional()
+  @IsString()
+  @Length(5, 140)
+  chavePixRepasse?: string;
 }
 
 export class LoginDto {

@@ -26,3 +26,15 @@ Regra para criar ou trocar senha: no mínimo 6 caracteres, com pelo menos uma le
 ## Perfis de acesso
 
 Administrador altera o perfil em Usuários e acessos → Editar: cliente, afiliado, equipe de operação ou administrador. A troca encerra as sessões da pessoa. O administrador não pode tirar o próprio acesso.
+
+## Painel em endereço próprio (subdomínio)
+
+Para o painel ficar em `admin.seudominio.com.br` e o site dos clientes no endereço principal:
+
+1. No DNS, crie um registro `admin` apontando para o mesmo servidor do site.
+2. No Coolify, no serviço do **web**, adicione o segundo domínio (`https://admin.seudominio.com.br`) junto do principal.
+3. No Coolify, crie a variável `ADMIN_HOST=admin.seudominio.com.br` e faça o deploy.
+
+O que acontece: o endereço do painel abre direto em `/admin`; qualquer página de cliente nele volta para `/admin`; e `/admin` no site principal redireciona para o endereço do painel. Sem `ADMIN_HOST`, nada muda. Cada endereço tem seu próprio login e seu próprio app instalado.
+
+Android: gere o app do painel no PWABuilder com o endereço `https://admin.seudominio.com.br/admin`. O `assetlinks.json` é servido nos dois endereços.

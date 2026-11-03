@@ -106,12 +106,27 @@ describe('SharesService stock safety', () => {
         concurso: { findUniqueOrThrow: jest.fn().mockResolvedValue({ cutoffAt: future(86400000 * 30) }) },
         bolao: { findUnique: jest.fn().mockResolvedValue(pool), update: jest.fn().mockResolvedValue(pool) },
         cota: { create: jest.fn().mockResolvedValue({ id: 'share-1', bolaoId: 'pool-1', status: 'reservada', quantidade: 1, expiraReservaEm: new Date() }), aggregate: jest.fn().mockResolvedValue({ _sum: { quantidade: alreadyHas } }) },
+        grupoMembro: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
+        grupo: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn().mockResolvedValue({ id: 'group-af', nome: 'Grupo de Ana', afiliado: { usuarioId: 'owner-1' } }) },
+        usuario: { findUnique: jest.fn().mockResolvedValue({ nome: 'Pessoa' }) },
+        notificacao: { create: jest.fn().mockResolvedValue({}) },
       };
       const prisma = { afiliado: { findFirst: jest.fn().mockResolvedValue(null) }, $transaction: serializedTransaction(tx) };
       const service = new SharesService(prisma as any, { record: jest.fn() } as any);
       const dto = (quantidade: number) => ({ bolaoId: 'pool-1', titularCpf: '52998224725', titularNome: 'Pessoa', quantidade, termoMandatoHash: legalDocument('participacao').hash, aceitoTermos: true });
       return { tx, reserve: (quantidade: number) => service.reserve(dto(quantidade) as any, { id: 'user-1', papel: 'cotista' } as any, { ip: '127.0.0.1' }) };
     }
+    it('quem compra num bolão de afiliado entra no grupo do afiliado', async () => {
+      const { reserve, tx } = setup({ grupo: { id: 'group-af', tipo: 'afiliado', afiliado: { id: 'aff-1', usuarioId: 'owner-1', statusAprovacao: 'aprovado' } } });
+      await reserve(1);
+      expect(tx.grupoMembro.create).toHaveBeenCalledWith({ data: { grupoId: 'group-af', usuarioId: 'user-1' } });
+      expect(tx.notificacao.create).toHaveBeenCalledWith({ data: expect.objectContaining({ usuarioId: 'owner-1', tipo: 'grupo.novo_membro' }) });
+    });
+    it('bolão oficial sem indicação não mexe em grupo', async () => {
+      const { reserve, tx } = setup({});
+      await reserve(1);
+      expect(tx.grupoMembro.create).not.toHaveBeenCalled();
+    });
     it('pré-venda (sem comprovante prévio) permite reservar', async () => {
       const { reserve, tx } = setup({ vendaAntecipada: true });
       await expect(reserve(1)).resolves.toBeDefined();

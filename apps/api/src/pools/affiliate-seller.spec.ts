@@ -75,6 +75,8 @@ describe('afiliado vendedor: aprovação do admin', () => {
     const tx: any = {
       $queryRaw: jest.fn(),
       bolao: { findUniqueOrThrow: jest.fn(async () => base), update: jest.fn(async ({ data }: any) => { updates.push(data); return { id: 'pool-1', status: data.status ?? 'rascunho', ...data }; }) },
+      usuario: { findMany: jest.fn(async () => [{ id: 'admin-1' }]) },
+      notificacao: { create: jest.fn(async () => ({})), createMany: jest.fn(async () => ({ count: 1 })) },
     };
     const prisma: any = {
       bolao: { findUnique: jest.fn(async () => base) },
@@ -172,6 +174,7 @@ describe('afiliado vendedor: comissão na compra', () => {
       $queryRaw: jest.fn(),
       concurso: { findUniqueOrThrow: jest.fn(async () => ({ cutoffAt: new Date(Date.now() + 86_400_000) })) },
       bolao: { findUnique: jest.fn(async () => pool), update: jest.fn(async () => pool) },
+      grupo: { findFirst: jest.fn().mockResolvedValue(null) }, grupoMembro: { upsert: jest.fn().mockResolvedValue({}) },
       cota: { create: jest.fn(async ({ data }: any) => { created.push(data); return { id: 's1', bolaoId: 'pool-1', status: 'reservada', quantidade: 1, expiraReservaEm: new Date() }; }) },
     };
     const prisma: any = { afiliado: { findFirst: jest.fn(async () => code ?? null) }, $transaction: async (cb: any) => cb(tx) };

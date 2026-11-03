@@ -1196,3 +1196,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .sale-rules-text p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
 .sale-window { font-size: .88rem; margin: 0; }
 .presale-notice { margin-bottom: 8px; }
+
+.invite-banner { margin-bottom: 14px; display: grid; gap: 4px; }
+
+/* Convite para ligar os avisos no celular */
+.push-prompt { display: grid; grid-template-columns: auto 1fr; gap: 12px 14px; align-items: start; padding: 14px 16px; margin: 0 0 16px; border-radius: 18px; border: 1px solid color-mix(in srgb, var(--blue, #0044e0) 22%, transparent); background: linear-gradient(135deg, color-mix(in srgb, var(--blue, #0044e0) 9%, var(--surface, #fff)), color-mix(in srgb, #6234d6 8%, var(--surface, #fff))); box-shadow: 0 6px 22px rgba(20, 30, 90, .08); }
+.push-prompt-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; font-size: 1.35rem; background: color-mix(in srgb, var(--blue, #0044e0) 14%, transparent); }
+.push-prompt-copy { display: grid; gap: 2px; min-width: 0; font-size: .92rem; }
+.push-prompt-copy strong { font-size: 1rem; }
+.push-prompt-copy span, .push-prompt-copy small { color: var(--muted, #646b86); overflow-wrap: anywhere; }
+.push-prompt-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.push-prompt-actions .button { min-height: 44px; }
+@media (min-width: 720px) { .push-prompt { grid-template-columns: auto 1fr auto; } .push-prompt-actions { grid-column: auto; flex-wrap: nowrap; } }

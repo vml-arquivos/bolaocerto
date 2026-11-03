@@ -81,6 +81,7 @@ function statusClass(status: unknown) {
   return 'status-chip';
 }
 
+import { StaffGate } from './staff-gate';
 async function authFetch(path: string, options?: RequestInit) {
   let response = await fetch(path, { ...options, credentials: 'include' });
   if (response.status === 401) {
@@ -418,5 +419,5 @@ function PoolWizard({ contests, groupId, onSuccess }: { contests: RecordValue[];
 }
 
 export function AdminDashboard({ testMode = false }: { testMode?: boolean }) {
-  return <AdminDashboardContent testMode={testMode} />;
+  return <StaffGate><AdminDashboardContent testMode={testMode} /></StaffGate>;
 }

@@ -23,6 +23,13 @@ export const NOTIFICATION_TITLES: Record<string, string> = {
   'cota.recibo': 'Recibo da sua cota disponível',
   comunicado: 'Aviso do BL',
   'conta.exclusao_solicitada': 'Pedido de exclusão registrado',
+  'afiliado.aprovado': 'Seu cadastro de afiliado foi aprovado',
+  'grupo.novo_membro': 'Nova pessoa no seu grupo',
+  'venda.confirmada': 'Venda confirmada',
+  'bolao.aprovacao_solicitada': 'Bolão aguardando aprovação',
+  'bolao.aprovado': 'Seu bolão foi aprovado',
+  'bolao.aprovacao_recusada': 'Bolão precisa de ajustes',
+  'comissao.paga': 'Comissão paga',
 };
 
 /** Texto padrão do e-mail para cada tipo de aviso. */

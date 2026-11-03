@@ -11,9 +11,10 @@ describe('AdminService', () => {
     const tx = {
       afiliado: { update: jest.fn().mockResolvedValue({ id: 'affiliate-1', usuarioId: 'user-1', statusAprovacao: 'aprovado' }) },
       usuario: { update: jest.fn().mockResolvedValue({ id: 'user-1', papel: 'afiliado' }) },
+      grupo: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'g1' }) }, grupoMembro: { upsert: jest.fn().mockResolvedValue({}) }, notificacao: { create: jest.fn().mockResolvedValue({}) },
     };
     const prisma = {
-      afiliado: { findUnique: jest.fn().mockResolvedValue({ id: 'affiliate-1', usuarioId: 'user-1', statusAprovacao: 'pendente', usuario: { id: 'user-1' } }) },
+      afiliado: { findUnique: jest.fn().mockResolvedValue({ id: 'affiliate-1', usuarioId: 'user-1', statusAprovacao: 'pendente', usuario: { id: 'user-1', nome: 'Maria Souza' } }) },
       $transaction: transactionMock(tx),
     };
     const audit = { record: jest.fn() };

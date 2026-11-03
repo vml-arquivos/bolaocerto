@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { homeForRole, isStaff } from '../lib/roles';
 
 const HINT = 'bl-session-hint';
 /** Chamado após o login para o cabeçalho passar a mostrar "Minha conta". */
@@ -20,6 +21,6 @@ export function HeaderAuth() {
       .catch(() => { try { localStorage.removeItem(HINT); } catch { /* ok */ } });
     return () => { off = true; };
   }, []);
-  if (role) return <Link className="button button-primary" href={role === 'admin' ? '/admin' : role === 'afiliado' ? '/afiliado' : '/minha-conta'}>{role === 'admin' ? 'Painel' : role === 'afiliado' ? 'Minha área' : 'Minha conta'}</Link>;
+  if (role) return <Link className="button button-primary" href={role === 'cotista' ? '/minha-conta' : homeForRole(role)}>{isStaff(role) ? 'Painel' : role === 'afiliado' ? 'Minha área' : 'Minha conta'}</Link>;
   return <><Link className="button button-ghost" href="/login">Entrar</Link><Link className="button button-primary" href="/cadastro">Criar conta</Link></>;
 }

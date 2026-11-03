@@ -32,6 +32,18 @@ export class PoolReleaseWatcher {
     }
   }
 
+  private pushing = false;
+
+  /** A cada 15 segundos: só os avisos no celular, para chegarem quase na hora. */
+  @Cron('*/15 * * * * *')
+  async deliverPushes(): Promise<void> {
+    if (this.pushing || this.delivering) return;
+    this.pushing = true;
+    try { await this.notifications.dispatchPushes(); }
+    catch (error) { this.logger.error(`Entrega de push falhou: ${error instanceof Error ? error.message : String(error)}`); }
+    finally { this.pushing = false; }
+  }
+
   /** A cada minuto: avisos no celular (push) e e-mails pendentes (inclusive comprovantes e comunicados). */
   @Cron('* * * * *')
   async deliver(): Promise<void> {
