@@ -7,6 +7,9 @@ function setup() {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     notificacao: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    convite: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    aceiteLegal: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    grupo: { findMany: jest.fn().mockResolvedValue([]), deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     usuario: {
       delete: jest.fn().mockResolvedValue({}),
       findUnique: jest.fn(async ({ where }: any) => users.find(u => u.id === where.id)),
@@ -103,5 +106,46 @@ describe('Administrative user management', () => {
     await expect(service.sendReset('buyer', actor)).rejects.toThrow(/3 solicitações/);
     users[1].desativadoEm = new Date();
     await expect(service.sendReset('buyer', actor)).rejects.toThrow(/Reative/); expect(mail.send).not.toHaveBeenCalled();
+  });
+
+  describe('superadmin (conta do e-mail de instalação)', () => {
+    const superActor = { id: 'admin', papel: 'admin' as const, email: 'dono@example.invalid' };
+    const OLD = process.env.ADMIN_BOOTSTRAP_EMAIL;
+    beforeEach(() => { process.env.ADMIN_BOOTSTRAP_EMAIL = 'Dono@Example.invalid'; });
+    afterEach(() => { if (OLD === undefined) delete process.env.ADMIN_BOOTSTRAP_EMAIL; else process.env.ADMIN_BOOTSTRAP_EMAIL = OLD; });
+
+    it('admin comum não apaga afiliado; superadmin apaga afiliado sem movimentação com os grupos vazios dele, convites e contratos', async () => {
+      const { service, users, tx, audit } = setup();
+      users[1]._count = { aceitesLegais: 1, convitesCriados: 2, gruposCriados: 1 };
+      users[1].afiliado = { id: 'aff1', _count: { comissoes: 0, cotasReferenciadas: 0 } };
+      await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/contratos aceitos/);
+      tx.grupo.findMany.mockResolvedValueOnce([{ id: 'g1', tipo: 'afiliado', _count: { boloes: 0 } }, { id: 'oficial', tipo: 'oficial', _count: { boloes: 5 } }]);
+      await expect(service.deleteEmpty('buyer', superActor)).resolves.toEqual({ id: 'buyer', excluido: true });
+      expect(tx.grupo.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['g1'] } } });
+      expect(tx.convite.deleteMany).toHaveBeenCalledWith({ where: { criadoPorUsuarioId: 'buyer' } });
+      expect(tx.aceiteLegal.deleteMany).toHaveBeenCalledWith({ where: { usuarioId: 'buyer' } });
+      expect(audit.record).toHaveBeenCalledWith(tx, expect.objectContaining({ evento: 'usuario.vazio_excluido', payloadDepois: expect.objectContaining({ superadmin: true, gruposRemovidos: 1 }) }));
+    });
+    it('nem o superadmin apaga afiliado com comissão, venda atribuída ou grupo com bolão', async () => {
+      const { service, users, tx } = setup();
+      users[1]._count = {};
+      users[1].afiliado = { id: 'aff1', _count: { comissoes: 3, cotasReferenciadas: 2 } };
+      tx.grupo.findMany.mockResolvedValue([{ id: 'g1', tipo: 'afiliado', _count: { boloes: 1 } }]);
+      await expect(service.deleteEmpty('buyer', superActor)).rejects.toThrow(/3 comissões.*2 vendas atribuídas.*1 grupo com bolões/);
+      expect(tx.usuario.delete).not.toHaveBeenCalled();
+      expect(tx.grupo.deleteMany).not.toHaveBeenCalled();
+    });
+    it('a conta principal não pode ser excluída por outro administrador', async () => {
+      const { service, users, tx } = setup();
+      users.push({ id: 'dono', papel: 'admin', email: 'dono@example.invalid', _count: {}, afiliado: null });
+      await expect(service.deleteEmpty('dono', actor)).rejects.toThrow(/conta principal/);
+      expect(tx.usuario.delete).not.toHaveBeenCalled();
+    });
+    it('convites criados e usados pela pessoa não impedem a exclusão (admin comum também)', async () => {
+      const { service, users, tx } = setup();
+      users[1]._count = { convitesCriados: 2, convitesUsados: 1 };
+      await expect(service.deleteEmpty('buyer', actor)).resolves.toEqual({ id: 'buyer', excluido: true });
+      expect(tx.convite.deleteMany).toHaveBeenCalledWith({ where: { criadoPorUsuarioId: 'buyer' } });
+    });
   });
 });

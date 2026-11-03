@@ -7,6 +7,7 @@ import { AuditService } from '../common/audit.service';
 import { MailService } from '../common/mail.service';
 import { IsDateString, IsEmail, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
 import { formatCpf } from '../reports/export.util';
+import { isSuperAdmin } from './superadmin';
 
 export class EditManagedUserDto {
   @IsString() @Length(2, 150) nome!: string;
@@ -23,7 +24,7 @@ export async function lockAdminActor(tx: Prisma.TransactionClient, actorId: stri
 }
 const view = { id: true, nome: true, email: true, cpf: true, telefone: true, dataNascimento: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, atualizadoEm: true } as const;
 /** Vínculos descartáveis: saem junto com a conta. Os demais impedem a exclusão. */
-const DISPOSABLE_RELATIONS = new Set(['tokensSenha', 'notificacoes', 'pushInscricoes', 'bolaoInteresses', 'gruposMembro', 'crmNotas', 'auditorias']);
+const DISPOSABLE_RELATIONS = new Set(['tokensSenha', 'notificacoes', 'pushInscricoes', 'bolaoInteresses', 'gruposMembro', 'crmNotas', 'auditorias', 'convitesCriados', 'convitesUsados']);
 const RELATION_LABELS: Record<string, string> = { cotasCompradas: 'participações em bolões', mandatos: 'contratos de participação', aceitesLegais: 'contratos aceitos', boloesCriados: 'bolões criados', boloesEditados: 'bolões editados', gruposCriados: 'grupos criados', kycDocumentos: 'documentos de identificação', documentosRevisados: 'documentos revisados', lotericasOperadas: 'lotéricas operadas', afiliadosAprovados: 'afiliados aprovados por ela', convitesCriados: 'convites criados', convitesUsados: 'convites usados', repassesCriados: 'repasses', comissoesPagas: 'comissões pagas', crmNotasEscritas: 'notas de atendimento', anexosEnviados: 'anexos enviados' };
 @Injectable()
 export class AdminUsersService {
@@ -71,25 +72,51 @@ export class AdminUsersService {
     });
   }
   /**
-   * Exclusão definitiva: só para conta sem histórico. Avisos, inscrições de push, links de senha, interesses, grupos e notas
-   * sobre a pessoa são descartáveis e saem junto; qualquer outro vínculo (cotas, contratos, bolões, repasses…) bloqueia,
-   * inclusive vínculos novos que forem criados no futuro. Nesse caso a tela explica o que impede a exclusão.
+   * Exclusão definitiva: só para conta sem movimentação. Avisos, push, links de senha, interesses, participação em grupos,
+   * notas sobre a pessoa e convites saem junto; qualquer vínculo financeiro ou legal (cotas, contratos, bolões, repasses…)
+   * bloqueia, inclusive vínculos novos criados no futuro. Nesse caso a tela explica o que impede a exclusão.
+   * O superadmin pode apagar também afiliado (e os grupos dele, se não tiverem bolões) e contratos aceitos sem movimentação.
    */
   async deleteEmpty(id: string, actor: AuthUser) {
     if (id === actor.id) throw new ConflictException('Você não pode excluir a própria conta.');
-    return this.prisma.$transaction(async tx => {
-      await lockAdminActor(tx, actor.id);
-      await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${id}::uuid FOR UPDATE`;
-      const target = await tx.usuario.findUnique({ where: { id }, include: { _count: true, afiliado: { select: { id: true } } } });
-      if (!target) throw new NotFoundException('Usuário não encontrado.');
-      const blockers = Object.entries(target._count).filter(([name, count]) => !DISPOSABLE_RELATIONS.has(name) && count > 0).map(([name, count]) => `${count} ${RELATION_LABELS[name] ?? name}`);
-      if (target.afiliado) blockers.push('cadastro de afiliado');
-      if (blockers.length) throw new ConflictException(`Esta conta tem histórico vinculado (${blockers.join(', ')}) e não pode ser apagada. Use "Remover acesso": a pessoa deixa de entrar e o histórico fica preservado.`);
-      await tx.notificacao.deleteMany({ where: { usuarioId: id } });
-      await tx.usuario.delete({ where: { id } });
-      await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.vazio_excluido', atorId: actor.id, payloadDepois: { excluido: true, email: target.email } });
-      return { id, excluido: true };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    const superAdmin = isSuperAdmin(actor);
+    try {
+      return await this.prisma.$transaction(async tx => {
+        await lockAdminActor(tx, actor.id);
+        await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${id}::uuid FOR UPDATE`;
+        const target = await tx.usuario.findUnique({ where: { id }, include: { _count: true, afiliado: { select: { id: true, _count: { select: { comissoes: true, cotasReferenciadas: true } } } } } });
+        if (!target) throw new NotFoundException('Usuário não encontrado.');
+        if (isSuperAdmin(target)) throw new ConflictException('A conta principal do sistema não pode ser excluída.');
+        const disposable = superAdmin ? new Set([...DISPOSABLE_RELATIONS, 'aceitesLegais', 'gruposCriados']) : DISPOSABLE_RELATIONS;
+        const blockers = Object.entries(target._count).filter(([name, count]) => !disposable.has(name) && count > 0).map(([name, count]) => `${count} ${RELATION_LABELS[name] ?? name}`);
+        let groupIdsToDelete: string[] = [];
+        if (target.afiliado && !superAdmin) blockers.push('cadastro de afiliado');
+        if (superAdmin) {
+          if (target.afiliado) {
+            if (target.afiliado._count.comissoes > 0) blockers.push(`${target.afiliado._count.comissoes} comissões`);
+            if (target.afiliado._count.cotasReferenciadas > 0) blockers.push(`${target.afiliado._count.cotasReferenciadas} vendas atribuídas`);
+          }
+          // Grupos do afiliado ou criados pela pessoa: saem junto se não tiverem bolões. O grupo oficial nunca é apagado.
+          const groups = await tx.grupo.findMany({ where: { OR: [...(target.afiliado ? [{ afiliadoId: target.afiliado.id }] : []), { criadoPor: id }] }, select: { id: true, tipo: true, _count: { select: { boloes: true } } } });
+          const own = groups.filter((group) => group.tipo !== 'oficial');
+          const withPools = own.filter((group) => group._count.boloes > 0).length;
+          if (withPools > 0) blockers.push(`${withPools} ${withPools === 1 ? 'grupo com bolões' : 'grupos com bolões'}`);
+          groupIdsToDelete = own.map((group) => group.id);
+        }
+        if (blockers.length) throw new ConflictException(`Esta conta tem histórico vinculado (${blockers.join(', ')}) e não pode ser apagada. Use "Remover acesso": a pessoa deixa de entrar e o histórico fica preservado.`);
+        if (groupIdsToDelete.length) await tx.grupo.deleteMany({ where: { id: { in: groupIdsToDelete } } });
+        await tx.convite.deleteMany({ where: { criadoPorUsuarioId: id } });
+        if (superAdmin) await tx.aceiteLegal.deleteMany({ where: { usuarioId: id } });
+        await tx.notificacao.deleteMany({ where: { usuarioId: id } });
+        await tx.usuario.delete({ where: { id } });
+        await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.vazio_excluido', atorId: actor.id, payloadDepois: { excluido: true, email: target.email, papel: target.papel, superadmin: superAdmin, gruposRemovidos: groupIdsToDelete.length } });
+        return { id, excluido: true };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      // Um vínculo que o sistema ainda não conhecia: explica em vez de dar erro genérico.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') throw new ConflictException('Esta conta ainda tem registros ligados a ela e não pode ser apagada. Use "Remover acesso": o histórico fica preservado.');
+      throw error;
+    }
   }
   async sendReset(id: string, actor: AuthUser) {
     if (!this.mail.isConfigured()) throw new ServiceUnavailableException('SMTP não configurado. Nenhum e-mail foi enviado.');

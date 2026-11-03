@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -147,6 +147,12 @@ export class AdminController {
   @Roles('admin')
   removeGroupMember(@Param('id') id: string, @Param('usuarioId') usuarioId: string, @CurrentUser() user: AuthUser) {
     return this.admin.removeGroupMember(id, usuarioId, user);
+  }
+
+  @Delete('admin/grupos/:id')
+  @Roles('admin')
+  deleteGroup(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.admin.deleteGroup(id, user);
   }
 
   @Patch('admin/usuarios/:id/papel')

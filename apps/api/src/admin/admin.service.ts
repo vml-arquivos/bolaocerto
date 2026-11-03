@@ -1,3 +1,4 @@
+import { isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
@@ -490,6 +491,29 @@ export class AdminService {
     });
     if (!removed) throw new NotFoundException('Essa pessoa não está no grupo.');
     return { removido: true };
+  }
+
+  /**
+   * Excluir grupo (somente superadmin). As pessoas continuam cadastradas: só saem do grupo.
+   * Grupo oficial e grupo com bolões (histórico de vendas) não podem ser apagados.
+   */
+  async deleteGroup(groupId: string, actor: AuthUser) {
+    if (!isSuperAdmin(actor)) throw new ForbiddenException('Só o superadmin pode excluir grupos.');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await lockAdminActor(tx, actor.id);
+        const group = await tx.grupo.findUnique({ where: { id: groupId }, select: { id: true, nome: true, slug: true, tipo: true, _count: { select: { boloes: true, membros: true } } } });
+        if (!group) throw new NotFoundException('Grupo não encontrado.');
+        if (group.tipo === 'oficial') throw new ConflictException('O grupo oficial do BL não pode ser excluído.');
+        if (group._count.boloes > 0) throw new ConflictException(`Este grupo tem ${group._count.boloes} ${group._count.boloes === 1 ? 'bolão' : 'bolões'} e não pode ser apagado, para preservar o histórico de vendas.`);
+        await tx.grupo.delete({ where: { id: groupId } });
+        await this.audit.record(tx, { entidade: 'grupo', entidadeId: groupId, evento: 'grupo.excluido', atorId: actor.id, payloadAntes: { nome: group.nome, slug: group.slug, pessoas: group._count.membros } });
+        return { id: groupId, excluido: true, pessoasDesvinculadas: group._count.membros };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') throw new ConflictException('Este grupo ainda tem registros ligados a ele e não pode ser apagado.');
+      throw error;
+    }
   }
 
   private toPublicPool(pool: any) {

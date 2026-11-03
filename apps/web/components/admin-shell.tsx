@@ -9,15 +9,16 @@ import { useStaffRole } from './staff-gate';
 import { PushPrompt } from './push-prompt';
 import { STAFF_VIEWS } from '../lib/roles';
 
+/** Atalhos fixos no topo do menu. */
+const topItems = [
+  ['visao-geral', 'Resumo', 'RS'],
+  ['relatorios', 'Relatórios', 'RL'],
+] as const;
+
+/** Grupos que abrem e fecham; só o grupo da tela atual fica aberto. */
 const groups = [
   {
-    label: 'Início',
-    items: [
-      ['visao-geral', 'Resumo', 'RS'],
-    ],
-  },
-  {
-    label: 'Jogos',
+    label: 'Jogos e vendas',
     items: [
       ['concursos', 'Concursos', 'CO'],
       ['boloes', 'Bolões', 'BO'],
@@ -32,13 +33,11 @@ const groups = [
       ['crm', 'Clientes', 'CR'],
       ['afiliados', 'Afiliados', 'AF'],
       ['grupos', 'Grupos', 'GR'],
-      ['usuarios', 'Usuários e acessos', 'US'],
     ],
   },
   {
-    label: 'Dinheiro',
+    label: 'Financeiro',
     items: [
-      ['relatorios', 'Relatórios', 'RL'],
       ['recebimentos', 'Recebimentos', 'RE'],
       ['pagamentos', 'Pagamentos', 'PG'],
       ['comissoes', 'Comissões', 'CM'],
@@ -47,17 +46,18 @@ const groups = [
     ],
   },
   {
-    label: 'Operação e comprovantes',
+    label: 'Operação',
     items: [
       ['operacao', 'Para fazer', 'OP'],
       ['comprovantes', 'Comprovantes', 'CP'],
       ['lotericas', 'Lotéricas', 'LP'],
+      ['comunicados', 'Mensagens aos clientes', 'MS'],
     ],
   },
   {
-    label: 'Conta e acesso',
+    label: 'Administração',
     items: [
-      ['comunicados', 'Mensagens aos clientes', 'MS'],
+      ['usuarios', 'Usuários e acessos', 'US'],
       ['conexoes', 'Conexões', 'CX'],
       ['auditoria', 'Histórico', 'HI'],
       ['configuracoes', 'Configurações', 'CF'],
@@ -65,7 +65,8 @@ const groups = [
   },
 ] as const;
 
-const titles: Record<string, string> = Object.fromEntries(groups.flatMap((group) => group.items.map(([key, label]) => [key, label])));
+type NavItem = readonly [string, string, string];
+const titles: Record<string, string> = Object.fromEntries([...(topItems as readonly NavItem[]), ...groups.flatMap((group) => group.items as readonly NavItem[])].map(([key, label]) => [key, label]));
 const COLLAPSE_KEY = 'bl-admin-sidebar-collapsed';
 
 export function AdminShell({ children, testMode = false }: { children: ReactNode; testMode?: boolean }) {
@@ -73,6 +74,8 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
   const params = useSearchParams();
   const current = params.get('view') || 'visao-geral';
   const staffRole = useStaffRole();
+  const allowed = (key: string) => staffRole !== 'operacao' || (STAFF_VIEWS as readonly string[]).includes(key);
+  const visibleTop = topItems.filter(([key]) => allowed(key));
   const visibleGroups = staffRole === 'operacao'
     ? groups.map((group) => ({ ...group, items: group.items.filter(([key]) => (STAFF_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length)
     : groups;
@@ -102,6 +105,26 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
     setTooltip(null);
   }
 
+  function navLink(key: string, label: string, icon: string) {
+    return (
+      <Link
+        key={key}
+        href={`${pathname}?view=${key}`}
+        className={`admin-nav-link ${current === key ? 'is-active' : ''}`}
+        onClick={() => setOpen(false)}
+        onMouseEnter={(event) => showTooltip(label, event.currentTarget)}
+        onMouseLeave={hideTooltip}
+        onFocus={(event) => showTooltip(label, event.currentTarget)}
+        onBlur={hideTooltip}
+        aria-current={current === key ? 'page' : undefined}
+        data-label={label}
+        title={collapsed ? label : undefined}
+      >
+        <span className="admin-nav-icon" aria-hidden="true">{icon}</span><span>{label}</span>
+      </Link>
+    );
+  }
+
   return (
     <div className="admin-app">
       <a className="skip-link" href="#admin-main-content">Pular para o conteúdo</a>
@@ -113,25 +136,10 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
         {testMode && <div className="admin-environment is-test-mode"><span className="admin-status-dot" /><span>Modo de teste</span></div>}
         {testMode && <p className="admin-environment-note">Não faça pagamentos de verdade.</p>}
         <nav className="admin-nav" aria-label="Menu do painel">
+          {visibleTop.length > 0 && <div className="admin-nav-top">{visibleTop.map(([key, label, icon]) => navLink(key, label, icon))}</div>}
           {visibleGroups.map((group) => (
             <details className="admin-nav-group" key={`${group.label}-${current}-${collapsed}`} open={collapsed || group.items.some(([key]) => key === current)}><summary className="admin-nav-label">{group.label}</summary>
-              {group.items.map(([key, label, icon]) => (
-                <Link
-                  key={key}
-                  href={`${pathname}?view=${key}`}
-                  className={`admin-nav-link ${current === key ? 'is-active' : ''}`}
-                  onClick={() => setOpen(false)}
-                  onMouseEnter={(event) => showTooltip(label, event.currentTarget)}
-                  onMouseLeave={hideTooltip}
-                  onFocus={(event) => showTooltip(label, event.currentTarget)}
-                  onBlur={hideTooltip}
-                  aria-current={current === key ? 'page' : undefined}
-                  data-label={label}
-                  title={collapsed ? label : undefined}
-                >
-                  <span className="admin-nav-icon" aria-hidden="true">{icon}</span><span>{label}</span>
-                </Link>
-              ))}
+              {group.items.map(([key, label, icon]) => navLink(key, label, icon))}
             </details>
           ))}
         </nav>
@@ -139,10 +147,11 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
           <span aria-hidden="true">{collapsed ? '»' : '«'}</span><span>{collapsed ? 'Expandir' : 'Recolher menu'}</span>
         </button>
         <div className="admin-sidebar-footer">
-          <div className="admin-install"><InstallAppButton label="Instalar painel como app" hideWhenInstalled className="admin-button admin-button-ghost" /></div>
-          <Link href="/" className="admin-footer-link"><span>Voltar ao site</span></Link>
-          <Link href="/minha-conta" className="admin-footer-link"><span>Minha conta</span></Link>
-          <span className="admin-footer-note">BL — Bolão Livre</span>
+          <div className="admin-install"><InstallAppButton label="Instalar como app" hideWhenInstalled className="admin-install-link" /></div>
+          <div className="admin-footer-links">
+            <Link href="/minha-conta" className="admin-footer-link"><span>Minha conta</span></Link>
+            <Link href="/" className="admin-footer-link"><span>Ver o site</span></Link>
+          </div>
         </div>
       </aside>
       {collapsed && (

@@ -1,3 +1,4 @@
+import { isSuperAdmin } from '../admin/superadmin';
 import { ConflictException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -258,10 +259,11 @@ export class AuthService {
   }
 
   async profile(id: string) {
-    return this.prisma.usuario.findUniqueOrThrow({
+    const user = await this.prisma.usuario.findUniqueOrThrow({
       where: { id },
       select: { id: true, nome: true, email: true, telefone: true, papel: true, statusKyc: true, totpAtivo: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } } },
     });
+    return { ...user, superadmin: isSuperAdmin(user) };
   }
 
   async refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {

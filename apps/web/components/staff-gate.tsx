@@ -6,6 +6,9 @@ import { homeForRole, isStaff, roleLabels, STAFF_VIEWS } from '../lib/roles';
 
 const StaffRoleContext = createContext<'admin' | 'operacao'>('admin');
 export const useStaffRole = () => useContext(StaffRoleContext);
+const SuperAdminContext = createContext(false);
+/** Conta principal do sistema (e-mail de instalação): única que pode apagar grupos e pessoas sem movimentação. */
+export const useIsSuperAdmin = () => useContext(SuperAdminContext);
 
 /**
  * Confere quem está no painel: administrador vê tudo; equipe de operação só a tela "Para fazer";
@@ -17,6 +20,7 @@ export function StaffGate({ children }: { children: ReactNode }) {
   const params = useSearchParams();
   const view = params.get('view') || 'visao-geral';
   const [role, setRole] = useState<string | null>(null);
+  const [superadmin, setSuperadmin] = useState(false);
 
   useEffect(() => {
     let off = false;
@@ -27,8 +31,8 @@ export function StaffGate({ children }: { children: ReactNode }) {
         if (refresh.ok) response = await fetch('/api/v1/auth/me', { credentials: 'include', cache: 'no-store' });
       }
       if (response.status === 401) { window.location.href = '/admin/entrar'; return; }
-      const user = response.ok ? await response.json() as { papel?: string } : null;
-      if (!off) setRole(user?.papel ?? 'cotista');
+      const user = response.ok ? await response.json() as { papel?: string; superadmin?: boolean } : null;
+      if (!off) { setSuperadmin(user?.superadmin === true); setRole(user?.papel ?? 'cotista'); }
     })().catch(() => { if (!off) setRole('erro'); });
     return () => { off = true; };
   }, []);
@@ -43,5 +47,5 @@ export function StaffGate({ children }: { children: ReactNode }) {
     return <div className="admin-loading"><div className="notice" role="alert"><strong>Esta conta não é da equipe</strong><span>Seu perfil é {roleLabels[role] ?? role}. O painel é só para administradores e equipe.</span><Link className="button button-primary" href={homeForRole(role)}>Ir para a minha área</Link></div></div>;
   }
   if (role === 'operacao' && !(STAFF_VIEWS as readonly string[]).includes(view)) return <div className="admin-loading"><p>Abrindo a sua área…</p></div>;
-  return <StaffRoleContext.Provider value={role as 'admin' | 'operacao'}>{children}</StaffRoleContext.Provider>;
+  return <StaffRoleContext.Provider value={role as 'admin' | 'operacao'}><SuperAdminContext.Provider value={superadmin}>{children}</SuperAdminContext.Provider></StaffRoleContext.Provider>;
 }

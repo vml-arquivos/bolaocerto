@@ -45,3 +45,15 @@ A sequência validada localmente é `pnpm install --frozen-lockfile`, geração 
 - **Clientes (cotistas)**: só compram bolões. A tela "Clientes" mostra nível, investimento e segmento, só de cotistas com acesso ativo.
 - "Usuários e acessos" tem abas Equipe / Afiliados / Clientes / Todos. Em qualquer lista (Clientes, Afiliados, Usuários) o botão "Editar / excluir" abre o mesmo editor: dados, papel, senha, remover acesso e excluir.
 - Saíram do menu: Participantes (use Cotas), Quem indicou quem (não há rede de afiliados) e Convites (fica em Afiliados, botão "Ver convites emitidos"). Comissões e Pagar comissões ficam em Dinheiro.
+
+## Superadmin e menu (v17)
+
+**Superadmin** é a conta principal do sistema: o administrador do e-mail definido em `ADMIN_BOOTSTRAP_EMAIL` (a mesma variável da instalação, nada novo para configurar). Só ele vê e usa:
+
+- **Excluir grupo** (Pessoas → Grupos). As pessoas continuam cadastradas, só saem do grupo. Não apaga o grupo oficial nem grupo que tenha bolões (preserva o histórico de vendas).
+- **Excluir conta** de cliente, afiliado ou equipe sem movimentação financeira. Para afiliado, apaga junto os grupos dele sem bolões, os convites e o contrato aceito. Conta com cotas, comissões, vendas atribuídas, bolões criados, repasses ou grupo com bolões não é apagada: a tela explica o motivo e sugere "Remover acesso".
+- A conta principal não pode ser excluída por ninguém. Toda exclusão fica no Histórico.
+
+Administrador comum continua podendo excluir conta de cliente sem histórico e remover acesso.
+
+**Menu lateral.** Resumo e Relatórios ficam fixos no topo. Os grupos são Jogos e vendas, Pessoas (Clientes, Afiliados, Grupos), Financeiro, Operação (inclui Mensagens aos clientes) e Administração (Usuários e acessos, Conexões, Histórico, Configurações). Só o grupo da tela atual fica aberto. "Instalar como app" virou uma linha discreta no rodapé e some quando o painel já está instalado.
