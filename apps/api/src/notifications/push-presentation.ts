@@ -16,6 +16,8 @@ export const PUSH_STYLES: Record<string, PushStyle> = {
   'bolao.aprovado': { emoji: '✅', acao: 'Ver o bolão' },
   'bolao.aprovacao_recusada': { emoji: '⚠️', acao: 'Ajustar o bolão' },
   'comissao.paga': { emoji: '💸', acao: 'Ver comissões' },
+  'afiliado.comissao_alterada': { emoji: '📄', urgente: true, acao: 'Ler o contrato' },
+  'afiliado.contrato_pendente': { emoji: '✍️', acao: 'Ler o contrato' },
 };
 
 export type PushPresentation = { titulo: string; mensagem: string; tag?: string; imagem?: string; urgente: boolean; acoes: PushAction[]; tipo: string };

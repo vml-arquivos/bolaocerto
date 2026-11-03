@@ -25,7 +25,7 @@ export class PricingAdminController {
     const host = new URL(dto.fonte).hostname;
     if (!(host === 'caixa.gov.br' || host.endsWith('.caixa.gov.br'))) throw new BadRequestException('Informe uma fonte oficial da Caixa.');
     return this.prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${modalidade + ':' + chave}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${modalidade + ':' + chave}))`;
       const now = new Date();
       const current = await tx.precoLoteria.findMany({ where: { modalidade, chave, vigenteAte: null } });
       if (current.some(p => p.vigenteDesde >= now)) throw new BadRequestException('Existe versão futura; revise a vigência antes de alterar.');

@@ -276,6 +276,7 @@ model Convite {
   grupoId             String?       @map("grupo_id") @db.Uuid
   usadoPorUsuarioId   String?       @map("usado_por_usuario_id") @db.Uuid
   emailDestino        String?       @map("email_destino") @db.VarChar(180)
+  comissaoPct         Decimal?      @map("comissao_pct") @db.Decimal(5,2)
   expiraEm            DateTime      @map("expira_em")
   usadoEm             DateTime?     @map("usado_em")
   criadoEm            DateTime      @default(now()) @map("criado_em")

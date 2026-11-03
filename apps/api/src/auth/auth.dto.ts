@@ -35,6 +35,12 @@ export class RegisterDto {
   @IsString()
   @Length(5, 140)
   chavePixRepasse?: string;
+
+  /** Hash do contrato de afiliação exibido no cadastro (convite de afiliado). */
+  @IsOptional()
+  @IsString()
+  @Length(64, 64)
+  aceiteContratoHash?: string;
 }
 
 export class LoginDto {

@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Optional, UnauthorizedException } from '
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
+import { legalDocument } from '../legal/documents';
 import * as argon2 from 'argon2';
 import { AuditService } from '../common/audit.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
@@ -26,7 +27,7 @@ export class AuthService {
 
   private dummyHash?: Promise<string>;
 
-  async register(dto: RegisterDto): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
+  async register(dto: RegisterDto, meta: { ip?: string; userAgent?: string | null } = {}): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
     const cpf = normalizeCpf(dto.cpf);
     if (!isValidCpf(cpf)) throw new ConflictException('CPF inválido.');
     const dataNascimento = new Date(dto.dataNascimento);
@@ -39,7 +40,7 @@ export class AuthService {
 
     const code = dto.codigoAfiliado?.trim();
     const invite = code
-      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true, criadoPorUsuario: { select: { papel: true, id: true } } } })
+      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true, comissaoPct: true, criadoPorUsuario: { select: { papel: true, id: true } } } })
       : null;
     if (invite?.emailDestino && invite.emailDestino.toLowerCase() !== email) throw new ConflictException('Este convite foi direcionado a outro e-mail.');
 
@@ -47,6 +48,11 @@ export class AuthService {
       ? await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: code }, select: { id: true, statusAprovacao: true } })
       : null;
     if (code && !invite && (!directAffiliate || directAffiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
+    // Afiliado só entra por convite feito pelo administrador do BL. Convite de afiliado vindo de outra origem não vale.
+    if (invite?.tipo === 'afiliado' && invite.criadoPorUsuario?.papel !== 'admin') throw new ConflictException('Este convite de afiliado não é válido. Peça um novo convite ao administrador do BL.');
+    // Contrato do afiliado: a comissão é a que o administrador definiu no convite e o aceite é gravado junto com o cadastro.
+    const contract = invite?.tipo === 'afiliado' ? legalDocument('afiliado', invite.comissaoPct ? Number(invite.comissaoPct).toFixed(2) : undefined) : null;
+    if (contract?.aprovado && dto.aceiteContratoHash !== contract.hash) throw new ConflictException('Leia e aceite o contrato de afiliação para concluir o cadastro.');
     const originAffiliateId = invite?.afiliadoOrigemId ?? directAffiliate?.id ?? null;
     const papel = invite?.tipo === 'afiliado' ? 'afiliado' : 'cotista';
     const passwordHash = await argon2.hash(dto.senha, { type: argon2.argon2id });
@@ -66,18 +72,24 @@ export class AuthService {
         select: { id: true, email: true, papel: true },
       });
       if (invite?.tipo === 'afiliado') {
-        // Convite feito por um administrador já vale como aprovação; convite de outro afiliado fica aguardando o admin.
+        // Convite feito por um administrador já vale como aprovação, com a comissão que ele definiu.
         const approvedByAdmin = invite.criadoPorUsuario?.papel === 'admin';
         const affiliate = await tx.afiliado.create({
           data: {
             usuarioId: created.id,
             codigoAfiliado: this.makeCode('BL'),
             statusAprovacao: approvedByAdmin ? 'aprovado' : 'pendente',
+            ...(invite.comissaoPct ? { comissaoPadraoPct: invite.comissaoPct } : {}),
             parentAfiliadoId: originAffiliateId ?? undefined,
             chavePixRepasse: dto.chavePixRepasse?.trim() || undefined,
             ...(approvedByAdmin ? { aprovadoPor: invite.criadoPorUsuario!.id, aprovadoEm: new Date() } : {}),
           },
         });
+        if (contract?.aprovado) {
+          const accepted = await tx.aceiteLegal.create({ data: { usuarioId: created.id, tipo: 'afiliado', hash: contract.hash, versao: contract.versao, texto: contract.texto, ip: meta.ip ?? 'unknown', userAgent: meta.userAgent ?? undefined } });
+          await this.audit?.record(tx, { entidade: 'usuario', entidadeId: created.id, evento: 'contrato.afiliado_aceito', atorId: created.id, payloadDepois: { hash: contract.hash, aceiteId: accepted.id, origem: 'cadastro', comissaoPct: Number(affiliate.comissaoPadraoPct) } });
+        }
+        await this.audit?.record(tx, { entidade: 'afiliado', entidadeId: affiliate.id, evento: 'afiliado.cadastro_concluido', atorId: created.id, payloadDepois: { conviteId: invite.id, comissaoPct: Number(affiliate.comissaoPadraoPct), aprovadoPor: invite.criadoPorUsuario?.id ?? null } });
         if (approvedByAdmin) {
           await ensureAffiliateGroup(tx, affiliate, dto.nome, invite.criadoPorUsuario!.id);
           await tx.notificacao.create({ data: { usuarioId: created.id, canal: 'push', tipo: 'afiliado.aprovado', payload: { titulo: 'Seu cadastro de afiliado foi aprovado', mensagem: 'Seu grupo já está pronto. Crie seu bolão e envie o link de venda aos seus cotistas.', link: '/afiliado' } } });
@@ -116,11 +128,17 @@ export class AuthService {
     if (code.length < 3) return invalid;
     const invite = await this.prisma.convite.findFirst({
       where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } },
-      select: { tipo: true, emailDestino: true, criadoPorUsuario: { select: { nome: true, papel: true } }, afiliadoOrigem: { select: { usuario: { select: { nome: true } } } }, grupo: { select: { nome: true } } },
+      select: { tipo: true, emailDestino: true, comissaoPct: true, criadoPorUsuario: { select: { nome: true, papel: true } }, afiliadoOrigem: { select: { usuario: { select: { nome: true } } } }, grupo: { select: { nome: true } } },
     });
     const firstName = (name?: string | null) => (name ?? '').trim().split(/\s+/)[0] || null;
     if (invite) {
-      return { valido: true as const, tipo: invite.tipo === 'afiliado' ? 'afiliado' as const : 'cliente' as const, convidadoPor: firstName(invite.afiliadoOrigem?.usuario.nome ?? invite.criadoPorUsuario.nome), email: invite.emailDestino ?? null, grupo: invite.grupo?.nome ?? null };
+      // Convite de afiliado só vale quando feito pelo administrador (mesma regra do cadastro).
+      if (invite.tipo === 'afiliado' && invite.criadoPorUsuario.papel !== 'admin') return invalid;
+      const base = { valido: true as const, tipo: invite.tipo === 'afiliado' ? 'afiliado' as const : 'cliente' as const, convidadoPor: firstName(invite.afiliadoOrigem?.usuario.nome ?? invite.criadoPorUsuario.nome), email: invite.emailDestino ?? null, grupo: invite.grupo?.nome ?? null };
+      if (invite.tipo !== 'afiliado') return base;
+      const pct = invite.comissaoPct ? Number(invite.comissaoPct).toFixed(2) : undefined;
+      const doc = legalDocument('afiliado', pct);
+      return { ...base, comissaoPct: pct ?? null, contrato: { texto: doc.texto, hash: doc.hash, versao: doc.versao, aprovado: doc.aprovado } };
     }
     const affiliate = await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: code }, select: { statusAprovacao: true, usuario: { select: { nome: true } } } });
     if (affiliate?.statusAprovacao === 'aprovado') return { valido: true as const, tipo: 'indicacao' as const, convidadoPor: firstName(affiliate.usuario.nome), email: null, grupo: null };

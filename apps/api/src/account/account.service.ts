@@ -56,7 +56,7 @@ export class AccountService {
     const token = randomBytes(32).toString('base64url');
     const expiraEm = new Date(Date.now() + RESET_TTL_MINUTES * 60_000);
     await this.prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
       const actor = await tx.usuario.findUnique({ where: { id: adminId }, select: { papel: true, desativadoEm: true } });
       if (!actor || actor.papel !== 'admin' || actor.desativadoEm) throw new ForbiddenException('Acesso administrativo indisponível.');
       await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${usuarioId}::uuid FOR UPDATE`;

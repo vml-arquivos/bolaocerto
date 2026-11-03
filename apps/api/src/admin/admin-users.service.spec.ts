@@ -5,6 +5,7 @@ function setup() {
   const records: any[] = [];
   const tx: any = {
     $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     usuario: {
       delete: jest.fn().mockResolvedValue({}),
       findUnique: jest.fn(async ({ where }: any) => users.find(u => u.id === where.id)),
@@ -55,7 +56,10 @@ describe('Administrative user management', () => {
   it('rechecks the acting administrator under the shared transaction lock', async () => {
     const { service, users, tx } = setup(); users[0].desativadoEm = new Date();
     await expect(service.setActive('buyer', false, actor)).rejects.toThrow(/administrativo/);
-    expect(tx.$queryRaw).toHaveBeenCalled(); expect(tx.usuario.update).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).toHaveBeenCalled(); expect(tx.usuario.update).not.toHaveBeenCalled();
+    // O bloqueio é feito com $executeRaw: com $queryRaw o Prisma falha ao ler o retorno "void" e a tela mostrava erro 500.
+    expect(String((tx.$executeRaw as jest.Mock).mock.calls[0][0])).toContain('pg_advisory_xact_lock');
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
   });
   it('normalizes contact data, preserves CPF and revokes sessions on email change', async () => {
     const { service, users, tx } = setup();

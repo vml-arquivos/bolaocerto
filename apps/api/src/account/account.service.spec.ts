@@ -10,6 +10,7 @@ function setup() {
   const notified: any[] = [];
   const tx: any = {
     $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     tokenSenha: {
       count: async ({ where }: any) => tokens.filter(t => t.usuarioId === where.usuarioId && t.criadoEm > where.criadoEm.gt).length,
       updateMany: async ({ where, data }: any) => { let count = 0; for (const t of tokens) if ((where.id === undefined || t.id === where.id) && (where.usuarioId === undefined || t.usuarioId === where.usuarioId) && (where.usadoEm === null ? t.usadoEm === null : true)) { Object.assign(t, data); count += 1; } return { count }; },

@@ -30,6 +30,8 @@ export const NOTIFICATION_TITLES: Record<string, string> = {
   'bolao.aprovado': 'Seu bolão foi aprovado',
   'bolao.aprovacao_recusada': 'Bolão precisa de ajustes',
   'comissao.paga': 'Comissão paga',
+  'afiliado.comissao_alterada': 'Sua comissão foi atualizada',
+  'afiliado.contrato_pendente': 'Contrato de afiliado aguardando aceite',
 };
 
 /** Texto padrão do e-mail para cada tipo de aviso. */

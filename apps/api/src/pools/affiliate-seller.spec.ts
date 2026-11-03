@@ -134,7 +134,19 @@ describe('afiliado vendedor: convites e grupo', () => {
     };
     const service = new AdminService(prisma, { record: jest.fn() } as any);
     await expect(service.createInvite({ tipo: 'afiliado' } as any, affiliateUser)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(service.createInvite({ tipo: 'afiliado' } as any, admin)).resolves.toBeTruthy();
+    await expect(service.createInvite({ tipo: 'afiliado', comissaoPct: 12 } as any, admin)).resolves.toBeTruthy();
+    expect(Number(prisma.convite.create.mock.calls[0][0].data.comissaoPct)).toBe(12);
+  });
+
+  it('convite de afiliado exige a comissão definida pelo administrador', async () => {
+    const prisma: any = {
+      afiliado: { findUnique: jest.fn(), findFirst: jest.fn() },
+      convite: { create: jest.fn() },
+      $transaction: async (cb: any) => cb(prisma),
+    };
+    const service = new AdminService(prisma, { record: jest.fn() } as any);
+    await expect(service.createInvite({ tipo: 'afiliado' } as any, admin)).rejects.toThrow(/comissão/i);
+    expect(prisma.convite.create).not.toHaveBeenCalled();
   });
 
   it('convite de grupo só vale para grupo do próprio afiliado e só para cliente', async () => {

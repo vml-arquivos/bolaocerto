@@ -18,6 +18,7 @@ describe('AdminService.updateUserRole', () => {
   function setup(opts: { target?: { papel: string } | null; affiliate?: { id: string; statusAprovacao: string } | null }) {
     const tx: any = {
       $queryRaw: jest.fn().mockResolvedValue([{ x: 1 }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       usuario: {
         findUnique: jest.fn().mockResolvedValue({ papel: 'admin', desativadoEm: null }),
         update: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'u2', papel: data.papel })),

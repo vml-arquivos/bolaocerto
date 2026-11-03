@@ -103,6 +103,13 @@ export class CreateInviteDto {
   @IsOptional()
   @IsDateString()
   expiraEm?: string;
+
+  /** Comissão do afiliado (%) definida pelo admin; obrigatória no convite de afiliado. */
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(100)
+  comissaoPct?: number;
 }
 
 /** O admin autoriza pessoas a mais na conta do grupo (além das que entraram pelo site). */

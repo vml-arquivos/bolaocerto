@@ -12,8 +12,8 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('registrar')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) {
-    const result = await this.auth.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const result = await this.auth.register(dto, { ip: request.ip ?? request.socket.remoteAddress ?? 'unknown', userAgent: request.get('user-agent') });
     setAuthCookies(response, result.accessToken, result.refreshToken);
     return { user: result.user };
   }

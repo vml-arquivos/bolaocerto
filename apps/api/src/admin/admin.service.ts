@@ -31,6 +31,7 @@ import {
 } from './admin.dto';
 
 import { ensureAffiliateGroup } from '../common/affiliate-groups';
+import { legalDocument } from '../legal/documents';
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly mail?: MailService) {}
@@ -249,7 +250,11 @@ export class AdminService {
       this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.afiliado.count({ where }),
     ]);
-    return { items: items.map((affiliate) => ({ ...affiliate, comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    // Contrato vigente de cada afiliado (depende do percentual): mostra quem já aceitou e quando.
+    const currentHash = new Map(items.map((affiliate) => [affiliate.usuarioId, legalDocument('afiliado', affiliate.comissaoPadraoPct.toFixed(2)).hash]));
+    const acceptances = items.length ? await this.prisma.aceiteLegal.findMany({ where: { tipo: 'afiliado', usuarioId: { in: items.map((affiliate) => affiliate.usuarioId) }, hash: { in: [...currentHash.values()] } }, select: { usuarioId: true, hash: true, aceitoEm: true } }) : [];
+    const acceptedAt = (userId: string) => acceptances.find((row) => row.usuarioId === userId && row.hash === currentHash.get(userId))?.aceitoEm ?? null;
+    return { items: items.map((affiliate) => ({ ...affiliate, contratoAceitoEm: acceptedAt(affiliate.usuarioId), comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async listCommissions(query: AdminListQueryDto = {}) {
@@ -347,6 +352,7 @@ export class AdminService {
     const actorAffiliate = actor.papel === 'afiliado' ? await this.requireApprovedAffiliate(actor) : null;
     // O afiliado é um vendedor: ele traz clientes, não monta rede de outros afiliados. Só o admin convida afiliados.
     if (actorAffiliate && dto.tipo === 'afiliado') throw new ForbiddenException('Afiliado não convida outros afiliados. Convide clientes para o seu grupo.');
+    if (dto.tipo === 'afiliado' && (dto.comissaoPct === undefined || dto.comissaoPct === null || Number.isNaN(Number(dto.comissaoPct)))) throw new ConflictException('Defina a comissão (%) do afiliado antes de gerar o convite.');
     const requestedOrigin = dto.afiliadoOrigemId ? await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoOrigemId, statusAprovacao: 'aprovado' } }) : null;
     if (dto.afiliadoOrigemId && !requestedOrigin) throw new NotFoundException('Afiliado de origem não encontrado ou não aprovado.');
     if (actorAffiliate && requestedOrigin && requestedOrigin.id !== actorAffiliate.id) throw new ForbiddenException('Um afiliado só pode gerar convites na própria rede.');
@@ -360,8 +366,8 @@ export class AdminService {
     const expiresAt = dto.expiraEm ? new Date(dto.expiraEm) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) throw new ConflictException('A validade do convite precisa estar no futuro.');
     const invite = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, grupoId: dto.grupoId, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, expiraEm: expiresAt } });
-      await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, grupoId: created.grupoId, expiraEm: created.expiraEm } });
+      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, grupoId: dto.grupoId, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, comissaoPct: dto.tipo === 'afiliado' ? new Prisma.Decimal(dto.comissaoPct!) : undefined, expiraEm: expiresAt } });
+      await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, grupoId: created.grupoId, comissaoPct: created.comissaoPct?.toString() ?? null, expiraEm: created.expiraEm } });
       return created;
     });
     // Convite com e-mail: já sai por e-mail, com o link (o link também continua disponível para copiar).
@@ -369,11 +375,12 @@ export class AdminService {
     if (invite.emailDestino && this.mail?.isConfigured()) {
       const link = `${this.mail.publicUrl()}/r/${invite.codigo}`;
       const who = actor.papel === 'afiliado' ? 'Um vendedor parceiro do BL' : 'A equipe do BL';
+      const commissionLine = invite.tipo === 'afiliado' && invite.comissaoPct ? ` Sua comissão: ${Number(invite.comissaoPct)}% sobre a taxa de administração das vendas, conforme o contrato que você lê e aceita no cadastro.` : '';
       emailEnviado = await this.mail.send({
         to: invite.emailDestino,
         subject: invite.tipo === 'afiliado' ? 'Convite para ser afiliado do BL — Bolão Livre' : 'Você foi convidado para o BL — Bolão Livre',
-        text: `Olá!\n\n${who} convidou você ${invite.tipo === 'afiliado' ? 'para ser afiliado do BL — Bolão Livre. Complete seu cadastro, monte seu grupo e venda cotas pelo seu link' : 'para criar sua conta no BL — Bolão Livre e participar de bolões'}.\n\nCrie sua conta por este link (vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}):\n${link}\n\nPlataforma independente, não oficial da CAIXA. Jogue com responsabilidade (18+).`,
-        html: wrapEmailHtml(invite.tipo === 'afiliado' ? 'Convite para ser afiliado' : 'Você foi convidado', `<p>${escapeHtml(who)} convidou você ${invite.tipo === 'afiliado' ? 'para ser afiliado do BL — Bolão Livre. Complete seu cadastro, monte seu grupo e venda cotas pelo seu link.' : 'para criar sua conta no BL — Bolão Livre e participar de bolões.'}</p><p style="color:#646b86">O convite vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}.</p>`, { label: invite.tipo === 'afiliado' ? 'Completar meu cadastro' : 'Criar minha conta', url: link }),
+        text: `Olá!\n\n${who} convidou você ${invite.tipo === 'afiliado' ? 'para ser afiliado do BL — Bolão Livre. Complete seu cadastro, monte seu grupo e venda cotas pelo seu link' : 'para criar sua conta no BL — Bolão Livre e participar de bolões'}.${commissionLine}\n\nCrie sua conta por este link (vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}):\n${link}\n\nPlataforma independente, não oficial da CAIXA. Jogue com responsabilidade (18+).`,
+        html: wrapEmailHtml(invite.tipo === 'afiliado' ? 'Convite para ser afiliado' : 'Você foi convidado', `<p>${escapeHtml(who)} convidou você ${invite.tipo === 'afiliado' ? 'para ser afiliado do BL — Bolão Livre. Complete seu cadastro, monte seu grupo e venda cotas pelo seu link.' : 'para criar sua conta no BL — Bolão Livre e participar de bolões.'}${escapeHtml(commissionLine)}</p><p style="color:#646b86">O convite vale até ${invite.expiraEm.toLocaleDateString('pt-BR')}.</p>`, { label: invite.tipo === 'afiliado' ? 'Completar meu cadastro' : 'Criar minha conta', url: link }),
       }).catch(() => false);
     }
     return { id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, grupoId: invite.grupoId, expiraEm: invite.expiraEm, caminho: `/r/${invite.codigo}`, emailDestino: invite.emailDestino, emailEnviado };
@@ -390,7 +397,7 @@ export class AdminService {
       this.prisma.convite.findMany({ where, include: { afiliadoOrigem: { include: { usuario: { select: { nome: true, email: true } } } }, usadoPorUsuario: { select: { nome: true, email: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.convite.count({ where }),
     ]);
-    return { items: items.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, emailDestino: invite.emailDestino, expiraEm: invite.expiraEm, usadoEm: invite.usadoEm, afiliadoOrigem: invite.afiliadoOrigem ? { id: invite.afiliadoOrigem.id, codigo: invite.afiliadoOrigem.codigoAfiliado, nome: invite.afiliadoOrigem.usuario.nome } : null, usadoPor: invite.usadoPorUsuario })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, emailDestino: invite.emailDestino, comissaoPct: invite.comissaoPct ? Number(invite.comissaoPct) : null, expiraEm: invite.expiraEm, usadoEm: invite.usadoEm, afiliadoOrigem: invite.afiliadoOrigem ? { id: invite.afiliadoOrigem.id, codigo: invite.afiliadoOrigem.codigoAfiliado, nome: invite.afiliadoOrigem.usuario.nome } : null, usadoPor: invite.usadoPorUsuario })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async affiliateNetwork(actor: AuthUser) {
@@ -617,6 +624,10 @@ export class AdminService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.afiliado.update({ where: { id }, data: { comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct) } });
       await this.audit.record(tx, { entidade: 'afiliado', entidadeId: id, evento: 'afiliado.comissao.alterada', atorId: user.id, payloadAntes: affiliate as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });
+      // Percentual novo = contrato novo: o afiliado é avisado e precisa aceitar de novo para seguir criando bolões.
+      if (Number(affiliate.comissaoPadraoPct) !== Number(result.comissaoPadraoPct)) {
+        await tx.notificacao.create({ data: { usuarioId: affiliate.usuarioId, canal: 'push', tipo: 'afiliado.comissao_alterada', payload: { titulo: 'Sua comissão foi atualizada', mensagem: `Sua comissão agora é ${Number(result.comissaoPadraoPct)}%. Leia e aceite o novo contrato para continuar criando bolões.`, link: '/afiliado' } } });
+      }
       return result;
     });
     return updated;

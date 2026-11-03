@@ -14,8 +14,9 @@ export class EditManagedUserDto {
   @ValidateIf((_o, v) => v !== undefined) @IsDateString({ strict: true }) dataNascimento?: string;
 }
 /** Serializes account administration, including mutually revoking administrators. */
+/** O bloqueio usa $executeRaw: a função devolve "void", que o $queryRaw do Prisma não consegue ler (erro 500). */
 export async function lockAdminActor(tx: Prisma.TransactionClient, actorId: string) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
   const actor = await tx.usuario.findUnique({ where: { id: actorId }, select: { papel: true, desativadoEm: true } });
   if (!actor || actor.papel !== 'admin' || actor.desativadoEm) throw new ForbiddenException('Acesso administrativo indisponível.');
 }
