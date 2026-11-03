@@ -22,6 +22,7 @@ const groups = [
     items: [
       ['concursos', 'Concursos', 'CO'],
       ['boloes', 'Bolões', 'BO'],
+      ['vitrine', 'Página inicial', 'PI'],
       ['jogos', 'Apostas', 'JG'],
       ['cotas', 'Cotas', 'CT'],
       ['controle', 'Acompanhar bolão', 'CB'],

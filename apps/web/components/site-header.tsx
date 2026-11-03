@@ -10,7 +10,7 @@ export function SiteHeader() {
   const testMode = process.env.PLATFORM_TEST_MODE === 'true';
   return <><a className="skip-link" href="#main-content">Pular para o conteúdo</a>{testMode && <div className="test-banner">Ambiente de testes: não realize pagamentos reais.</div>}<header className="site-header"><div className="shell header-row">
     <Link className="brand" href="/" aria-label="BL — Bolão Livre, página inicial"><BrandMark /><span><strong>Bolão Livre</strong><small>Concursos oficiais</small></span></Link>
-    <nav className="main-nav" aria-label="Navegação principal"><Link href="/#modalidades">Modalidades</Link><Link href="/#concursos">Concursos</Link><Link href="/#boloes">Bolões</Link><Link href="/estatisticas">Estatísticas</Link><Link href="/minha-conta">Minhas cotas</Link></nav>
+    <nav className="main-nav" aria-label="Navegação principal"><Link href="/#modalidades">Modalidades</Link><Link href="/#concursos">Concursos</Link><Link href="/#boloes">Bolões</Link><Link href="/resultados">Resultados</Link><Link href="/estatisticas">Estatísticas</Link><Link href="/minha-conta">Minhas cotas</Link></nav>
     <div className="header-actions"><ThemeToggle /><HeaderAuth /></div>
   </div></header></>;
 }

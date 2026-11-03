@@ -57,3 +57,14 @@ A sequência validada localmente é `pnpm install --frozen-lockfile`, geração 
 Administrador comum continua podendo excluir conta de cliente sem histórico e remover acesso.
 
 **Menu lateral.** Resumo e Relatórios ficam fixos no topo. Os grupos são Jogos e vendas, Pessoas (Clientes, Afiliados, Grupos), Financeiro, Operação (inclui Mensagens aos clientes) e Administração (Usuários e acessos, Conexões, Histórico, Configurações). Só o grupo da tela atual fica aberto. "Instalar como app" virou uma linha discreta no rodapé e some quando o painel já está instalado.
+
+## Página inicial (vitrine)
+
+Painel → Jogos e vendas → **Página inicial**.
+
+- **Carrossel do topo**: até 8 destaques. "+ Bolão" escolhe um bolão com cotas abertas (ex.: Mega da Virada); "+ Mensagem livre" cria um destaque com título, texto, botão e link (`/caminho` do site ou `https://`). Dá para ordenar, esconder e remover. Sem nenhum destaque, o site mostra sozinho os concursos de maior prêmio.
+- **Bolões em destaque**: até 6 cartões logo abaixo do carrossel.
+- **O que aparece na página**: liga/desliga próximos sorteios, últimos resultados, bolões sorteados, vendas encerradas, calendário, faixa de números, como funciona e perguntas frequentes. Seção sem conteúdo some sozinha.
+- A configuração fica em `ConfiguracaoSistema` (chave `home.config`); não precisa de migração.
+- **Últimos resultados** vêm dos resultados oficiais já sincronizados (Concursos → Sincronizar). Sem sincronização, a seção mostra um aviso.
+- A taxa de administração não aparece mais no cartão do bolão; ela é detalhada na página do bolão (bilhete + taxa).
