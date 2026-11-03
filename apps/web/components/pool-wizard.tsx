@@ -104,8 +104,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [festaChoice, setFestaChoice] = useState('personalizado');
   const [festaName, setFestaName] = useState('');
   const [festaDate, setFestaDate] = useState('');
+  const [festaHora, setFestaHora] = useState('20:00');
   const [festaBusy, setFestaBusy] = useState(false);
-  const [festaPresets, setFestaPresets] = useState<Array<{ chave: string; nome: string; modalidade: string }>>([]);
+  const [festaPresets, setFestaPresets] = useState<Array<{ chave: string; nome: string; modalidade: string; proximoSorteio?: { data: string; hora: string; confirmado: boolean; fonte: string } | null }>>([]);
   const [presale, setPresale] = useState(false);
   const [saleStart, setSaleStart] = useState('');
   const [saleEnd, setSaleEnd] = useState('');
@@ -157,7 +158,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const limits = modalityLimits[modality] ?? modalityLimits.megasena!;
   const availableContests = useMemo(() => contests.filter((contest) => contest.modalidade === modality && ['aberto', 'aberta'].includes(String(contest.status).toLowerCase())), [contests, modality]);
   const selectedContest = contests.find((contest) => contest.id === contestId) ?? (editPool?.concursoId === contestId ? editPool.concurso : null);
-  const games = numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number) }));
+  const games = useMemo(() => numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number) })), [numbers]);
   const uniqueNumbers = games[0]?.numeros ?? [];
   const canPrice = ['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(modality);
   useEffect(() => {
@@ -173,6 +174,29 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const sizeNumber = Number(genSize || limits.min);
   const gameCountNumber = Math.min(Math.max(Math.trunc(Number(genCount) || 1), 1), 100);
   const unitCents = priceTable[`${modality}:${sizeNumber}`];
+  // Quantidades de números que a CAIXA vende para esta modalidade (tabela de preços).
+  const sizeOptions = useMemo(() => Object.keys(priceTable).filter((key) => key.startsWith(`${modality}:`)).map((key) => key.slice(modality.length + 1)).filter((chave) => /^\d+$/.test(chave)).map(Number).sort((a, b) => a - b), [priceTable, modality]);
+  // Custo e cota calculados aqui mesmo, com os jogos escritos e a tabela da CAIXA (a cotação do servidor confirma na hora de salvar).
+  const localQuote = useMemo(() => {
+    if (!canPrice || games.length === 0) return null;
+    let cost = 0;
+    for (const game of games) {
+      const price = priceTable[`${modality}:${game.numeros.length}`];
+      if (price === undefined) return null;
+      cost += price;
+    }
+    const shares = Math.trunc(Number(totalCotas));
+    const feeBps = Math.round(Number(taxa) * 100);
+    if (!Number.isSafeInteger(shares) || shares <= 0 || !Number.isFinite(feeBps) || feeBps < 0 || feeBps > 3500 || cost <= 0) return null;
+    const ticketPerShare = Math.ceil(cost / shares);
+    const feePerShare = Math.round(ticketPerShare * feeBps / 10000);
+    return { cost, shares, ticketPerShare, feePerShare, quotaCents: ticketPerShare + feePerShare, totalCents: (ticketPerShare + feePerShare) * shares };
+  }, [canPrice, games, priceTable, modality, totalCotas, taxa]);
+  useEffect(() => {
+    if (!automatic || editing || !localQuote) return;
+    setValorCota((localQuote.quotaCents / 100).toFixed(2));
+    setCusto((localQuote.cost / 100).toFixed(2));
+  }, [automatic, editing, localQuote?.quotaCents, localQuote?.cost]); // eslint-disable-line react-hooks/exhaustive-deps
   const previewTotal = unitCents === undefined ? null : unitCents * gameCountNumber;
   async function generateGames() {
     setGenerating(true); setGenError('');
@@ -194,6 +218,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         const response = await authFetch('/api/v1/admin/boloes/cotacao', { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ concursoId: contestId, grupoId: selectedGroupId, numerosApostados: uniqueNumbers, jogos: games, totalCotas: Number(totalCotas), valorCota: 1, taxaAdministracaoPct: Number(taxa), modeloOperacional: 'mandato' }) });
         const data = await response.json();
         if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message);
+        if (!Number.isFinite(data.quotaCents) || !Number.isFinite(data.costCents)) throw new Error('Cotação inválida.');
         if (!controller.signal.aborted) { setQuote(data); setValorCota((data.quotaCents / 100).toFixed(2)); setCusto((data.costCents / 100).toFixed(2)); }
       } catch (error) { if (!controller.signal.aborted) setQuoteError(error instanceof Error ? error.message : 'Falha na cotação.'); }
     }, 350);
@@ -206,6 +231,13 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const modalityPresets = festaPresets.filter((preset) => preset.modalidade === modality);
   useEffect(() => { setFestaChoice(modalityPresets[0]?.chave ?? 'personalizado'); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modality, festaPresets]);
+  const festaPreset = modalityPresets.find((item) => item.chave === festaChoice);
+  const festaSorteio = festaPreset?.proximoSorteio ?? null;
+  // Ao escolher a festa, a data e a hora do sorteio já vêm preenchidas (o administrador ainda pode ajustar).
+  useEffect(() => {
+    if (festaSorteio) { setFestaDate(festaSorteio.data); setFestaHora(festaSorteio.hora); }
+    else { setFestaDate(''); setFestaHora('20:00'); }
+  }, [festaSorteio?.data, festaSorteio?.hora, festaChoice]); // eslint-disable-line react-hooks/exhaustive-deps
   async function createDateContest() {
     setMessage('');
     if (!festaDate) { setMessage('Escolha o dia do sorteio.'); return; }
@@ -213,11 +245,11 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     if (!preset && !festaName.trim()) { setMessage('Dê um nome para a data (ex.: Quina do Natal).'); return; }
     setFestaBusy(true);
     try {
-      const response = await authFetch('/api/v1/admin/concursos/festa', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ especial: preset ? preset.chave : 'personalizado', dataSorteio: festaDate, ...(preset ? {} : { modalidade: modality, nomeEspecial: festaName.trim() }) }) });
+      const response = await authFetch('/api/v1/admin/concursos/festa', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ especial: preset ? preset.chave : 'personalizado', dataSorteio: festaDate, horaSorteio: festaHora || '20:00', ...(preset ? {} : { modalidade: modality, nomeEspecial: festaName.trim() }) }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível criar o concurso desta data.');
       await onContestCreated?.();
-      setContestId(String(data.id)); setNewDate(false); setFestaDate(''); setFestaName('');
+      setContestId(String(data.id)); setNewDate(false); setFestaName('');
       setMessage('Concurso da data criado e selecionado. Agora é só definir os jogos e as cotas.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao criar o concurso desta data.'); }
     finally { setFestaBusy(false); }
@@ -334,15 +366,18 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
             <label className="admin-field"><span>Data comemorativa</span><select value={festaChoice} onChange={(event) => setFestaChoice(event.target.value)}>{modalityPresets.map((preset) => <option key={preset.chave} value={preset.chave}>{preset.nome}</option>)}<option value="personalizado">Outra data (informar nome)</option></select></label>
             {(festaChoice === 'personalizado' || !modalityPresets.some((preset) => preset.chave === festaChoice)) && <label className="admin-field"><span>Nome da data</span><input value={festaName} maxLength={80} onChange={(event) => setFestaName(event.target.value)} placeholder="Ex.: Quina do Natal" /></label>}
             <label className="admin-field"><span>Dia do sorteio</span><input type="date" value={festaDate} onChange={(event) => setFestaDate(event.target.value)} /></label>
+            <label className="admin-field"><span>Hora do sorteio (Brasília)</span><input type="time" value={festaHora} onChange={(event) => setFestaHora(event.target.value)} /></label>
           </div>
+          {festaSorteio && <p className="admin-note" role="status">{festaSorteio.confirmado ? 'Data confirmada pela CAIXA.' : `Data prevista, ainda não confirmada: ${festaSorteio.fonte.replace(/\.$/, '')}.`} As apostas fecham 1 hora antes do sorteio ou no horário padrão da modalidade, o que for mais cedo.</p>}
           <button type="button" className="admin-button admin-button-primary" disabled={festaBusy} onClick={() => void createDateContest()}>{festaBusy ? 'Criando…' : `Criar concurso de ${modalityNames[modality] ?? modality}`}</button>
         </div>}
       </div>}
       {canPrice && !editing && <div className="admin-field admin-field-wide game-generator" aria-label="Gerador de jogos">
         <strong>Gerar jogos automaticamente</strong>
+        <small className="admin-muted">Usa o histórico de sorteios da CAIXA para montar jogos variados. Não prevê resultado: todo jogo tem a mesma chance.</small>
         <div className="admin-form-grid admin-form-grid-four">
-          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} value={genCount} onChange={(event) => setGenCount(event.target.value)} /></label>
-          <label className="admin-field"><span>Números em cada jogo</span><input type="number" min={limits.min} max={modality === 'megasena' ? 20 : modality === 'lotofacil' ? 20 : modality === 'quina' ? 15 : modality === 'duplasena' ? 15 : 50} value={genSize} onChange={(event) => setGenSize(event.target.value)} /></label>
+          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} inputMode="numeric" value={genCount} onChange={(event) => setGenCount(event.target.value)} /><small>De 1 a 100 por bolão.</small></label>
+          <label className="admin-field"><span>Números em cada jogo</span>{sizeOptions.length > 0 ? <select value={genSize} onChange={(event) => setGenSize(event.target.value)}>{sizeOptions.map((size) => <option key={size} value={size}>{size} números · {money((priceTable[`${modality}:${size}`] ?? 0) / 100)}</option>)}</select> : <input type="number" min={limits.min} value={genSize} onChange={(event) => setGenSize(event.target.value)} />}<small>Só aparecem as apostas que a CAIXA vende, com o preço oficial.</small></label>
           <label className="admin-field"><span>Como escolher</span><select value={genStrategy} onChange={(event) => setGenStrategy(event.target.value)}><option value="equilibrado">Equilibrado (evita padrões comuns)</option><option value="aleatorio">Totalmente aleatório</option><option value="quentes">Mais sorteados recentes</option><option value="atrasados">Mais atrasados</option><option value="misto">Misto</option></select></label>
           <div className="admin-field" style={{ alignSelf: 'end' }}><button type="button" className="admin-button admin-button-primary" disabled={generating} onClick={() => void generateGames()}>{generating ? 'Gerando…' : generated ? 'Gerar de novo' : 'Gerar jogos'}</button></div>
         </div>
@@ -353,6 +388,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         <div className="generator-cost" aria-live="polite">
           {previewTotal === null ? <span>Valor do registro na CAIXA: confira a tabela de preços.</span> : <span>Registro na CAIXA: <strong>{money(unitCents! / 100)}</strong> por jogo de {sizeNumber} números · <strong>{gameCountNumber} {gameCountNumber === 1 ? 'jogo' : 'jogos'} = {money(previewTotal / 100)}</strong></span>}
         </div>
+        {localQuote && <div className="generator-cost" aria-live="polite"><span>Custo dos {games.length} {games.length === 1 ? 'jogo' : 'jogos'}: <strong>{money(localQuote.cost / 100)}</strong> · com {localQuote.shares} {localQuote.shares === 1 ? 'cota' : 'cotas'} e taxa de {taxa || 0}%: <strong>{money(localQuote.quotaCents / 100)} por cota</strong> (já preenchido abaixo)</span></div>}
         {genError && <p role="alert" className="form-error">{genError}</p>}
         {generated && <div className="generator-result"><span>{generated.quantidade} {generated.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {generated.dezenas} números cada · <strong>total na CAIXA {money(generated.custoTotal)}</strong></span><small>{generated.aviso}</small></div>}
       </div>}

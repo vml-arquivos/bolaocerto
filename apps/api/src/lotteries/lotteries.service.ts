@@ -17,12 +17,20 @@ import {
   adoptProvisionalContests,
   FestaTx,
   FESTAS_PRESETS,
+  proximoSorteioFesta,
   provisionalContestNumber,
   brazilDayKey,
 } from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { CreateFestaContestDto, CreateManualContestDto, UpdateFestaContestDto } from './lotteries.dto';
+
+/** Fecha as apostas no horário padrão da modalidade ou 1 hora antes do sorteio, o que vier primeiro (sorteios de manhã). */
+function festivalCutoff(drawDate: Date, horarioCorteLocal: string): Date {
+  const standard = calculateBrazilCutoff(drawDate, horarioCorteLocal);
+  const beforeDraw = new Date(drawDate.getTime() - 60 * 60 * 1000);
+  return standard.getTime() <= beforeDraw.getTime() ? standard : beforeDraw;
+}
 
 @Injectable()
 export class LotteriesService {
@@ -168,6 +176,9 @@ export class LotteriesService {
         });
       }
 
+      // Concurso de festa com hora definida (ex.: 10:00): a CAIXA só informa o dia, então mantemos a hora e o corte já gravados.
+      const existingNext = await tx.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: payload.numeroConcursoProximo! } } });
+      const keepSpecialTime = Boolean(existingNext?.especial) && brazilDayKey(existingNext!.dataSorteio) === brazilDayKey(nextDrawDate);
       await tx.concurso.upsert({
         where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: payload.numeroConcursoProximo! } },
         create: {
@@ -181,8 +192,7 @@ export class LotteriesService {
           fonteSincronizacao: source,
         },
         update: {
-          dataSorteio: nextDrawDate,
-          cutoffAt: nextCutoffAt,
+          ...(keepSpecialTime ? {} : { dataSorteio: nextDrawDate, cutoffAt: nextCutoffAt }),
           valorEstimadoPremio: nextEstimatedPrize,
           acumulado: Boolean(payload.acumulado),
           fonteSincronizacao: source,
@@ -238,7 +248,7 @@ export class LotteriesService {
   }
 
   festivalPresets() {
-    return FESTAS_PRESETS.map((preset) => ({ ...preset }));
+    return FESTAS_PRESETS.map((preset) => ({ ...preset, proximoSorteio: proximoSorteioFesta(preset.chave) }));
   }
 
   /**
@@ -253,7 +263,8 @@ export class LotteriesService {
     if (!nome) throw new BadRequestException('Informe o nome da festa (ex.: Mega da Virada).');
     const config = await this.prisma.configLoteria.findUnique({ where: { modalidade } });
     if (!config) throw new BadRequestException('Modalidade sem configuração cadastrada.');
-    const drawDate = new Date(`${dto.dataSorteio}T20:00:00-03:00`);
+    const hora = dto.horaSorteio ?? '20:00';
+    const drawDate = new Date(`${dto.dataSorteio}T${hora}:00-03:00`);
     if (Number.isNaN(drawDate.getTime())) throw new BadRequestException('Data do sorteio inválida.');
     if (brazilDayKey(drawDate) !== dto.dataSorteio) throw new BadRequestException('Data do sorteio inválida.');
     if (drawDate.getTime() <= Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
@@ -275,12 +286,12 @@ export class LotteriesService {
     }
     const contest = await this.prisma.concurso.create({
       data: {
-        modalidade, numeroConcurso: numero, dataSorteio: drawDate, cutoffAt: calculateBrazilCutoff(drawDate, config.horarioCorteLocal),
+        modalidade, numeroConcurso: numero, dataSorteio: drawDate, cutoffAt: festivalCutoff(drawDate, config.horarioCorteLocal),
         valorEstimadoPremio: dto.valorEstimadoPremio ?? null, acumulado: false, status: 'aberto', fonteSincronizacao: 'manual',
         especial: preset?.chave ?? 'personalizado', nomeEspecial: nome, numeroDefinido: defined,
       },
     });
-    await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: contest.id, evento: 'concurso.festa_criada', atorId: actorId, payloadDepois: { modalidade, nomeEspecial: nome, dataSorteio: dto.dataSorteio, numeroDefinido: defined } });
+    await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: contest.id, evento: 'concurso.festa_criada', atorId: actorId, payloadDepois: { modalidade, nomeEspecial: nome, dataSorteio: dto.dataSorteio, horaSorteio: hora, numeroDefinido: defined } });
     return this.toPublicContest(contest);
   }
 

@@ -36,6 +36,10 @@ export class CreateFestaContestDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Use a data no formato AAAA-MM-DD.' })
   dataSorteio!: string;
 
+  /** Hora do sorteio em Brasília (HH:mm). Sem informar, 20:00. */
+  @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Use a hora no formato HH:mm.' })
+  horaSorteio?: string;
+
   /** Deixe em branco enquanto a CAIXA não divulgar o número. */
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   numeroConcurso?: number;

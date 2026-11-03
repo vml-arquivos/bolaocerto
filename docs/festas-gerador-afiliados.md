@@ -29,3 +29,17 @@ A seção **Bolões já sorteados** aparece na página inicial sempre que existi
 - **Regras de venda** (por bolão): início e fim da venda (o fim não passa do prazo do concurso), máximo de cotas por pessoa (conta cotas pagas e reservas ainda válidas) e um texto de regras que o cliente vê. Podem ser editadas mesmo em bolão precificado.
 - **Pré-venda** (só administrador): vende as cotas sem comprovante prévio. O jogo é registrado depois do fim das vendas e o comprovante vai para todos os cotistas. Sem pré-venda, continua valendo a regra de só vender com comprovante anexado.
 - Migração nova: `20261103000000_regras_venda_pre_venda` (campos em `boloes`). Roda sozinha no deploy.
+
+## Automação do bolão (v16)
+
+**Data e hora da festa vêm preenchidas.** Ao escolher a data comemorativa em Bolões, o dia e a hora do sorteio já aparecem (Mega da Virada 2026: 1º/01/2027 às 10h, conforme calendário da CAIXA). O administrador pode ajustar. Quando a CAIXA ainda não confirmou, a tela avisa "data prevista". Para as outras festas, o sistema calcula a data tradicional (Páscoa, São João, Independência) às 20h; **confira sempre no site da CAIXA**.
+
+- Calendário e previsões: `packages/shared-types/src/festas.ts` (`FESTAS_CALENDARIO`, `proximoSorteioFesta`). Quando a CAIXA anunciar uma data nova, basta incluir a linha no calendário.
+- `POST admin/concursos/festa` aceita `horaSorteio` (HH:mm, padrão 20:00).
+- **Corte das apostas:** horário padrão da modalidade (19h) ou 1 hora antes do sorteio, o que for mais cedo. Sorteio às 10h fecha às 9h.
+- A sincronização com a CAIXA não zera mais a hora e o corte de um concurso de festa do mesmo dia.
+- Quando a CAIXA publica o concurso oficial, ele herda a hora e o corte da festa.
+
+**Valores automáticos.** O gerador lista só os tamanhos de aposta que a CAIXA vende, com o preço oficial (tabela de preços). O custo dos jogos e o valor da cota são calculados na hora, mesmo antes de escolher concurso/grupo; ao salvar, a cotação do servidor confirma o valor.
+
+**Gerador de jogos.** Até 100 jogos por bolão, com qualquer quantidade de números disponível na tabela da CAIXA. É um gerador estatístico (histórico de sorteios + regras de equilíbrio), não uma previsão: todo jogo tem a mesma chance.

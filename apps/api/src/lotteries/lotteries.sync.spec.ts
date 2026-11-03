@@ -11,7 +11,7 @@ const payload = (n: number) => JSON.stringify({
 function build(env: Record<string, string> = {}) {
   const upserts: Array<{ modalidade: string; numero: number; fonte: string }> = [];
   const tx = {
-    concurso: { findMany: jest.fn(async () => []), upsert: jest.fn(async (args: { where: { modalidade_numeroConcurso: { modalidade: string; numeroConcurso: number } }; create: { fonteSincronizacao: string } }) => { upserts.push({ modalidade: args.where.modalidade_numeroConcurso.modalidade, numero: args.where.modalidade_numeroConcurso.numeroConcurso, fonte: args.create.fonteSincronizacao }); return { id: 'c1' }; }) },
+    concurso: { findMany: jest.fn(async () => []), findUnique: jest.fn(async () => null), upsert: jest.fn(async (args: { where: { modalidade_numeroConcurso: { modalidade: string; numeroConcurso: number } }; create: { fonteSincronizacao: string } }) => { upserts.push({ modalidade: args.where.modalidade_numeroConcurso.modalidade, numero: args.where.modalidade_numeroConcurso.numeroConcurso, fonte: args.create.fonteSincronizacao }); return { id: 'c1' }; }) },
     resultado: { upsert: jest.fn(async () => ({})) },
   };
   const prisma = {
@@ -119,5 +119,29 @@ describe('LotteriesService — concursos vencidos', () => {
     (service as unknown as { prisma: { configLoteria: { findUnique: jest.Mock } } }).prisma.configLoteria.findUnique.mockResolvedValue({ horarioCorteLocal: '19:00' });
     await expect(service.sync('megasena')).rejects.toThrow(ServiceUnavailableException);
     expect(updateMany).toHaveBeenCalled();
+  });
+});
+
+describe('sync preserva hora e corte de concurso de festa', () => {
+  it('se o próximo concurso é festa do mesmo dia, a CAIXA não zera a hora (10h) nem volta o corte para 19h', async () => {
+    mockFetch(() => ({ body: payload(100) }));
+    const festa = { id: 'f1', especial: 'mega-da-virada', dataSorteio: new Date('2026-10-20T10:00:00-03:00') };
+    const upserts: Array<{ where: { modalidade_numeroConcurso: { numeroConcurso: number } }; update: Record<string, unknown> }> = [];
+    const tx = {
+      concurso: {
+        findMany: jest.fn(async () => []),
+        findUnique: jest.fn(async ({ where }: { where: { modalidade_numeroConcurso: { numeroConcurso: number } } }) => where.modalidade_numeroConcurso.numeroConcurso === 101 ? festa : null),
+        upsert: jest.fn(async (args: { where: { modalidade_numeroConcurso: { numeroConcurso: number } }; update: Record<string, unknown> }) => { upserts.push(args); return { id: 'x' }; }),
+      },
+      resultado: { upsert: jest.fn(async () => ({})) },
+    };
+    const prisma = { configLoteria: { findUnique: jest.fn(async () => ({ horarioCorteLocal: '19:00' })) }, concurso: { updateMany: jest.fn(async () => ({ count: 0 })) }, $transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)) };
+    const service = new LotteriesService(prisma as never, { get: (_k: string, d?: string) => d } as unknown as ConfigService);
+    await service.sync('megasena');
+    const next = upserts.find((u) => u.where.modalidade_numeroConcurso.numeroConcurso === 101)!;
+    expect(next.update).not.toHaveProperty('dataSorteio');
+    expect(next.update).not.toHaveProperty('cutoffAt');
+    const current = upserts.find((u) => u.where.modalidade_numeroConcurso.numeroConcurso === 100)!;
+    expect(current.update).toHaveProperty('dataSorteio');
   });
 });

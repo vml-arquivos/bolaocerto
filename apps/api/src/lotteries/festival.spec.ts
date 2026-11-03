@@ -1,4 +1,4 @@
-import { adoptProvisionalContests, brazilDayKey, contestLabel, FESTAS_PRESETS, provisionalContestNumber } from '@bolaocerto/shared-types';
+import { adoptProvisionalContests, brazilDayKey, contestLabel, FESTAS_PRESETS, previsaoFesta, proximoSorteioFesta, provisionalContestNumber } from '@bolaocerto/shared-types';
 import { ConfigService } from '@nestjs/config';
 import { LotteriesService } from './lotteries.service';
 
@@ -110,5 +110,55 @@ describe('LotteriesService.createFestival / updateFestival', () => {
     expect(unified).toMatchObject({ id: 'r1', numeroConcurso: 3000, nomeEspecial: 'Mega de Páscoa' });
     expect(second.db.pools[0]!.concursoId).toBe('r1');
     await expect(second.service.updateFestival('nao-existe', { numeroConcurso: 1 }, 'a')).rejects.toThrow(/não encontrado/);
+  });
+});
+
+describe('calendário das festas', () => {
+  it('Mega da Virada 2026 vem do calendário da CAIXA: 1º/01/2027 às 10h, ainda não confirmada', () => {
+    expect(proximoSorteioFesta('mega-da-virada', new Date('2026-11-03T12:00:00-03:00'))).toMatchObject({ data: '2027-01-01', hora: '10:00', confirmado: false });
+  });
+  it('depois que o sorteio passa, prevê a data tradicional do ano seguinte às 20h', () => {
+    expect(proximoSorteioFesta('mega-da-virada', new Date('2027-01-02T12:00:00-03:00'))).toMatchObject({ data: '2027-12-31', hora: '20:00', confirmado: false });
+  });
+  it('previsões tradicionais: Páscoa (sábado antes), São João (sábado a partir de 24/06), Independência (sábado até 07/09)', () => {
+    expect(previsaoFesta('mega-pascoa', 2027)).toBe('2027-03-27'); // Páscoa 28/03/2027
+    expect(previsaoFesta('dupla-pascoa', 2026)).toBe('2026-04-04'); // Páscoa 05/04/2026
+    expect(previsaoFesta('mega-sao-joao', 2027)).toBe('2027-06-26');
+    expect(previsaoFesta('mega-independencia', 2026)).toBe('2026-09-05');
+    expect(previsaoFesta('personalizado', 2026)).toBeNull();
+  });
+  it('toda festa pré-definida tem próxima data prevista', () => {
+    for (const preset of FESTAS_PRESETS) expect(proximoSorteioFesta(preset.chave, new Date('2026-11-03T12:00:00-03:00'))).not.toBeNull();
+  });
+});
+
+describe('festa com hora do sorteio', () => {
+  const mk = () => { const db = makeDb([]); return { db, service: new LotteriesService(db as never, { get: () => undefined } as unknown as ConfigService) }; };
+  const future = () => brazilDayKey(new Date(Date.now() + 60 * 86_400_000));
+  it('sorteio às 10h fecha as apostas 1h antes (09h), não às 19h', async () => {
+    const { service, db } = mk(); const day = future();
+    await service.createFestival({ especial: 'mega-da-virada', dataSorteio: day, horaSorteio: '10:00' }, 'a1');
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date(`${day}T10:00:00-03:00`).toISOString());
+    expect((db.rows[0] as unknown as { cutoffAt: Date }).cutoffAt.toISOString()).toBe(new Date(`${day}T09:00:00-03:00`).toISOString());
+  });
+  it('sorteio às 20h mantém o corte padrão das 19h; sem hora assume 20h', async () => {
+    const { service, db } = mk(); const day = future();
+    await service.createFestival({ especial: 'mega-da-virada', dataSorteio: day }, 'a1');
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date(`${day}T20:00:00-03:00`).toISOString());
+    expect((db.rows[0] as unknown as { cutoffAt: Date }).cutoffAt.toISOString()).toBe(new Date(`${day}T19:00:00-03:00`).toISOString());
+  });
+  it('festivalPresets traz o próximo sorteio de cada festa', () => {
+    const { service } = mk();
+    const list = service.festivalPresets();
+    expect(list.find((p) => p.chave === 'mega-da-virada')?.proximoSorteio).toBeTruthy();
+  });
+  it('quando a CAIXA oficializa, o oficial herda a hora e o corte da festa', async () => {
+    const day = future();
+    const provisionalRow = { id: 'p1', modalidade: 'megasena', numeroConcurso: -1, dataSorteio: new Date(`${day}T10:00:00-03:00`), cutoffAt: new Date(`${day}T09:00:00-03:00`), numeroDefinido: false, especial: 'mega-da-virada', nomeEspecial: 'Mega da Virada' } as Row;
+    const real = { id: 'r1', modalidade: 'megasena', numeroConcurso: 3000, dataSorteio: new Date(`${day}T00:00:00-03:00`), numeroDefinido: true, especial: null, nomeEspecial: null } as Row;
+    const db = makeDb([provisionalRow, real]);
+    await adoptProvisionalContests(db as never, 'megasena', 3000, new Date(`${day}T00:00:00-03:00`));
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date(`${day}T10:00:00-03:00`).toISOString());
   });
 });
