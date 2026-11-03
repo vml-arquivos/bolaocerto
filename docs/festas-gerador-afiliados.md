@@ -43,3 +43,5 @@ A seção **Bolões já sorteados** aparece na página inicial sempre que existi
 **Valores automáticos.** O gerador lista só os tamanhos de aposta que a CAIXA vende, com o preço oficial (tabela de preços). O custo dos jogos e o valor da cota são calculados na hora, mesmo antes de escolher concurso/grupo; ao salvar, a cotação do servidor confirma o valor.
 
 **Gerador de jogos.** Até 100 jogos por bolão, com qualquer quantidade de números disponível na tabela da CAIXA. É um gerador estatístico (histórico de sorteios + regras de equilíbrio), não uma previsão: todo jogo tem a mesma chance.
+
+**Tabela de preços da CAIXA (v18).** O sistema carrega sozinho a tabela oficial de preços ao iniciar e quando faltar algum preço na hora de cotar. Antes, se o banco não tivesse a tabela, a lista de "números em cada jogo" ficava vazia e dava o erro "Preço vigente ausente". Preço já cadastrado nunca é sobrescrito.

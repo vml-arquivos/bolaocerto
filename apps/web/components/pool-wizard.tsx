@@ -162,11 +162,15 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const uniqueNumbers = games[0]?.numeros ?? [];
   const canPrice = ['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(modality);
   useEffect(() => {
-    fetch('/api/v1/loterias/precos').then(async (response) => {
-      if (!response.ok) return;
-      const rows = await response.json() as Array<{ modalidade: string; chave: string; valorCentavos: number }>;
-      setPriceTable(Object.fromEntries(rows.map((row) => [`${row.modalidade}:${row.chave}`, row.valorCentavos])));
-    }).catch(() => undefined);
+    let off = false; let attempt = 0;
+    const load = () => fetch('/api/v1/loterias/precos').then(async (response) => {
+      const rows = response.ok ? await response.json() as Array<{ modalidade: string; chave: string; valorCentavos: number }> : [];
+      if (off) return;
+      if (rows.length) setPriceTable(Object.fromEntries(rows.map((row) => [`${row.modalidade}:${row.chave}`, row.valorCentavos])));
+      else if (attempt++ < 3) setTimeout(load, 2500);
+    }).catch(() => { if (!off && attempt++ < 3) setTimeout(load, 2500); });
+    void load();
+    return () => { off = true; };
   }, []);
   useEffect(() => { setGenSize(String(limits.min)); setGenerated(null); setGenError(''); }, [modality]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
