@@ -45,7 +45,7 @@ export default async function HomePage() {
       if (!pool) continue;
       const visual = lotteryVisual(pool.concurso?.modalidade);
       slides.push({
-        key: slide.id, art: visual.art, accent: visual.accent, eyebrow: pool.concurso?.nomeEspecial ?? pool.grupo?.nome ?? 'Bolão BL',
+        key: slide.id, art: slide.imagem || visual.art, accent: visual.accent, eyebrow: slide.etiqueta || pool.concurso?.nomeEspecial || pool.grupo?.nome || 'Bolão BL',
         titulo: slide.titulo || `${modalityNames[pool.concurso?.modalidade ?? ''] ?? visual.name} · ${contestLabel(pool.concurso)}`,
         subtitulo: slide.subtitulo || `Cota de ${money(pool.valorCota)} · sorteio ${shortDate(pool.concurso?.dataSorteio)}`,
         valor: pool.concurso?.valorEstimadoPremio ? money(pool.concurso.valorEstimadoPremio) : undefined,
@@ -53,7 +53,7 @@ export default async function HomePage() {
       });
     } else {
       const visual = lotteryVisual(slide.modalidade);
-      slides.push({ key: slide.id, art: visual.art, accent: visual.accent, titulo: slide.titulo, subtitulo: slide.subtitulo, botao: slide.botao && slide.link ? slide.botao : undefined, href: slide.link });
+      slides.push({ key: slide.id, art: slide.imagem || visual.art, accent: visual.accent, eyebrow: slide.etiqueta, titulo: slide.titulo, subtitulo: slide.subtitulo, botao: slide.botao && slide.link ? slide.botao : undefined, href: slide.link });
     }
   }
   if (!slides.length) {

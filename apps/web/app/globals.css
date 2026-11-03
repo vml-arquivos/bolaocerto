@@ -1326,3 +1326,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .vitrine-pick { display: flex; flex-wrap: wrap; gap: 8px; }
 .vitrine-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 760px) { .vitrine-sections { grid-template-columns: 1fr; } }
+.vitrine-image-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.vitrine-thumb { width: 160px; height: 90px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-muted); }
+.vitrine-thumb-empty { display: grid; place-items: center; text-align: center; padding: 6px; font-size: .75rem; color: var(--text-muted); }
+.vitrine-image-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.vitrine-image-actions label { cursor: pointer; }

@@ -42,7 +42,7 @@ describe('HomeService', () => {
     const store: Record<string, string> = {};
     const tx: any = { configuracaoSistema: { upsert: jest.fn(async ({ where, create, update }: any) => { store[where.chave] = (store[where.chave] ? update : create).valor; }) } };
     const prisma: any = {
-      configuracaoSistema: { findUnique: jest.fn(async ({ where }: any) => (store[where.chave] ? { valor: store[where.chave] } : null)) },
+      configuracaoSistema: { findUnique: jest.fn(async ({ where }: any) => (store[where.chave] ? { valor: store[where.chave] } : null)), create: jest.fn(async ({ data }: any) => { store[data.chave] = data.valor; }), deleteMany: jest.fn(async () => ({ count: 0 })) },
       bolao: { count: jest.fn(async () => pools), findMany: jest.fn(async () => []) },
       resultado: { findMany: jest.fn(async () => rows) },
       $transaction: (fn: any) => fn(tx),
@@ -56,8 +56,25 @@ describe('HomeService', () => {
     const { service, audit } = setup([], 1);
     const saved = await service.save(dto({ destaques: [id1], slides: [{ id: 's1', tipo: 'bolao', ativo: true, bolaoId: id1, titulo: '' }] }) as any, 'admin1');
     expect(saved.destaques).toEqual([id1]);
-    expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ evento: 'home.atualizada', atorId: 'admin1' }));
+    // a coluna entidade_id é UUID: o registro precisa usar um UUID (o do admin), nunca a chave de texto
+    expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ evento: 'home.atualizada', atorId: 'admin1', entidadeId: 'admin1' }));
     expect((await service.getConfig()).slides[0]!.bolaoId).toBe(id1);
+  });
+  it('guarda etiqueta e imagem do destaque e só aceita imagem de verdade (PNG/JPG/WEBP)', async () => {
+    const { service, store } = setup([], 0);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
+    const { url } = await service.saveImage({ buffer: png });
+    expect(url).toMatch(/^\/api\/v1\/home\/imagem\/[a-f0-9]{18}$/);
+    const key = url.split('/').pop()!;
+    expect((await service.readImage(key)).mime).toBe('image/png');
+    expect(Object.keys(store)).toHaveLength(1);
+    await expect(service.saveImage({ buffer: Buffer.from('%PDF-1.4 conteudo qualquer aqui') })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.saveImage({ buffer: Buffer.alloc(2_000_000, 1) })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.readImage('../x')).rejects.toThrow();
+    const saved = await service.save(dto({ slides: [{ id: 's', tipo: 'livre', ativo: true, titulo: 'Oi', etiqueta: 'Novo', imagem: url }] }) as any, 'a');
+    expect(saved.slides[0]).toMatchObject({ etiqueta: 'Novo', imagem: url });
+    const bad = await service.save(dto({ slides: [{ id: 's', tipo: 'livre', ativo: true, titulo: 'Oi', imagem: 'javascript:alert(1)' }] }) as any, 'a');
+    expect(bad.slides[0]!.imagem).toBeUndefined();
   });
   it('recusa destaque de bolão que não existe, slide livre sem título e botão sem link', async () => {
     await expect(setup([], 1).service.save(dto({ destaques: [id1, id2] }) as any, 'a')).rejects.toBeInstanceOf(BadRequestException);

@@ -2,6 +2,9 @@
 export const HOME_CONFIG_KEY = 'home.config';
 export const MAX_SLIDES = 8;
 export const MAX_DESTAQUES = 6;
+export const HOME_IMAGE_PREFIX = 'home.img.';
+export const HOME_IMAGE_URL = '/api/v1/home/imagem/';
+export const MAX_IMAGE_BYTES = 1_500_000;
 
 export interface HomeSlide {
   id: string;
@@ -9,6 +12,8 @@ export interface HomeSlide {
   ativo: boolean;
   bolaoId?: string;
   modalidade?: string;
+  etiqueta?: string;
+  imagem?: string;
   titulo: string;
   subtitulo?: string;
   botao?: string;
@@ -53,7 +58,7 @@ export function normalizeHomeConfig(raw: unknown): HomeConfig {
     slides.push({
       id: text(item.id, 40) || `s${slides.length + 1}`, tipo, ativo: item.ativo !== false,
       ...(bolaoId ? { bolaoId } : {}), ...(text(item.modalidade, 30) ? { modalidade: text(item.modalidade, 30) } : {}),
-      titulo, ...(text(item.subtitulo, 200) ? { subtitulo: text(item.subtitulo, 200) } : {}),
+      titulo, ...(text(item.etiqueta, 40) ? { etiqueta: text(item.etiqueta, 40) } : {}), ...(text(item.imagem, 200) && isSafeLink(text(item.imagem, 200)) ? { imagem: text(item.imagem, 200) } : {}), ...(text(item.subtitulo, 200) ? { subtitulo: text(item.subtitulo, 200) } : {}),
       ...(text(item.botao, 30) ? { botao: text(item.botao, 30) } : {}), ...(link && isSafeLink(link) ? { link } : {}),
     });
   }

@@ -1,5 +1,5 @@
 /** Tipos e funções da página inicial (configurada no painel). */
-export type HomeSlide = { id: string; tipo: 'bolao' | 'livre'; ativo: boolean; bolaoId?: string; modalidade?: string; titulo: string; subtitulo?: string; botao?: string; link?: string };
+export type HomeSlide = { id: string; tipo: 'bolao' | 'livre'; ativo: boolean; bolaoId?: string; modalidade?: string; etiqueta?: string; imagem?: string; titulo: string; subtitulo?: string; botao?: string; link?: string };
 export type HomeSecoes = { numeros: boolean; modalidades: boolean; resultados: boolean; sorteados: boolean; encerrados: boolean; concursos: boolean; comoFunciona: boolean; duvidas: boolean };
 export type HomeConfig = { slides: HomeSlide[]; destaques: string[]; secoes: HomeSecoes };
 export type ResultDraw = { numeroConcurso: number; dataSorteio: string; numeros: number[]; segundoSorteio: number[]; acumulado: boolean; ganhadores: number | null; premio: number | null; festa: string | null };

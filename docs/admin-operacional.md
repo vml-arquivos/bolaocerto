@@ -68,3 +68,4 @@ Painel → Jogos e vendas → **Página inicial**.
 - A configuração fica em `ConfiguracaoSistema` (chave `home.config`); não precisa de migração.
 - **Últimos resultados** vêm dos resultados oficiais já sincronizados (Concursos → Sincronizar). Sem sincronização, a seção mostra um aviso.
 - A taxa de administração não aparece mais no cartão do bolão; ela é detalhada na página do bolão (bilhete + taxa).
+- Cada destaque do carrossel tem **etiqueta**, título, subtítulo, botão e link editáveis, e **imagem de fundo**: "Enviar minha imagem" (JPG/PNG/WEBP, o painel reduz sozinho) ou "Voltar à imagem padrão" do jogo. As imagens ficam guardadas no próprio banco (tabela de configurações), sem pasta nem variável nova.

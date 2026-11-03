@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { MODALIDADES_LOTERIA } from '@bolaocerto/shared-types';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import { SaveHomeDto } from './home.dto';
-import { HOME_CONFIG_KEY, HomeConfig, normalizeHomeConfig } from './home.config';
+import { detectFileType } from '../attachments/file-type';
+import { HOME_CONFIG_KEY, HOME_IMAGE_PREFIX, HOME_IMAGE_URL, HomeConfig, MAX_IMAGE_BYTES, normalizeHomeConfig } from './home.config';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class HomeService {
@@ -46,9 +48,37 @@ export class HomeService {
     const config = normalizeHomeConfig({ slides: dto.slides, destaques: dto.destaques, secoes: dto.secoes });
     await this.prisma.$transaction(async (tx) => {
       await tx.configuracaoSistema.upsert({ where: { chave: HOME_CONFIG_KEY }, create: { chave: HOME_CONFIG_KEY, valor: JSON.stringify(config) }, update: { valor: JSON.stringify(config) } });
-      await this.audit.record(tx, { entidade: 'configuracao', entidadeId: HOME_CONFIG_KEY, evento: 'home.atualizada', atorId: actorId, payloadDepois: { slides: config.slides.length, destaques: config.destaques.length, secoes: { ...config.secoes } } });
+      await this.audit.record(tx, { entidade: 'configuracao', entidadeId: actorId, evento: 'home.atualizada', atorId: actorId, payloadDepois: { chave: HOME_CONFIG_KEY, slides: config.slides.length, destaques: config.destaques.length, secoes: { ...config.secoes } } });
     });
+    await this.cleanupImages(config);
     return config;
+  }
+
+  /** Guarda a imagem do destaque (já reduzida pelo painel) na própria tabela de configurações; sem pasta nem migração. */
+  async saveImage(file: { buffer: Buffer } | undefined): Promise<{ url: string }> {
+    if (!file?.buffer?.length) throw new BadRequestException('Escolha uma imagem.');
+    if (file.buffer.length > MAX_IMAGE_BYTES) throw new BadRequestException('Imagem muito grande. Use uma de até 1,5 MB.');
+    const type = detectFileType(file.buffer);
+    if (!type || type.mime === 'application/pdf') throw new BadRequestException('Use uma imagem PNG, JPG ou WEBP.');
+    const key = randomBytes(9).toString('hex');
+    await this.prisma.configuracaoSistema.create({ data: { chave: `${HOME_IMAGE_PREFIX}${key}`, valor: `${type.mime};${file.buffer.toString('base64')}` } });
+    return { url: `${HOME_IMAGE_URL}${key}` };
+  }
+
+  async readImage(key: string): Promise<{ mime: string; data: Buffer }> {
+    if (!/^[a-f0-9]{18}$/.test(key)) throw new NotFoundException();
+    const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: `${HOME_IMAGE_PREFIX}${key}` } });
+    const sep = row?.valor.indexOf(';') ?? -1;
+    if (!row || sep < 0) throw new NotFoundException();
+    return { mime: row.valor.slice(0, sep), data: Buffer.from(row.valor.slice(sep + 1), 'base64') };
+  }
+
+  /** Apaga imagens enviadas que nenhum destaque usa mais (com 1 dia de folga para quem enviou e ainda não salvou). */
+  private async cleanupImages(config: HomeConfig) {
+    try {
+      const used = config.slides.flatMap((slide) => (slide.imagem?.startsWith(HOME_IMAGE_URL) ? [`${HOME_IMAGE_PREFIX}${slide.imagem.slice(HOME_IMAGE_URL.length)}`] : []));
+      await this.prisma.configuracaoSistema.deleteMany({ where: { chave: { startsWith: HOME_IMAGE_PREFIX, notIn: used }, atualizadoEm: { lt: new Date(Date.now() - 864e5) } } });
+    } catch { /* limpeza é opcional */ }
   }
 
   /** Últimos sorteios apurados de cada modalidade (até `porModalidade`, mais recente primeiro), com os números oficiais. */

@@ -11,6 +11,8 @@ export class HomeSlideDto {
   @IsOptional() @IsUUID() bolaoId?: string;
   @IsOptional() @IsString() @MaxLength(30) modalidade?: string;
   @IsString() @MaxLength(80) titulo!: string;
+  @IsOptional() @IsString() @MaxLength(40) etiqueta?: string;
+  @IsOptional() @Matches(SAFE_LINK, { message: 'Imagem inválida: envie um arquivo ou use um endereço https://.' }) @MaxLength(200) imagem?: string;
   @IsOptional() @IsString() @MaxLength(200) subtitulo?: string;
   @IsOptional() @IsString() @MaxLength(30) botao?: string;
   @IsOptional() @Matches(SAFE_LINK, { message: 'Use um caminho do site (ex.: /boloes) ou um endereço que comece com https://.' }) @MaxLength(200) link?: string;
