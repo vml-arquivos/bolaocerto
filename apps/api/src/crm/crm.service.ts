@@ -113,7 +113,7 @@ export class CrmService {
   }
 
   async overview() {
-    const rows = await this.rows(false);
+    const rows = await this.rows(true);
     const buyers = rows.filter((row) => row.compras > 0);
     const count = (segment: Segmento) => rows.filter((row) => row.segmentos.includes(segment)).length;
     const revenue = round2(buyers.reduce((sum, row) => sum + row.totalGasto, 0));
@@ -133,7 +133,7 @@ export class CrmService {
 
   async list(query: CrmListQueryDto, admin: AuthUser): Promise<{ items: BettorRow[]; total: number; pagina: number; paginas: number } | ReportFile> {
     const exporting = query.formato && query.formato !== 'json';
-    const rows = this.filtered(await this.rows(Boolean(exporting && query.formato !== 'pdf')), query);
+    const rows = this.filtered(await this.rows(true), query);
     if (!exporting) {
       const pageSize = query.porPagina ?? 25;
       const page = Math.max(query.pagina ?? 1, 1);
@@ -179,7 +179,7 @@ export class CrmService {
         where: { compradorId: id }, orderBy: { criadoEm: 'desc' }, take: 200,
         select: { id: true, quantidade: true, status: true, criadoEm: true, valorPago: true, valorPremio: true, expiraReservaEm: true, origemVenda: true, bolao: { select: { id: true, valorCota: true, concurso: { select: { modalidade: true, numeroConcurso: true } } } }, pagamento: { select: { status: true, metodo: true, valorBruto: true, confirmadoEm: true } } },
       }),
-      this.rows(false).then((all) => all.find((item) => item.id === id)),
+      this.rows(true).then((all) => all.find((item) => item.id === id)),
     ]);
     const byModality = new Map<string, { cotas: number; valor: number }>();
     for (const share of shares.filter((item) => PAID.includes(item.status))) {
@@ -190,7 +190,7 @@ export class CrmService {
       byModality.set(key, entry);
     }
     return {
-      perfil: { id: user.id, nome: user.nome, cpf: maskCpf(user.cpf), email: user.email, telefone: user.telefone, papel: user.papel, statusKyc: user.statusKyc, cadastradoEm: user.criadoEm, cidade: user.enderecoCidade, uf: user.enderecoUf, exclusaoSolicitadaEm: user.exclusaoSolicitadaEm, afiliadoOrigem: user.indicadoPorAfiliado ? { codigo: user.indicadoPorAfiliado.codigoAfiliado, nome: user.indicadoPorAfiliado.usuario.nome } : null },
+      perfil: { id: user.id, nome: user.nome, cpf: formatCpf(user.cpf), email: user.email, telefone: user.telefone, papel: user.papel, statusKyc: user.statusKyc, cadastradoEm: user.criadoEm, cidade: user.enderecoCidade, uf: user.enderecoUf, exclusaoSolicitadaEm: user.exclusaoSolicitadaEm, afiliadoOrigem: user.indicadoPorAfiliado ? { codigo: user.indicadoPorAfiliado.codigoAfiliado, nome: user.indicadoPorAfiliado.usuario.nome } : null },
       metricas: row ?? null,
       etiquetas: user.crmPerfil?.etiquetas ?? [],
       proximoContatoEm: user.crmPerfil?.proximoContatoEm ?? null,

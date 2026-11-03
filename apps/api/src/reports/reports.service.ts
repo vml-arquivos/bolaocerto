@@ -275,7 +275,7 @@ export class ReportsService {
   }
 
   async sales(query: ReportQueryDto, admin: AuthUser) {
-    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const full = true; // painel exclusivo do administrador: CPF completo, sem máscara
     const shares = await this.prisma.cota.findMany({ where: this.salesWhere(query), include: SHARE_INCLUDE, orderBy: { criadoEm: 'desc' }, take: this.limit(query) });
     const rows = shares.map((share) => this.shareRow(share, full));
     const paidRows = rows.filter((row) => row.statusPagamento === 'confirmado');
@@ -297,7 +297,7 @@ export class ReportsService {
 
   /** Inadimplência: cotas aguardando pagamento ou vencidas, mais pagamentos recebidos sem cota. */
   async unpaid(query: ReportQueryDto, admin: AuthUser) {
-    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const full = true; // painel exclusivo do administrador: CPF completo, sem máscara
     const range = this.range(query);
     const shares = await this.prisma.cota.findMany({
       where: { ...(range ? { criadoEm: range } : {}), ...(query.bolaoId ? { bolaoId: query.bolaoId } : {}), OR: [{ status: StatusCota.reservada }, { status: StatusCota.cancelada, OR: [{ pagamento: null }, { pagamento: { status: { not: StatusPagamento.confirmado } } }] }] },
@@ -333,7 +333,7 @@ export class ReportsService {
   async poolSheet(id: string, query: ReportQueryDto, admin: AuthUser) {
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } } } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
-    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const full = true; // painel exclusivo do administrador: CPF completo, sem máscara
     const shares = await this.prisma.cota.findMany({ where: { bolaoId: id }, include: SHARE_INCLUDE, orderBy: [{ titularNome: 'asc' }, { criadoEm: 'asc' }] });
     const rows = shares.map((share) => this.shareRow(share, full));
     const paid = shares.filter((share) => PAID_STATUSES.includes(share.status));
@@ -432,7 +432,7 @@ export class ReportsService {
 
   /** Conciliação financeira: um registro por pagamento, com decomposição (custo, taxa, comissão) e situação da nota fiscal. */
   async payments(query: ReportQueryDto, admin: AuthUser) {
-    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const full = true; // painel exclusivo do administrador: CPF completo, sem máscara
     const range = this.range(query);
     const items = await this.prisma.pagamento.findMany({
       where: {
@@ -506,7 +506,7 @@ export class ReportsService {
 
   /** Notas fiscais de serviço: situação, número, valor, ISS estimado e pendências de emissão. */
   async invoices(query: ReportQueryDto, admin: AuthUser) {
-    const full = query.formato === 'csv' || query.formato === 'xlsx';
+    const full = true; // painel exclusivo do administrador: CPF completo, sem máscara
     const range = this.range(query);
     const notes = await this.prisma.notaFiscal.findMany({
       where: { ...(range ? { criadoEm: range } : {}), ...(query.statusNota ? { status: query.statusNota as StatusNotaFiscal } : {}) },

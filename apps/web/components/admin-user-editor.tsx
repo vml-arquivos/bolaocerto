@@ -1,5 +1,5 @@
 'use client';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
 import { AdminModal } from './admin-attachments';
 type User = { id: string; nome: string; email: string; cpf: string; telefone: string | null; dataNascimento: string; papel: string; statusKyc: string; desativadoEm: string | null; criadoEm: string; _count: { cotasCompradas: number; boloesCriados: number } };
@@ -16,6 +16,9 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
   const [savedEmail, setSavedEmail] = useState('');
   const [resetLink, setResetLink] = useState<{ link: string; expiraEm: string; aviso: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const messageRef = useRef<HTMLParagraphElement>(null);
+  // O aviso fica no topo do painel: leva a tela até ele para o erro não passar despercebido.
+  useEffect(() => { if (message) messageRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [message]);
   useEffect(() => { let cancelled = false; void api(`/api/v1/admin/usuarios/${id}`).then(data => { if (!cancelled) { setUser(data); setSavedEmail(data.email); } }).catch(error => { if (!cancelled) setMessage(error.message); }); return () => { cancelled = true; }; }, [id]);
   async function save(event: FormEvent) {
     event.preventDefault(); if (!user || busy) return;
@@ -28,7 +31,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
   async function action(type: 'reset' | 'remove' | 'restore' | 'delete' | 'link') {
     if (!user || busy) return;
     if ((type === 'reset' || type === 'link') && user.email !== savedEmail) { setMessage('Salve a alteração de e-mail antes de enviar a redefinição.'); return; }
-    const prompts = { link: 'Gerar um link pessoal de redefinição? Links anteriores serão invalidados. Entregue-o somente ao titular da conta.', delete: 'Excluir definitivamente esta conta sem histórico? Esta ação não poderá ser desfeita. Contas com registros vinculados serão protegidas.', reset: `Enviar instruções de nova senha para ${user.email}? A senha atual não será exibida nem alterada pelo administrador.`, remove: 'Remover o acesso desta conta? As sessões serão encerradas. Cotas, pagamentos e contratos ficam preservados. Você poderá reativar o acesso.', restore: 'Reativar o acesso desta conta? A pessoa poderá entrar novamente.' };
+    const prompts = { link: 'Gerar um link pessoal de redefinição? Links anteriores serão invalidados. Entregue-o somente ao titular da conta.', delete: 'Excluir esta conta de vez? Não dá para desfazer. Contas com histórico (cotas, contratos, bolões, repasses) não são apagadas: nesse caso use "Remover acesso".', reset: `Enviar instruções de nova senha para ${user.email}? A senha atual não será exibida nem alterada pelo administrador.`, remove: 'Remover o acesso desta conta? As sessões serão encerradas. Cotas, pagamentos e contratos ficam preservados. Você poderá reativar o acesso.', restore: 'Reativar o acesso desta conta? A pessoa poderá entrar novamente.' };
     if (!window.confirm(prompts[type])) return;
     setBusy(true); setMessage('');
     if (type === 'link' || type === 'reset') setResetLink(null);
@@ -49,7 +52,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao alterar acesso.'); } finally { setBusy(false); }
   }
   return <AdminModal title="Usuário, equipe e acessos" onClose={() => { if (!busy) onClose(); }}>
-    {message && <p role="alert" className="notice admin-editor-message">{message}</p>}
+    {message && <p role="alert" ref={messageRef} className="notice admin-editor-message">{message}</p>}
     {!user && !message && <p>Carregando cadastro…</p>}
     {user && <><p><strong>{roleLabels[user.papel] ?? user.papel}</strong> · {user.desativadoEm ? 'Acesso removido' : 'Conta ativa'} · {user._count.cotasCompradas} participações · {user._count.boloesCriados} bolões criados</p>
       <form className="admin-form-grid" onSubmit={save}>
@@ -68,8 +71,8 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       <p className="admin-help">Gere e copie um link sem SMTP ou envie por e-mail quando o servidor estiver configurado. Ambos permitem ao usuário escolher a própria senha.</p>
       <div className="admin-row-actions"><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('link')}>Gerar link de redefinição</button><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('reset')}>Enviar redefinição de senha</button><button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void action(user.desativadoEm ? 'restore' : 'remove')}>{user.desativadoEm ? 'Reativar conta' : 'Remover acesso'}</button></div>
       {resetLink && <div className="notice"><label className="admin-field"><span>Link pessoal de redefinição</span><input readOnly value={resetLink.link} onFocus={e => e.currentTarget.select()} /></label><p>Válido até {new Date(resetLink.expiraEm).toLocaleString('pt-BR')}. {resetLink.aviso}</p><button className="admin-button" type="button" onClick={async () => { try { await navigator.clipboard.writeText(resetLink.link); setMessage('Link copiado. Envie somente ao titular da conta.'); } catch { setMessage('Selecione o campo do link e copie manualmente.'); } }}>Copiar link</button><button className="admin-button admin-button-ghost" type="button" onClick={() => setResetLink(null)}>Ocultar link</button><p className="admin-help">Ocultar fecha a exibição; o link continua válido até ser usado, substituído ou expirar.</p></div>}
-      {user.desativadoEm && <button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void action('delete')}>Excluir definitivamente conta sem histórico</button>}
-      <p className="admin-help">A remoção desativa o acesso; não apaga a pessoa do histórico financeiro. Solicitações de eliminação de dados exigem análise de retenção.</p>
+      <button className="admin-button admin-button-danger" disabled={busy} onClick={() => void action('delete')}>Excluir conta</button>
+      <p className="admin-help">"Remover acesso" só impede a pessoa de entrar e guarda o histórico. "Excluir conta" apaga de vez e só funciona para conta sem histórico; se houver, o painel mostra o que impede. Solicitações de eliminação de dados exigem análise de retenção.</p>
     </>}
   </AdminModal>;
 }

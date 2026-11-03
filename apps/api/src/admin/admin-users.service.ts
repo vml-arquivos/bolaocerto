@@ -6,6 +6,7 @@ import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { MailService } from '../common/mail.service';
 import { IsDateString, IsEmail, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
+import { formatCpf } from '../reports/export.util';
 
 export class EditManagedUserDto {
   @IsString() @Length(2, 150) nome!: string;
@@ -21,7 +22,9 @@ export async function lockAdminActor(tx: Prisma.TransactionClient, actorId: stri
   if (!actor || actor.papel !== 'admin' || actor.desativadoEm) throw new ForbiddenException('Acesso administrativo indisponível.');
 }
 const view = { id: true, nome: true, email: true, cpf: true, telefone: true, dataNascimento: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, atualizadoEm: true } as const;
-const mask = (cpf: string) => `${cpf.slice(0,3)}.***.***-${cpf.slice(-2)}`;
+/** Vínculos descartáveis: saem junto com a conta. Os demais impedem a exclusão. */
+const DISPOSABLE_RELATIONS = new Set(['tokensSenha', 'notificacoes', 'pushInscricoes', 'bolaoInteresses', 'gruposMembro', 'crmNotas', 'auditorias']);
+const RELATION_LABELS: Record<string, string> = { cotasCompradas: 'participações em bolões', mandatos: 'contratos de participação', aceitesLegais: 'contratos aceitos', boloesCriados: 'bolões criados', boloesEditados: 'bolões editados', gruposCriados: 'grupos criados', kycDocumentos: 'documentos de identificação', documentosRevisados: 'documentos revisados', lotericasOperadas: 'lotéricas operadas', afiliadosAprovados: 'afiliados aprovados por ela', convitesCriados: 'convites criados', convitesUsados: 'convites usados', repassesCriados: 'repasses', comissoesPagas: 'comissões pagas', crmNotasEscritas: 'notas de atendimento', anexosEnviados: 'anexos enviados' };
 @Injectable()
 export class AdminUsersService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly mail: MailService) {}
@@ -29,7 +32,7 @@ export class AdminUsersService {
     if (actor.papel !== 'admin') throw new ForbiddenException();
     const user = await this.prisma.usuario.findUnique({ where: { id }, select: { ...view, _count: { select: { cotasCompradas: true, boloesCriados: true } } } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return { ...user, cpf: mask(user.cpf) };
+    return { ...user, cpf: formatCpf(user.cpf) };
   }
   async edit(id: string, dto: EditManagedUserDto, actor: AuthUser) {
     const nome = dto.nome.trim(); const email = dto.email.trim().toLowerCase();
@@ -46,7 +49,7 @@ export class AdminUsersService {
         const updated = await tx.usuario.update({ where: { id }, data: { nome, email, ...(dto.telefone !== undefined ? { telefone: dto.telefone.trim() || null } : {}), ...(birth ? { dataNascimento: birth } : {}), ...(emailChanged ? { tokenVersion: { increment: 1 } } : {}) }, select: view });
         if (emailChanged) await tx.tokenSenha.updateMany({ where: { usuarioId: id, usadoEm: null }, data: { usadoEm: new Date() } });
         await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.cadastro_editado', atorId: actor.id, payloadAntes: { nome: before.nome, email: before.email, telefone: before.telefone, dataNascimento: before.dataNascimento.toISOString() }, payloadDepois: { nome, email, telefone: updated.telefone, dataNascimento: updated.dataNascimento.toISOString() } });
-        return { ...updated, cpf: mask(updated.cpf), sessoesEncerradas: emailChanged };
+        return { ...updated, cpf: formatCpf(updated.cpf), sessoesEncerradas: emailChanged };
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('E-mail já cadastrado em outra conta.');
@@ -67,21 +70,24 @@ export class AdminUsersService {
       return { id, ativo: active };
     });
   }
-  /** Only empty, already disabled accounts can be physically removed. */
+  /**
+   * Exclusão definitiva: só para conta sem histórico. Avisos, inscrições de push, links de senha, interesses, grupos e notas
+   * sobre a pessoa são descartáveis e saem junto; qualquer outro vínculo (cotas, contratos, bolões, repasses…) bloqueia,
+   * inclusive vínculos novos que forem criados no futuro. Nesse caso a tela explica o que impede a exclusão.
+   */
   async deleteEmpty(id: string, actor: AuthUser) {
     if (id === actor.id) throw new ConflictException('Você não pode excluir a própria conta.');
     return this.prisma.$transaction(async tx => {
       await lockAdminActor(tx, actor.id);
       await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${id}::uuid FOR UPDATE`;
-      const target = await tx.usuario.findUnique({ where: { id }, include: { _count: true, afiliado: { select: { id: true } }, crmPerfil: { select: { usuarioId: true } } } });
+      const target = await tx.usuario.findUnique({ where: { id }, include: { _count: true, afiliado: { select: { id: true } } } });
       if (!target) throw new NotFoundException('Usuário não encontrado.');
-      if (!target.desativadoEm) throw new ConflictException('Remova o acesso antes de excluir definitivamente.');
-      // All list relations are checked, including future relations added to the schema.
-      // Password reset tokens alone are disposable and cascade with the empty account.
-      const linked = Object.entries(target._count).some(([name, count]) => name !== 'tokensSenha' && count > 0);
-      if (linked || target.afiliado || target.crmPerfil) throw new ConflictException('Esta conta possui histórico vinculado. Mantenha o acesso removido; a exclusão definitiva não pode apagar esse histórico.');
+      const blockers = Object.entries(target._count).filter(([name, count]) => !DISPOSABLE_RELATIONS.has(name) && count > 0).map(([name, count]) => `${count} ${RELATION_LABELS[name] ?? name}`);
+      if (target.afiliado) blockers.push('cadastro de afiliado');
+      if (blockers.length) throw new ConflictException(`Esta conta tem histórico vinculado (${blockers.join(', ')}) e não pode ser apagada. Use "Remover acesso": a pessoa deixa de entrar e o histórico fica preservado.`);
+      await tx.notificacao.deleteMany({ where: { usuarioId: id } });
       await tx.usuario.delete({ where: { id } });
-      await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.vazio_excluido', atorId: actor.id, payloadDepois: { excluido: true } });
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.vazio_excluido', atorId: actor.id, payloadDepois: { excluido: true, email: target.email } });
       return { id, excluido: true };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }

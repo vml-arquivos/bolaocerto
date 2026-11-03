@@ -62,7 +62,7 @@ describe('CrmService', () => {
     const { service } = build();
     const result = await service.list({}, admin) as { items: Array<Record<string, any>>; total: number };
     expect(result.total).toBe(2);
-    expect(result.items[0]).toMatchObject({ nome: 'Ana Grande', totalGasto: 1200, cotasPagas: 40, boloesDistintos: 4, nivel: 'prata', cpf: '***.***.789-09' });
+    expect(result.items[0]).toMatchObject({ nome: 'Ana Grande', totalGasto: 1200, cotasPagas: 40, boloesDistintos: 4, nivel: 'prata', cpf: '123.456.789-09' });
     expect(result.items[0]!.segmentos).toEqual(expect.arrayContaining(['vip', 'recorrente']));
     expect(result.items[1]).toMatchObject({ nome: 'Bruno Pequeno', valorPendente: 50, reservasVencidas: 1 });
     expect(result.items[1]!.segmentos).toEqual(expect.arrayContaining(['novo', 'inadimplente']));

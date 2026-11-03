@@ -47,7 +47,7 @@ describe('ReportsService.sales', () => {
   it('JSON mascara o CPF e traz status, comissão e valores', async () => {
     const { reports, audit } = service([share()]);
     const result = await reports.sales({}, admin) as { linhas: Array<Record<string, unknown>> };
-    expect(result.linhas[0]).toMatchObject({ cpf: '***.***.789-09', valorTotal: 50, statusPagamento: 'confirmado', afiliado: 'AF123', comissao: 1.3, statusComissao: 'pendente' });
+    expect(result.linhas[0]).toMatchObject({ cpf: '123.456.789-09', valorTotal: 50, statusPagamento: 'confirmado', afiliado: 'AF123', comissao: 1.3, statusComissao: 'pendente' });
     expect(audit.record).not.toHaveBeenCalled();
   });
 
@@ -85,7 +85,7 @@ describe('ReportsService.payments (conciliação)', () => {
     const prisma = { pagamento: { findMany: jest.fn().mockResolvedValue([paymentRow()]) } };
     const reports = new ReportsService(prisma as never, { record: jest.fn() } as never);
     const result = await reports.payments({}, admin) as { linhas: Array<Record<string, unknown>> };
-    expect(result.linhas[0]).toEqual(expect.objectContaining({ cpf: '***.***.789-09', valorBruto: 100, taxaAdmin: 25.93, comissao: 2.59, resultadoPlataforma: 23.34, notaFiscal: 'sem nota', provedor: 'cora' }));
+    expect(result.linhas[0]).toEqual(expect.objectContaining({ cpf: '123.456.789-09', valorBruto: 100, taxaAdmin: 25.93, comissao: 2.59, resultadoPlataforma: 23.34, notaFiscal: 'sem nota', provedor: 'cora' }));
   });
 
   it('pagamento pendente não conta custo, taxa nem resultado; comissão cancelada não abate', async () => {
@@ -117,7 +117,7 @@ describe('ReportsService.invoices (notas fiscais)', () => {
   it('calcula o ISS estimado e informa pagamentos sem nota', async () => {
     const prisma = { notaFiscal: { findMany: jest.fn().mockResolvedValue([note()]) }, pagamento: { count: jest.fn().mockResolvedValue(4) } };
     const result = await new ReportsService(prisma as never, { record: jest.fn() } as never).invoices({}, admin) as { linhas: Array<Record<string, unknown>>; pagamentosSemNota: number };
-    expect(result.linhas[0]).toEqual(expect.objectContaining({ valorNota: 100, issPct: 5, issEstimado: 5, numero: '123', cpf: '***.***.789-09' }));
+    expect(result.linhas[0]).toEqual(expect.objectContaining({ valorNota: 100, issPct: 5, issEstimado: 5, numero: '123', cpf: '123.456.789-09' }));
     expect(result.pagamentosSemNota).toBe(4);
   });
 

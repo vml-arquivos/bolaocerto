@@ -33,3 +33,8 @@ O runtime anuncia somente Pix, que é o único método implementado. Cartão e b
 ## Validação
 
 A sequência validada localmente é `pnpm install --frozen-lockfile`, geração do Prisma Client, validação Prisma com URL sintética, lint dos workspaces, testes unitários de administração, cadastro por indicação, reserva concorrente e pagamentos Pix, smoke test HTTP administrativo, builds de web/API/worker e `git diff --check`. O E2E usa um módulo HTTP isolado com mocks, portanto não substitui um teste de integração contra banco de homologação.
+
+## Usuários: editar, excluir e CPF
+- Painel → Usuários e acessos → "Editar / acessos / excluir". Editar dados, trocar papel, gerar link de senha e remover/reativar acesso exigem o administrador logado.
+- **CPF completo**: nas telas do administrador (usuários, CRM, relatórios) o CPF aparece inteiro, sem máscara. O recibo que o cliente vê continua com CPF parcial.
+- **Excluir conta** apaga de vez só conta sem histórico. Avisos, inscrições de push, links de senha e grupos saem junto. Cotas, contratos, bolões, repasses, afiliado etc. impedem a exclusão e o painel diz quais; nesse caso use "Remover acesso".

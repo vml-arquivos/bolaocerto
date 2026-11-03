@@ -32,6 +32,7 @@ import {
 
 import { ensureAffiliateGroup } from '../common/affiliate-groups';
 import { legalDocument } from '../legal/documents';
+import { formatCpf } from '../reports/export.util';
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly mail?: MailService) {}
@@ -345,7 +346,7 @@ export class AdminService {
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: user.id, evento: 'usuario.criado.admin', atorId: actor.id, payloadDepois: { id: user.id, email: user.email, papel: user.papel, afiliadoId: affiliate?.id ?? null, parentAfiliadoId: parent?.id ?? null } });
       return { user, affiliate };
     });
-    return { usuario: { id: created.user.id, nome: created.user.nome, cpf: this.maskCpf(created.user.cpf), email: created.user.email, papel: created.user.papel, criadoEm: created.user.criadoEm }, afiliado: created.affiliate ? { id: created.affiliate.id, codigoAfiliado: created.affiliate.codigoAfiliado, statusAprovacao: created.affiliate.statusAprovacao, parentAfiliadoId: created.affiliate.parentAfiliadoId } : null };
+    return { usuario: { id: created.user.id, nome: created.user.nome, cpf: formatCpf(created.user.cpf), email: created.user.email, papel: created.user.papel, criadoEm: created.user.criadoEm }, afiliado: created.affiliate ? { id: created.affiliate.id, codigoAfiliado: created.affiliate.codigoAfiliado, statusAprovacao: created.affiliate.statusAprovacao, parentAfiliadoId: created.affiliate.parentAfiliadoId } : null };
   }
 
   async createInvite(dto: CreateInviteDto, actor: AuthUser) {
@@ -491,10 +492,6 @@ export class AdminService {
     return { removido: true };
   }
 
-  private maskCpf(cpf: string): string {
-    return cpf.length === 11 ? `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}` : '***';
-  }
-
   private toPublicPool(pool: any) {
     const games = Array.isArray(pool.jogos) ? pool.jogos.map((game: any) => ({ id: game.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: Number(game.custo ?? 0).toFixed(2), status: game.status })) : [];
     return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.cotasIlimitadas ? null : pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug } : null };
@@ -508,7 +505,7 @@ export class AdminService {
       this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.usuario.count({ where }),
     ]);
-    return { items: items.map((item) => ({ ...item, cpf: this.maskCpf(item.cpf) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((item) => ({ ...item, cpf: formatCpf(item.cpf) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async updateUserRole(id: string, dto: UpdateUserRoleDto, user: AuthUser) {

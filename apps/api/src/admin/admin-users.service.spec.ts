@@ -6,6 +6,7 @@ function setup() {
   const tx: any = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    notificacao: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     usuario: {
       delete: jest.fn().mockResolvedValue({}),
       findUnique: jest.fn(async ({ where }: any) => users.find(u => u.id === where.id)),
@@ -19,21 +20,27 @@ function setup() {
   return { service: new AdminUsersService(tx, audit, mail), tx, users, records, mail, audit };
 }
 describe('Administrative user management', () => {
-  it('only deletes disabled empty accounts and records the action', async () => {
+  it('deletes accounts without history, explains what blocks the others and records the action', async () => {
     const { service, users, tx, audit } = setup();
-    users[1]._count = { tokensSenha: 2, cotasCompradas: 0 };
-    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/Remova/);
-    users[1].desativadoEm = new Date();
+    // Avisos, push e links de senha são descartáveis; não impedem a exclusão.
+    users[1]._count = { tokensSenha: 2, notificacoes: 3, pushInscricoes: 1, auditorias: 4, cotasCompradas: 0 };
     users[1]._count.cotasCompradas = 1;
-    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/histórico/);
+    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/1 participações em bolões/);
     expect(tx.usuario.delete).not.toHaveBeenCalled();
     users[1]._count.cotasCompradas = 0;
     users[1].afiliado = { id: 'affiliate' };
-    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/histórico/);
+    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/afiliado/);
     users[1].afiliado = null;
     await expect(service.deleteEmpty('admin', actor)).rejects.toThrow(/própria/);
     await expect(service.deleteEmpty('buyer', actor)).resolves.toEqual({ id: 'buyer', excluido: true });
+    expect(tx.notificacao.deleteMany).toHaveBeenCalledWith({ where: { usuarioId: 'buyer' } });
     expect(audit.record).toHaveBeenCalledWith(tx, expect.objectContaining({ evento: 'usuario.vazio_excluido' }));
+  });
+  it('blocks unknown future relations by default', async () => {
+    const { service, users, tx } = setup();
+    users[1]._count = { relacaoNova: 2 };
+    await expect(service.deleteEmpty('buyer', actor)).rejects.toThrow(/2 relacaoNova/);
+    expect(tx.usuario.delete).not.toHaveBeenCalled();
   });
   it('removes access with session revocation and keeps the user and financial history', async () => {
     const { service, users, tx, audit } = setup();

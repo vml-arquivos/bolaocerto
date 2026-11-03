@@ -1216,3 +1216,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .contract-field .check-line { display: flex; align-items: flex-start; gap: 12px; text-align: left; font-weight: 600; line-height: 1.45; cursor: pointer; }
 .contract-field .check-line input[type="checkbox"] { flex: 0 0 22px; width: 22px; min-height: 22px; height: 22px; margin: 1px 0 0; padding: 0; accent-color: var(--primary); }
 .contract-field .field-hint { text-align: left; }
+
+.admin-button-danger { border: 1px solid var(--danger, #c0392b); background: transparent; color: var(--danger, #c0392b); font-weight: 700; }
+.admin-button-danger:hover:not(:disabled) { background: var(--danger, #c0392b); color: #fff; }
