@@ -69,3 +69,10 @@ Painel → Jogos e vendas → **Página inicial**.
 - **Últimos resultados** vêm dos resultados oficiais já sincronizados (Concursos → Sincronizar). Sem sincronização, a seção mostra um aviso.
 - A taxa de administração não aparece mais no cartão do bolão; ela é detalhada na página do bolão (bilhete + taxa).
 - Cada destaque do carrossel tem **etiqueta**, título, subtítulo, botão e link editáveis, e **imagem de fundo**: "Enviar minha imagem" (JPG/PNG/WEBP, o painel reduz sozinho) ou "Voltar à imagem padrão" do jogo. As imagens ficam guardadas no próprio banco (tabela de configurações), sem pasta nem variável nova.
+
+## Comprovantes, concursos e banco de números
+
+- **Comprovante logo depois de criar o bolão**: ao criar um bolão (pela lista de Bolões ou pelo botão "Criar bolão" dos Concursos), abre a janela de comprovante. Registre o jogo na lotérica, envie a foto/PDF e use "Publicar bolão e abrir vendas". O arquivo fica visível aos cotistas. A fila **Comprovantes** (e **Para fazer**) agora lista também os rascunhos, mostra quantos arquivos já foram enviados e tem o botão "Enviar comprovante". Em **Apostas** cada linha tem o botão "Comprovante".
+- **Concursos → Criar bolão**: cada concurso em aberto tem o botão; o assistente abre já com o concurso escolhido.
+- **Banco de números** (Jogos e vendas → Apostas → aba "Banco de números"): gerar de 1 a 100 jogos (estratégia, números fixos, números a evitar, custo da tabela CAIXA), digitar jogos à mão (um por linha) e guardar sem repetir. No assistente de bolão, "Escolher do banco de números" traz os jogos para o bolão. Todo bolão criado guarda seus jogos no banco e conta o uso. Jogos: Mega-Sena, Lotofácil, Quina, Dupla Sena e Lotomania.
+- Migração nova: `20261103180000_banco_numeros` (roda sozinha no deploy).

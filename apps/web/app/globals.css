@@ -1331,3 +1331,23 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .vitrine-thumb-empty { display: grid; place-items: center; text-align: center; padding: 6px; font-size: .75rem; color: var(--text-muted); }
 .vitrine-image-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .vitrine-image-actions label { cursor: pointer; }
+
+/* ===== Banco de números ===== */
+.bank-forms { display: grid; gap: 16px; }
+.bank-balls { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.bank-balls i { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border-radius: 50%; background: var(--primary-solid); color: #fff; font-style: normal; font-weight: 700; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.bank-result { margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-muted); display: grid; gap: 8px; }
+.bank-result ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 320px; overflow: auto; }
+.bank-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.bank-filters select, .bank-filters input[type=number], .bank-filters input:not([type]) { min-height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-primary); }
+.bank-picker-body { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-muted); }
+.bank-pick-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.bank-pick-list label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.bank-pick-list label:hover { background: var(--surface-hover); }
+.bank-picker-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (min-width: 1100px) { .bank-forms { grid-template-columns: 1.5fr 1fr; align-items: start; } }
+.bank-picker { grid-column: 1 / -1; display: grid; gap: 8px; }
+.bank-picker > button { justify-self: start; }
+.bank-pick-list input[type=checkbox], .bank-filters input[type=checkbox] { width: 18px; height: 18px; min-height: 0; padding: 0; accent-color: var(--primary); flex: none; }
+.bank-filters input[type=checkbox] { margin-right: 6px; }
+.bank-filters input[type=number], .bank-filters input:not([type]) { min-width: 200px; }

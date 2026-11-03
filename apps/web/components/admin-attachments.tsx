@@ -136,7 +136,17 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
   const [ticket, setTicket] = useState('');
   const [busy, setBusy] = useState(false);
   const alreadyDone = ['registrado', 'apurado'].includes(pool.status);
+  const isDraft = pool.status === 'rascunho';
   const ready = count > 0 || link.trim().length > 0;
+  async function publish() {
+    setBusy(true);
+    try {
+      await api(`/api/v1/admin/boloes/${pool.id}/publicar`, { method: 'POST' });
+      notify('success', 'Bolão publicado. As cotas já podem ser vendidas.');
+      onDone(); onClose();
+    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível publicar.'); }
+    finally { setBusy(false); }
+  }
   async function confirm() {
     setBusy(true);
     try {
@@ -146,11 +156,21 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível concluir.'); }
     finally { setBusy(false); }
   }
-  const name = `${modalityNames[pool.modalidade] ?? pool.modalidade ?? 'Bolão'} #${pool.concurso ?? ''}`;
+  const contest = pool.concurso && typeof pool.concurso === 'object' ? pool.concurso : null;
+  const modalidade = pool.modalidade ?? contest?.modalidade;
+  const numero = contest ? contest.numeroConcurso : pool.concurso;
+  const special = pool.nomeEspecial ?? contest?.nomeEspecial;
+  const name = `${modalityNames[modalidade] ?? modalidade ?? 'Bolão'}${special ? ` · ${special}` : ''} ${Number(numero) > 0 ? `#${numero}` : '(número a definir)'}`;
   return <AdminModal title={`Comprovantes · ${name}`} onClose={onClose}>
-    <p className="admin-help">Envie a foto ou o PDF do comprovante que a lotérica entregou, com os jogos apostados. Novos lotes exigem um comprovante visível antes da publicação. Cotistas pagos são avisados por e-mail e pela conta.</p>
+    <p className="admin-help">{isDraft ? 'Bolão criado como rascunho. Registre o jogo na lotérica e envie agora a foto ou o PDF do comprovante: é a prova que os cotistas vão ver. Com o comprovante enviado, você publica e abre as vendas.' : 'Envie a foto ou o PDF do comprovante que a lotérica entregou, com os jogos apostados. É a prova que o cotista recebe junto com o comprovante da compra. Cotistas pagos são avisados por e-mail e pela conta.'}</p>
     <AttachmentsPanel poolId={pool.id} shares={shares} notify={notify} onChange={setCount} />
-    {['aberto', 'fechado'].includes(pool.status) && <div className="attach-confirm">
+    {isDraft && <div className="attach-confirm">
+      <h3>Abrir as vendas</h3>
+      <button type="button" className="admin-button admin-button-primary" disabled={busy || count === 0} onClick={() => void publish()}>{busy ? 'Publicando…' : 'Publicar bolão e abrir vendas'}</button>
+      <p className="admin-help">{count === 0 ? 'Envie o comprovante para liberar a publicação. Se este bolão é de pré-venda, publique pela lista de bolões.' : 'Comprovante enviado. Pode publicar.'}</p>
+    </div>}
+    {pool.status === 'aberto' && <p className="admin-help">Com o bolão aberto, os arquivos enviados já ficam visíveis para quem participa. Para registrar a aposta, feche o bolão primeiro.</p>}
+    {['fechado', 'registrado'].includes(pool.status) && <div className="attach-confirm">
       <h3>{alreadyDone ? 'Atualizar dados da aposta' : 'Confirmar que a aposta foi feita'}</h3>
       <div className="admin-form-grid">
         <label className="admin-field"><span>Número do bilhete (opcional)</span><input value={ticket} onChange={(event) => setTicket(event.target.value)} maxLength={80} /></label>

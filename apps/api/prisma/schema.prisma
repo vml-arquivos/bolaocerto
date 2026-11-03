@@ -736,3 +736,23 @@ model ConfiguracaoSistema {
 
   @@map("configuracoes_sistema")
 }
+
+/// Banco de números: jogos gerados ou digitados que ficam guardados para reaproveitar nos bolões e cruzar com os resultados.
+model BancoNumeros {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  modalidade        String    @db.VarChar(20)
+  numeros           Int[]
+  quantidadeDezenas Int       @map("quantidade_dezenas")
+  /// modalidade + dezenas em ordem crescente: impede guardar o mesmo jogo duas vezes.
+  chave             String    @unique @db.VarChar(400)
+  origem            String    @db.VarChar(20)
+  estrategia        String?   @db.VarChar(30)
+  rotulo            String?   @db.VarChar(80)
+  usos              Int       @default(0)
+  ultimoUsoEm       DateTime? @map("ultimo_uso_em")
+  criadoPor         String?   @map("criado_por") @db.Uuid
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+
+  @@index([modalidade, criadoEm])
+  @@map("banco_numeros")
+}

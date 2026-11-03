@@ -20,6 +20,7 @@ import { OperationModule } from './operation/operation.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { SystemModule } from './system/system.module';
 import { HomeModule } from './home/home.module';
+import { NumbersModule } from './numbers/numbers.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -42,6 +43,7 @@ import { HealthController } from './health.controller';
     AttachmentsModule,
     SystemModule,
     HomeModule,
+    NumbersModule,
     OperationModule,
   ],
   controllers: [HealthController],

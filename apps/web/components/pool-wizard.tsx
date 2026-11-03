@@ -1,6 +1,7 @@
 'use client';
 
 import { LotteryPriceAdmin } from './lottery-price-admin';
+import { BankPicker } from './admin-numbers';
 import { concursoNo } from '../lib/contest';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
@@ -13,7 +14,10 @@ type PoolWizardProps = {
   role?: 'admin' | 'affiliate';
   editPool?: RecordValue | null;
   onCancelEdit?: () => void;
-  onSuccess: () => Promise<void> | void;
+  /** Recebe o bolão criado (quando é criação), para a tela abrir o envio do comprovante em seguida. */
+  onSuccess: (created?: RecordValue) => Promise<void> | void;
+  /** Abre o assistente já com este concurso escolhido (usado pela lista de concursos). */
+  initialContestId?: string;
   /** Chamado depois de criar um concurso de data comemorativa, para a lista de concursos recarregar. */
   onContestCreated?: () => Promise<void> | void;
 };
@@ -69,10 +73,11 @@ function toLocalInput(value: unknown) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function PoolWizard({ contests, groupId, groups = [], role = 'admin', editPool, onCancelEdit, onSuccess, onContestCreated }: PoolWizardProps) {
+export function PoolWizard({ contests, groupId, groups = [], role = 'admin', editPool, onCancelEdit, onSuccess, onContestCreated, initialContestId }: PoolWizardProps) {
+  const initialContest = initialContestId ? contests.find((contest) => contest.id === initialContestId) : undefined;
   const editing = Boolean(editPool?.id);
-  const [modality, setModality] = useState('megasena');
-  const [contestId, setContestId] = useState('');
+  const [modality, setModality] = useState<string>(String(initialContest?.modalidade ?? 'megasena'));
+  const [contestId, setContestId] = useState<string>(String(initialContest?.id ?? ''));
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? '');
   const [numbers, setNumbers] = useState('');
   const [suggesting, setSuggesting] = useState(false);
@@ -116,8 +121,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   useEffect(() => {
     if (!editPool) {
       setAutomatic(true);
-      setModality('megasena');
-      setContestId('');
+      setModality(initialContest?.modalidade ?? 'megasena');
+      setContestId(initialContest?.id ?? '');
       setSelectedGroupId(groupId ?? '');
       setNumbers('');
       setTotalCotas('10');
@@ -153,7 +158,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setSaleText(String(editPool.regrasVenda?.texto ?? ''));
     setNewDate(false);
     setMessage('');
-  }, [editPool, groupId]);
+  }, [editPool, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const limits = modalityLimits[modality] ?? modalityLimits.megasena!;
   const availableContests = useMemo(() => contests.filter((contest) => contest.modalidade === modality && ['aberto', 'aberta'].includes(String(contest.status).toLowerCase())), [contests, modality]);
@@ -345,7 +350,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(Array.isArray(payload.message) ? payload.message.join(' ') : payload.message || (editing ? 'Não foi possível editar o bolão.' : 'Não foi possível criar o bolão.'));
       setMessage(editing ? 'Bolão atualizado com sucesso.' : 'Bolão criado como rascunho.');
-      await onSuccess();
+      // Guarda os jogos no banco de números (e conta o uso). Se falhar, o bolão já foi criado e nada se perde.
+      if (!editing && role === 'admin' && canPrice) void authFetch('/api/v1/admin/numeros/usar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: modality, jogos: games.map((game) => ({ numeros: game.numeros })), ...(payload?.id ? { bolaoId: payload.id } : {}) }) }).catch(() => undefined);
+      await onSuccess(editing ? undefined : payload);
       if (!editing) resetAfterSave();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao salvar o bolão.');
@@ -396,6 +403,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         {genError && <p role="alert" className="form-error">{genError}</p>}
         {generated && <div className="generator-result"><span>{generated.quantidade} {generated.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {generated.dezenas} números cada · <strong>total na CAIXA {money(generated.custoTotal)}</strong></span><small>{generated.aviso}</small></div>}
       </div>}
+      {role === 'admin' && !editing && canPrice && <BankPicker modalidade={modality} onUse={(lines, mode) => setNumbers((current) => (mode === 'append' && current.trim() ? `${current.trim()}\n${lines.join('\n')}` : lines.join('\n')))} />}
       <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
     </div>
     {!editing && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>Calcular pela tabela Caixa</strong><small>Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.</small></span></label>}
