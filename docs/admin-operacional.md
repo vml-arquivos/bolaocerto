@@ -38,3 +38,10 @@ A sequência validada localmente é `pnpm install --frozen-lockfile`, geração 
 - Painel → Usuários e acessos → "Editar / acessos / excluir". Editar dados, trocar papel, gerar link de senha e remover/reativar acesso exigem o administrador logado.
 - **CPF completo**: nas telas do administrador (usuários, CRM, relatórios) o CPF aparece inteiro, sem máscara. O recibo que o cliente vê continua com CPF parcial.
 - **Excluir conta** apaga de vez só conta sem histórico. Avisos, inscrições de push, links de senha e grupos saem junto. Cotas, contratos, bolões, repasses, afiliado etc. impedem a exclusão e o painel diz quais; nesse caso use "Remover acesso".
+
+## Três tipos de pessoa (menu Pessoas)
+- **Equipe do sistema**: administrador (financeiro, controle, relatórios) e equipe de operação. Fica em "Usuários e acessos", aba Equipe.
+- **Afiliados**: entram só por convite do administrador, criam o próprio grupo e os próprios bolões, vendem as cotas e veem só o que é deles (bolões, cotas, vendas, receita, grupos e clientes). Não entram no painel do administrador. Telas: "Afiliados" (convite, comissão, contrato) e "Grupos".
+- **Clientes (cotistas)**: só compram bolões. A tela "Clientes" mostra nível, investimento e segmento, só de cotistas com acesso ativo.
+- "Usuários e acessos" tem abas Equipe / Afiliados / Clientes / Todos. Em qualquer lista (Clientes, Afiliados, Usuários) o botão "Editar / excluir" abre o mesmo editor: dados, papel, senha, remover acesso e excluir.
+- Saíram do menu: Participantes (use Cotas), Quem indicou quem (não há rede de afiliados) e Convites (fica em Afiliados, botão "Ver convites emitidos"). Comissões e Pagar comissões ficam em Dinheiro.

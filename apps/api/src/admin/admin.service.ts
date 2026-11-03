@@ -1,7 +1,7 @@
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
+import { PapelUsuario, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
@@ -500,7 +500,8 @@ export class AdminService {
   async listUsers(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const search: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
-    const where: Prisma.UsuarioWhereInput = { ...search, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
+    const roleFilter: Prisma.UsuarioWhereInput = query.papel === 'equipe' ? { papel: { in: ['admin', 'operacao'] } } : query.papel ? { papel: query.papel as PapelUsuario } : {};
+    const where: Prisma.UsuarioWhereInput = { ...search, ...roleFilter, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
     const [items, total] = await Promise.all([
       this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.usuario.count({ where }),

@@ -72,7 +72,8 @@ export class CrmService {
     const [{ byUser, prizes }, users] = await Promise.all([
       this.metrics(now),
       this.prisma.usuario.findMany({
-        where: { papel: { in: ['cotista', 'afiliado'] } },
+        // Clientes = só quem compra (cotistas) e ainda tem acesso. Afiliados e equipe têm as próprias telas.
+        where: { papel: 'cotista', desativadoEm: null },
         select: { id: true, nome: true, cpf: true, email: true, telefone: true, enderecoCidade: true, enderecoUf: true, papel: true, criadoEm: true, indicadoPorAfiliado: { select: { codigoAfiliado: true } }, crmPerfil: { select: { etiquetas: true, proximoContatoEm: true } } },
       }),
     ]);

@@ -30,18 +30,9 @@ const groups = [
     label: 'Pessoas',
     items: [
       ['crm', 'Clientes', 'CR'],
-      ['participantes', 'Participantes', 'PA'],
-      ['grupos', 'Grupos', 'GR'],
-    ],
-  },
-  {
-    label: 'Indicações',
-    items: [
       ['afiliados', 'Afiliados', 'AF'],
-      ['rede', 'Quem indicou quem', 'RD'],
-      ['convites', 'Convites', 'CV'],
-      ['comissoes', 'Comissões', 'CM'],
-      ['repasses', 'Pagar comissões', 'RP'],
+      ['grupos', 'Grupos', 'GR'],
+      ['usuarios', 'Usuários e acessos', 'US'],
     ],
   },
   {
@@ -50,6 +41,8 @@ const groups = [
       ['relatorios', 'Relatórios', 'RL'],
       ['recebimentos', 'Recebimentos', 'RE'],
       ['pagamentos', 'Pagamentos', 'PG'],
+      ['comissoes', 'Comissões', 'CM'],
+      ['repasses', 'Pagar comissões', 'RP'],
       ['notas-fiscais', 'Notas fiscais', 'NF'],
     ],
   },
@@ -64,7 +57,6 @@ const groups = [
   {
     label: 'Conta e acesso',
     items: [
-      ['usuarios', 'Usuários e acessos', 'US'],
       ['comunicados', 'Mensagens aos clientes', 'MS'],
       ['conexoes', 'Conexões', 'CX'],
       ['auditoria', 'Histórico', 'HI'],

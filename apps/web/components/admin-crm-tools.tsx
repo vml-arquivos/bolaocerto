@@ -12,7 +12,7 @@ const SEGMENTS: Array<[string, string]> = [['', 'Todos'], ['vip', 'Clientes maio
 const LEVEL_CLASS: Record<string, string> = { diamante: 'status-chip status-info', ouro: 'status-chip status-warning', prata: 'status-chip', bronze: 'status-chip', sem_compra: 'status-chip' };
 const LevelChip = ({ nivel, nome }: { nivel: string; nome?: string }) => <span className={LEVEL_CLASS[nivel] ?? 'status-chip'}>{nome ?? label(nivel)}</span>;
 
-export function CrmView({ notify }: { notify: Notify }) {
+export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify; onEditUser?: (id: string) => void; refreshKey?: number }) {
   const [overview, setOverview] = useState<Rec | null>(null);
   const [list, setList] = useState<Rec | null>(null);
   const [segment, setSegment] = useState('');
@@ -41,7 +41,7 @@ export function CrmView({ notify }: { notify: Notify }) {
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível carregar os clientes.'); }
     finally { setLoading(false); }
   }, [params, page, notify]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
 
   const totals = overview?.totais ?? {};
   const criteria = overview?.criterios ?? {};
@@ -86,7 +86,7 @@ export function CrmView({ notify }: { notify: Notify }) {
         <button className="admin-button admin-button-primary" type="submit">Buscar</button>
       </form>
       {loading && <div className="admin-spinner" aria-label="Carregando" />}
-      <Table minWidth={1180}><thead><tr><th>Cliente</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td>{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button></td></tr>)}</tbody></Table>
+      <Table minWidth={1180}><thead><tr><th>Cliente</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td>{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => onEditUser(row.id)}>Editar / excluir</button>}</div></td></tr>)}</tbody></Table>
       {!loading && !(list?.items ?? []).length && <Empty text="Nenhum cliente encontrado" hint="Ajuste os filtros ou a busca." />}
       {(list?.paginas ?? 1) > 1 && <div className="admin-row-actions" style={{ marginTop: 14 }}><button className="admin-button admin-button-small admin-button-ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span className="admin-help" style={{ margin: 0 }}>Página {list?.pagina} de {list?.paginas} · {list?.total} clientes</span><button className="admin-button admin-button-small admin-button-ghost" disabled={page >= (list?.paginas ?? 1)} onClick={() => setPage((value) => value + 1)}>Próxima →</button></div>}
     </Panel>

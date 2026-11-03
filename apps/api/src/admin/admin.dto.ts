@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from '../auth/password-policy';
 
 export class CreatePartnerLotteryDto {
@@ -176,6 +176,11 @@ export class AdminListQueryDto {
   @IsOptional()
   @IsString()
   busca?: string;
+
+  /** Filtro de papel na lista de usuários: cotista, afiliado, admin, operacao ou equipe (admin + operação). */
+  @IsOptional()
+  @IsIn(['cotista', 'afiliado', 'admin', 'operacao', 'equipe'])
+  papel?: string;
 }
 
 export class DashboardQueryDto {
