@@ -76,3 +76,8 @@ Painel → Jogos e vendas → **Página inicial**.
 - **Concursos → Criar bolão**: cada concurso em aberto tem o botão; o assistente abre já com o concurso escolhido.
 - **Banco de números** (Jogos e vendas → Apostas → aba "Banco de números"): gerar de 1 a 100 jogos (estratégia, números fixos, números a evitar, custo da tabela CAIXA), digitar jogos à mão (um por linha) e guardar sem repetir. No assistente de bolão, "Escolher do banco de números" traz os jogos para o bolão. Todo bolão criado guarda seus jogos no banco e conta o uso. Jogos: Mega-Sena, Lotofácil, Quina, Dupla Sena e Lotomania.
 - Migração nova: `20261103180000_banco_numeros` (roda sozinha no deploy).
+
+## Layout do painel
+
+- As tabelas se ajustam à largura da tela (sem barra de rolagem em telas largas). A lista de **Bolões** tem 8 colunas, um botão principal (Publicar ou Fechar) e o menu **Mais ▾** com as demais ações; no celular vira cartões.
+- Botões de texto são azuis; só **Excluir/Remover** ficam vermelhos.

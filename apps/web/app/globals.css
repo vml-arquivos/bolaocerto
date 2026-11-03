@@ -1351,3 +1351,55 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .bank-pick-list input[type=checkbox], .bank-filters input[type=checkbox] { width: 18px; height: 18px; min-height: 0; padding: 0; accent-color: var(--primary); flex: none; }
 .bank-filters input[type=checkbox] { margin-right: 6px; }
 .bank-filters input[type=number], .bank-filters input:not([type]) { min-width: 200px; }
+
+/* ===== Menu "Mais ações" das tabelas ===== */
+.row-menu { position: fixed; z-index: 1200; min-width: 210px; max-width: 280px; padding: 6px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--surface-raised, var(--surface)); box-shadow: var(--shadow-lg); display: grid; gap: 2px; }
+.row-menu-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 9px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; text-decoration: none; cursor: pointer; }
+.row-menu-item:hover:not(:disabled), .row-menu-item:focus-visible { background: var(--surface-hover); outline: none; }
+.row-menu-item:disabled { opacity: .45; cursor: default; }
+.row-menu-item.is-danger { color: var(--danger); }
+.row-menu-item small { color: var(--text-muted); font-size: 11px; }
+.row-actions-main { display: flex; align-items: center; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
+
+/* ===== Harmonização do painel: tabelas, espaçamentos e ações ===== */
+.admin-main { padding: 26px clamp(16px, 2.4vw, 36px) 56px; max-width: 1560px; }
+.admin-panel { padding: 20px clamp(14px, 1.8vw, 22px); }
+.admin-table th { padding: 0 10px 10px; line-height: 1.25; }
+.admin-table td { padding: 12px 10px; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.admin-table td .status-chip, .admin-table td .tag, .admin-table td .admin-button, .admin-table td code { white-space: nowrap; overflow-wrap: normal; }
+.admin-table th.th-actions { text-align: right; }
+.admin-table td.td-actions { text-align: right; white-space: nowrap; width: 1%; }
+.admin-table td.td-actions .admin-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.admin-table td strong + small, .admin-table td small + small { margin-top: 2px; }
+@media (min-width: 1100px) {
+  /* telas largas: a tabela se ajusta ao painel em vez de criar barra de rolagem */
+  .admin-table { min-width: 0 !important; }
+  .admin-table th { white-space: normal; }
+}
+.admin-pools-compact .admin-row-actions { min-width: 0; }
+.admin-pools-compact .admin-table th, .admin-pools-compact .admin-table td { padding: 12px 10px; font-size: 12.5px; }
+.admin-page-heading { flex-wrap: wrap; row-gap: 12px; }
+.admin-page-heading > div:first-child { min-width: 0; }
+@media (min-width: 761px) { .admin-page-heading > div:first-child { flex: 1 1 320px; } }
+.admin-mini-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+@media (max-width: 760px) { .admin-main { padding-top: 20px; } .admin-table td.td-actions { width: auto; } }
+/* Botão de texto: azul por padrão; vermelho só quando é destrutivo (Excluir, Remover). */
+.admin-text-button { color: var(--primary); font-weight: 560; padding: 2px 0; }
+.admin-text-button:hover { color: var(--accent); text-decoration: underline; }
+.admin-text-button.admin-danger, .admin-danger { color: var(--danger); }
+
+/* Página do bolão: o cartão de histórico ocupa a largura toda em vez de uma coluna estreita. */
+.detail-main .pool-grid { grid-template-columns: 1fr; }
+.detail-main .pool-grid .pool-card-body { gap: 12px; }
+/* Celular: a lista de bolões vira cartões (sem rolar para o lado). */
+@media (max-width: 760px) {
+  .admin-pools-compact .admin-table { min-width: 0 !important; }
+  .admin-pools-compact .admin-table thead { display: none; }
+  .admin-pools-compact .admin-table, .admin-pools-compact .admin-table tbody, .admin-pools-compact .admin-table tr, .admin-pools-compact .admin-table td { display: block; width: 100%; }
+  .admin-pools-compact .admin-table tr { border: 1px solid var(--border); border-radius: 14px; padding: 8px 14px; margin-bottom: 12px; background: var(--surface-muted); }
+  .admin-pools-compact .admin-table td { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 8px 0; border: 0; text-align: right; }
+  .admin-pools-compact .admin-table td::before { content: attr(data-label); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; text-align: left; flex: none; padding-top: 2px; }
+  .admin-pools-compact .admin-table td.td-actions { width: 100%; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; }
+  .admin-pools-compact .admin-table td.td-actions::before { display: none; }
+  .admin-pools-compact .admin-table tr:hover td { background: transparent; }
+}
