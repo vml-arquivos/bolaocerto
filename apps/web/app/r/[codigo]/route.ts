@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { apiGet } from '../../../lib/api';
+import { publicOrigin } from '../../../lib/public-origin';
 
 type Info = { valido: boolean; tipo?: 'afiliado' | 'cliente' | 'indicacao' | 'equipe' };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13,14 +14,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function GET(request: NextRequest, context: { params: Promise<{ codigo: string }> }) {
   return context.params.then(async ({ codigo }) => {
     const cleanCode = codigo.trim().slice(0, 40);
+    // Redireciona para o endereço público (não para o interno do servidor, 0.0.0.0:3000).
+    const origin = publicOrigin({ host: request.headers.get('host'), forwardedHost: request.headers.get('x-forwarded-host'), forwardedProto: request.headers.get('x-forwarded-proto'), requestUrl: request.url, production: process.env.NODE_ENV === 'production', fallback: process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_SITE_URL });
     const pool = request.nextUrl.searchParams.get('bolao') ?? '';
     const info = cleanCode ? await apiGet<Info>(`/auth/convite/${encodeURIComponent(cleanCode)}`) : { data: null, error: 'sem código' };
     // Se o servico estiver fora do ar, mantém o comportamento antigo (guarda o código e segue).
     const unknown = !info.data;
-    if (info.data && !info.data.valido) return NextResponse.redirect(new URL('/#boloes', request.url));
+    if (info.data && !info.data.valido) return NextResponse.redirect(new URL('/#boloes', origin));
     const invite = info.data?.tipo === 'afiliado' || info.data?.tipo === 'cliente' || info.data?.tipo === 'equipe';
     const destination = invite ? `/cadastro?convite=${encodeURIComponent(cleanCode)}` : UUID.test(pool) ? `/boloes/${pool}` : '/#boloes';
-    const response = NextResponse.redirect(new URL(destination, request.url));
+    const response = NextResponse.redirect(new URL(destination, origin));
     if (cleanCode && (invite || unknown || info.data?.tipo === 'indicacao')) {
       response.cookies.set('bl_ref', cleanCode.slice(0, 20), {
         httpOnly: true,
