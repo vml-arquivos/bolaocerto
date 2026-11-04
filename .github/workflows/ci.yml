@@ -133,6 +133,10 @@ jobs:
         run: node --test e2e/cora-flow.test.mjs
         env:
           E2E_API_URL: http://localhost:3001
+      - name: Link de cadastro da equipe (operação e administrador)
+        run: node --test e2e/staff-invite.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
       - name: Checkout no navegador (QR Code, confirmação automática e volta ao bolão)
         run: |
           npm install -g playwright@1.49.1

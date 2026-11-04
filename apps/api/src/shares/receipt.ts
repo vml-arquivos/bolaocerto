@@ -12,7 +12,7 @@ export interface ReceiptData {
   codigoVerificacao: string;
   emitidoEm: Date;
   participante: { nome: string; cpf: string; email: string | null };
-  bolao: { id: string; modalidade: string; concurso: number; sorteio: Date; grupo: string; quantidadeCotas: number; valorCota: number; totalCotas: number | null; jogos: Array<{ ordem: number; numeros: number[] }> };
+  bolao: { id: string; modalidade: string; concurso: number; sorteio: Date; grupo: string; quantidadeCotas: number; valorCota: number; totalCotas: number | null; jogos: Array<{ ordem: number; numeros: number[] }>; bilhete: { codigo: string | null; registradoEm: Date | null } };
   pagamento: { metodo: string; metodoNome: string; confirmadoEm: Date | null; idCobranca: string | null; origem: string };
   valores: {
     valorPago: number;
@@ -57,7 +57,7 @@ export interface ReceiptSource {
   titularCpf: string;
   quantidade: number;
   comprador: { email: string | null };
-  bolao: { id: string; valorCota: { toString(): string }; totalCotas: number | null; cotasIlimitadas: boolean; taxaAdministracaoPct: { toString(): string }; grupo: { nome: string }; concurso: { modalidade: string; numeroConcurso: number; dataSorteio: Date }; jogos: Array<{ ordem: number; numeros: number[] }> };
+  bolao: { id: string; codigoBilhete?: string | null; registradoEm?: Date | null; valorCota: { toString(): string }; totalCotas: number | null; cotasIlimitadas: boolean; taxaAdministracaoPct: { toString(): string }; grupo: { nome: string }; concurso: { modalidade: string; numeroConcurso: number; dataSorteio: Date }; jogos: Array<{ ordem: number; numeros: number[] }> };
   pagamento: { id: string; metodo: string; valorBruto: { toString(): string }; valorTaxaAdmin: { toString(): string }; valorCustoBilhete: { toString(): string }; valorComissaoAfiliado: { toString(): string }; confirmadoEm: Date | null; pspTransactionId: string | null; origem: string; notaFiscal: { numero: string | null; status: string } | null };
   comissao: { valor: { toString(): string }; percentual: { toString(): string } | null; status: string } | null;
   afiliadoReferencia: { codigoAfiliado: string } | null;
@@ -92,7 +92,7 @@ export function buildReceiptData(share: ReceiptSource, now = new Date()): Receip
     codigoVerificacao: receiptCode(share.id, payment.id, payment.valorBruto.toString()),
     emitidoEm: now,
     participante: { nome: share.titularNome, cpf: maskCpfDisplay(share.titularCpf), email: share.comprador.email },
-    bolao: { id: share.bolao.id, modalidade: modality, concurso: share.bolao.concurso.numeroConcurso, sorteio: share.bolao.concurso.dataSorteio, grupo: share.bolao.grupo.nome, quantidadeCotas: share.quantidade, valorCota: Number(share.bolao.valorCota), totalCotas: share.bolao.cotasIlimitadas ? null : share.bolao.totalCotas, jogos: share.bolao.jogos.map((game) => ({ ordem: game.ordem, numeros: game.numeros })) },
+    bolao: { id: share.bolao.id, modalidade: modality, concurso: share.bolao.concurso.numeroConcurso, sorteio: share.bolao.concurso.dataSorteio, grupo: share.bolao.grupo.nome, quantidadeCotas: share.quantidade, valorCota: Number(share.bolao.valorCota), totalCotas: share.bolao.cotasIlimitadas ? null : share.bolao.totalCotas, jogos: share.bolao.jogos.map((game) => ({ ordem: game.ordem, numeros: game.numeros })), bilhete: { codigo: share.bolao.codigoBilhete ?? null, registradoEm: share.bolao.registradoEm ?? null } },
     pagamento: { metodo: payment.metodo, metodoNome: method, confirmadoEm: payment.confirmadoEm, idCobranca: payment.pspTransactionId, origem: payment.origem },
     valores: { valorPago: gross, aplicadoNasApostas: cost, taxaAdministracao: fee, taxaAdministracaoPct: feePct, comissaoAfiliado: commission, comissaoAfiliadoPct: commissionPct, afiliadoCodigo: share.afiliadoReferencia?.codigoAfiliado ?? null, fiqueiPlataforma: platform, percentuais: { apostas: pct(cost), afiliado: pct(commission), plataforma: pct(platform) } },
     mandato: share.mandato ? { aceitoEm: share.mandato.aceitoEm, hash: share.mandato.textoHash } : null,
@@ -155,7 +155,9 @@ export async function buildReceiptPdf(data: ReceiptData, verifyUrl: string | nul
   y += 28;
   if (data.bolao.jogos.length) {
     doc.fillColor(PDF_COLORS.muted).font('Helvetica').fontSize(7.5);
-    textInMargin(doc, 'JOGOS DO BOLÃO', left, y, { width: inner });
+    textInMargin(doc, 'JOGOS DO BOLÃO', left, y, { width: inner * 0.25 });
+    const ticket = data.bolao.bilhete;
+    textInMargin(doc, ticket.registradoEm ? `Conferido com o comprovante da CAIXA${ticket.codigo ? ` · bilhete ${ticket.codigo}` : ''}` : 'Comprovante da CAIXA será anexado após o registro, com exatamente estes jogos', left + inner * 0.25, y, { width: inner * 0.75, align: 'right', ellipsis: true });
     y += 10;
     doc.fillColor(PDF_COLORS.text).font('Helvetica').fontSize(8.5);
     for (const game of data.bolao.jogos.slice(0, 8)) {

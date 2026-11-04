@@ -16,6 +16,18 @@ function source(overrides: Partial<ReceiptSource> = {}): ReceiptSource {
 }
 
 describe('recibo do participante', () => {
+  it('traz o bilhete da CAIXA depois do registro e avisa que será anexado antes dele', async () => {
+    const base = source();
+    const before = buildReceiptData(base);
+    expect(before.bolao.bilhete).toEqual({ codigo: null, registradoEm: null });
+    const registeredAt = new Date('2026-11-04T20:00:00Z');
+    const after = buildReceiptData(source({ bolao: { ...base.bolao, codigoBilhete: 'ABC-123', registradoEm: registeredAt } }));
+    expect(after.bolao.bilhete).toEqual({ codigo: 'ABC-123', registradoEm: registeredAt });
+    expect((await buildReceiptPdf(before, null)).length).toBeGreaterThan(1000);
+    expect((await buildReceiptPdf(after, null)).length).toBeGreaterThan(1000);
+  });
+
+
   it('a decomposição fecha: apostas + taxa = total; plataforma = taxa − comissão', () => {
     const data = buildReceiptData(source());
     const v = data.valores;

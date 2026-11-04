@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUrl, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from '../auth/password-policy';
 
 export class CreatePartnerLotteryDto {
@@ -84,8 +84,8 @@ export class CreateManagedUserDto {
 }
 
 export class CreateInviteDto {
-  @IsEnum(['usuario', 'afiliado'])
-  tipo!: 'usuario' | 'afiliado';
+  @IsEnum(['usuario', 'afiliado', 'operacao', 'admin'])
+  tipo!: 'usuario' | 'afiliado' | 'operacao' | 'admin';
 
   @IsOptional()
   @IsEmail()
@@ -176,6 +176,11 @@ export class AdminListQueryDto {
   @IsOptional()
   @IsString()
   busca?: string;
+
+  /** Filtro de tipo na lista de convites. */
+  @IsOptional()
+  @IsIn(['usuario', 'afiliado', 'operacao', 'admin'])
+  tipo?: string;
 
   /** Filtro de papel na lista de usuários: cotista, afiliado, admin, operacao ou equipe (admin + operação). */
   @IsOptional()
@@ -277,6 +282,13 @@ export class OperationReceiptDto {
   @IsOptional()
   @IsString()
   observacao?: string;
+
+  /** Jogos como estão no comprovante (um array de números por jogo). O registro só passa se bater com os jogos do bolão. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsArray({ each: true })
+  jogosConferidos?: number[][];
 }
 
 export class UpdateSettingsDto {

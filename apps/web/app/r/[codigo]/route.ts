@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { apiGet } from '../../../lib/api';
 
-type Info = { valido: boolean; tipo?: 'afiliado' | 'cliente' | 'indicacao' };
+type Info = { valido: boolean; tipo?: 'afiliado' | 'cliente' | 'indicacao' | 'equipe' };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -18,7 +18,7 @@ export function GET(request: NextRequest, context: { params: Promise<{ codigo: s
     // Se o servico estiver fora do ar, mantém o comportamento antigo (guarda o código e segue).
     const unknown = !info.data;
     if (info.data && !info.data.valido) return NextResponse.redirect(new URL('/#boloes', request.url));
-    const invite = info.data?.tipo === 'afiliado' || info.data?.tipo === 'cliente';
+    const invite = info.data?.tipo === 'afiliado' || info.data?.tipo === 'cliente' || info.data?.tipo === 'equipe';
     const destination = invite ? `/cadastro?convite=${encodeURIComponent(cleanCode)}` : UUID.test(pool) ? `/boloes/${pool}` : '/#boloes';
     const response = NextResponse.redirect(new URL(destination, request.url));
     if (cleanCode && (invite || unknown || info.data?.tipo === 'indicacao')) {

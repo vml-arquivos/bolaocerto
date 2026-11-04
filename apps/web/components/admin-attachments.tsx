@@ -134,10 +134,14 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
   const [count, setCount] = useState(0);
   const [link, setLink] = useState('');
   const [ticket, setTicket] = useState('');
+  const [proofGames, setProofGames] = useState('');
   const [busy, setBusy] = useState(false);
   const alreadyDone = ['registrado', 'apurado'].includes(pool.status);
   const isDraft = pool.status === 'rascunho';
-  const ready = count > 0 || link.trim().length > 0;
+  /** Um jogo por linha, como está no comprovante: só os números importam. */
+  const typedGames = proofGames.split('\n').map((line) => (line.match(/\d+/g) ?? []).map(Number)).filter((game) => game.length > 0);
+  const expectedGames = Array.isArray(pool.jogos) ? pool.jogos.length : null;
+  const ready = (count > 0 || link.trim().length > 0) && typedGames.length > 0;
   async function publish() {
     setBusy(true);
     try {
@@ -150,7 +154,7 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
   async function confirm() {
     setBusy(true);
     try {
-      await api(`/api/v1/admin/operacao/boloes/${pool.id}/comprovante`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...(link.trim() ? { comprovanteUrl: link.trim() } : {}), ...(ticket.trim() ? { codigoBilhete: ticket.trim() } : {}) }) });
+      await api(`/api/v1/admin/operacao/boloes/${pool.id}/comprovante`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...(link.trim() ? { comprovanteUrl: link.trim() } : {}), ...(ticket.trim() ? { codigoBilhete: ticket.trim() } : {}), jogosConferidos: typedGames }) });
       notify('success', 'Aposta marcada como feita. As cotas pagas foram registradas.');
       onDone(); onClose();
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível concluir.'); }
@@ -173,11 +177,12 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
     {['fechado', 'registrado'].includes(pool.status) && <div className="attach-confirm">
       <h3>{alreadyDone ? 'Atualizar dados da aposta' : 'Confirmar que a aposta foi feita'}</h3>
       <div className="admin-form-grid">
+        <label className="admin-field"><span>Jogos que estão no comprovante (um jogo por linha)</span><textarea value={proofGames} onChange={(event) => setProofGames(event.target.value)} rows={Math.min(Math.max(typedGames.length + 1, 3), 8)} placeholder={'03 12 24 36 47 58\n01 02 03 04 05 06'} inputMode="numeric" spellCheck={false} /><small className="admin-help">{typedGames.length ? `${typedGames.length} jogo(s) digitado(s)${expectedGames !== null ? ` de ${expectedGames} no bolão` : ''}. ` : ''}O sistema só registra se estes números forem exatamente os do bolão.</small></label>
         <label className="admin-field"><span>Número do bilhete (opcional)</span><input value={ticket} onChange={(event) => setTicket(event.target.value)} maxLength={80} /></label>
         <label className="admin-field"><span>Link do comprovante, se tiver (opcional)</span><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://…" inputMode="url" /></label>
       </div>
       <button type="button" className="admin-button admin-button-primary" disabled={busy || !ready} onClick={() => void confirm()}>{busy ? 'Salvando…' : alreadyDone ? 'Salvar' : 'Aposta feita — registrar cotas'}</button>
-      {!ready && <small className="admin-help"> Envie ao menos um arquivo (ou informe o link) para liberar o botão.</small>}
+      {!ready && <small className="admin-help"> Envie o arquivo (ou informe o link) e digite os jogos do comprovante para liberar o botão.</small>}
     </div>}
   </AdminModal>;
 }

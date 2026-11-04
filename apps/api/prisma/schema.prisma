@@ -84,6 +84,8 @@ enum TipoGrupo {
 enum TipoConvite {
   usuario
   afiliado
+  operacao
+  admin
 }
 
 enum StatusConvite {

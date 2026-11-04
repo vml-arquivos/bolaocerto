@@ -16,6 +16,13 @@ import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, openSecret
 const GENERIC_LOGIN_ERROR = 'E-mail ou senha incorretos, ou conta temporariamente bloqueada por excesso de tentativas. Tente novamente em alguns minutos.';
 
 import { ensureAffiliateGroup, joinAffiliateGroup } from '../common/affiliate-groups';
+/** Convite da equipe só vale se quem gerou é administrador ativo; convite de administrador, só se foi o superadmin. */
+export function isStaffInviteUsable(invite: { tipo: string; criadoPorUsuario?: { papel?: string | null; email?: string | null; desativadoEm?: Date | null } | null }): boolean {
+  const creator = invite.criadoPorUsuario;
+  if (!creator || creator.papel !== 'admin' || creator.desativadoEm) return false;
+  return invite.tipo === 'admin' ? isSuperAdmin({ papel: creator.papel, email: creator.email }) : true;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -41,7 +48,7 @@ export class AuthService {
 
     const code = dto.codigoAfiliado?.trim();
     const invite = code
-      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true, comissaoPct: true, criadoPorUsuario: { select: { papel: true, id: true } } } })
+      ? await this.prisma.convite.findFirst({ where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } }, select: { id: true, tipo: true, afiliadoOrigemId: true, grupoId: true, emailDestino: true, comissaoPct: true, criadoPorUsuario: { select: { papel: true, id: true, email: true, desativadoEm: true } } } })
       : null;
     if (invite?.emailDestino && invite.emailDestino.toLowerCase() !== email) throw new ConflictException('Este convite foi direcionado a outro e-mail.');
 
@@ -51,11 +58,14 @@ export class AuthService {
     if (code && !invite && (!directAffiliate || directAffiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
     // Afiliado só entra por convite feito pelo administrador do BL. Convite de afiliado vindo de outra origem não vale.
     if (invite?.tipo === 'afiliado' && invite.criadoPorUsuario?.papel !== 'admin') throw new ConflictException('Este convite de afiliado não é válido. Peça um novo convite ao administrador do BL.');
+    // Link da equipe (operação ou administrador): só vale se quem gerou ainda é administrador ativo com direito de conceder o papel.
+    if ((invite?.tipo === 'operacao' || invite?.tipo === 'admin') && !isStaffInviteUsable(invite)) throw new ConflictException('Este link de cadastro da equipe não é mais válido. Peça um novo ao administrador.');
     // Contrato do afiliado: a comissão é a que o administrador definiu no convite e o aceite é gravado junto com o cadastro.
     const contract = invite?.tipo === 'afiliado' ? legalDocument('afiliado', invite.comissaoPct ? Number(invite.comissaoPct).toFixed(2) : undefined) : null;
     if (contract?.aprovado && dto.aceiteContratoHash !== contract.hash) throw new ConflictException('Leia e aceite o contrato de afiliação para concluir o cadastro.');
     const originAffiliateId = invite?.afiliadoOrigemId ?? directAffiliate?.id ?? null;
-    const papel = invite?.tipo === 'afiliado' ? 'afiliado' : 'cotista';
+    const papel = invite?.tipo === 'afiliado' ? 'afiliado' : invite?.tipo === 'operacao' ? 'operacao' : invite?.tipo === 'admin' ? 'admin' : 'cotista';
+    const staffSignup = papel === 'operacao' || papel === 'admin';
     const passwordHash = await argon2.hash(dto.senha, { type: argon2.argon2id });
 
     const user = await this.prisma.$transaction(async (tx) => {
@@ -106,6 +116,7 @@ export class AuthService {
         const marked = await tx.convite.updateMany({ where: { id: invite.id, status: 'ativo' }, data: { status: 'usado', usadoPorUsuarioId: created.id, usadoEm: new Date() } });
         if (marked.count !== 1) throw new ConflictException('Este convite já foi utilizado.');
       }
+      if (staffSignup) await this.audit?.record(tx, { entidade: 'usuario', entidadeId: created.id, evento: 'equipe.cadastro_por_link', atorId: created.id, payloadDepois: { papel, conviteId: invite?.id ?? null, criadoPor: invite?.criadoPorUsuario?.id ?? null } });
       return created;
     });
     // Boas-vindas por e-mail (não atrapalha o cadastro se o envio falhar).
@@ -129,12 +140,16 @@ export class AuthService {
     if (code.length < 3) return invalid;
     const invite = await this.prisma.convite.findFirst({
       where: { codigo: code, status: 'ativo', expiraEm: { gt: new Date() } },
-      select: { tipo: true, emailDestino: true, comissaoPct: true, criadoPorUsuario: { select: { nome: true, papel: true } }, afiliadoOrigem: { select: { usuario: { select: { nome: true } } } }, grupo: { select: { nome: true } } },
+      select: { tipo: true, emailDestino: true, comissaoPct: true, criadoPorUsuario: { select: { nome: true, papel: true, email: true, desativadoEm: true } }, afiliadoOrigem: { select: { usuario: { select: { nome: true } } } }, grupo: { select: { nome: true } } },
     });
     const firstName = (name?: string | null) => (name ?? '').trim().split(/\s+/)[0] || null;
     if (invite) {
       // Convite de afiliado só vale quando feito pelo administrador (mesma regra do cadastro).
       if (invite.tipo === 'afiliado' && invite.criadoPorUsuario.papel !== 'admin') return invalid;
+      if (invite.tipo === 'operacao' || invite.tipo === 'admin') {
+        if (!isStaffInviteUsable({ tipo: invite.tipo, criadoPorUsuario: invite.criadoPorUsuario })) return invalid;
+        return { valido: true as const, tipo: 'equipe' as const, papel: invite.tipo, convidadoPor: firstName(invite.criadoPorUsuario.nome), email: invite.emailDestino ?? null, grupo: null };
+      }
       const base = { valido: true as const, tipo: invite.tipo === 'afiliado' ? 'afiliado' as const : 'cliente' as const, convidadoPor: firstName(invite.afiliadoOrigem?.usuario.nome ?? invite.criadoPorUsuario.nome), email: invite.emailDestino ?? null, grupo: invite.grupo?.nome ?? null };
       if (invite.tipo !== 'afiliado') return base;
       const pct = invite.comissaoPct ? Number(invite.comissaoPct).toFixed(2) : undefined;

@@ -4,6 +4,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import { hasProofFile } from '../attachments/proof';
+import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { RegisterPoolDto } from './operation.dto';
 
 @Injectable()
@@ -24,6 +25,9 @@ export class OperationService {
     const live = pool.cotas.filter((share) => share.status !== StatusCota.cancelada && share.status !== StatusCota.estornada);
     if (live.length === 0 || live.some((share) => share.status !== StatusCota.paga)) throw new ConflictException('Todas as cotas ativas devem estar pagas antes do registro. Cotas canceladas ou estornadas são ignoradas.');
     if (!dto.comprovanteUrl && !(await hasProofFile(this.prisma, poolId))) throw new BadRequestException('Envie o arquivo do comprovante (ou informe o link) antes de marcar como apostado.');
+    const proofGames = await this.prisma.jogoBolao.findMany({ where: { bolaoId: poolId }, orderBy: { ordem: 'asc' }, select: { ordem: true, numeros: true } });
+    const contest = await this.prisma.concurso.findUnique({ where: { id: pool.concursoId }, select: { modalidade: true } });
+    assertTicketMatchesPool(proofGames, dto.jogosConferidos, contest?.modalidade);
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${poolId}::uuid FOR UPDATE`;
       const current = await tx.bolao.findUniqueOrThrow({ where: { id: poolId }, include: { cotas: true, jogos: { orderBy: { ordem: 'asc' } } } });

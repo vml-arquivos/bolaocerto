@@ -114,6 +114,12 @@ export class AdminController {
     return this.admin.createInvite(dto, user);
   }
 
+  @Post('admin/convites/:id/revogar')
+  @Roles('admin')
+  revokeInvite(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.admin.revokeInvite(id, user);
+  }
+
   @Get('admin/convites')
   @Roles('admin')
   invites(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
@@ -250,6 +256,12 @@ export class AdminController {
   @Roles('afiliado')
   affiliateDashboard(@CurrentUser() user: AuthUser) {
     return this.admin.affiliateDashboard(user);
+  }
+
+  @Get('afiliados/me/vendas')
+  @Roles('afiliado')
+  affiliateSales(@CurrentUser() user: AuthUser) {
+    return this.admin.affiliateSalesByPool(user);
   }
 
   @Get('afiliados/me/comissoes')

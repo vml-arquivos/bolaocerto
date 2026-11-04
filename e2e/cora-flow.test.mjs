@@ -97,6 +97,13 @@ test('Pix: gera a cobrança na Cora, o aviso confirma e a cota fica paga com com
   const commissions = await call('GET', '/afiliados/me/comissoes', undefined, affiliate); ok(commissions, 'comissões');
   assert.equal(commissions.data.length, 1);
   assert.equal(commissions.data[0].status, 'pendente');
+
+  // Rastreio: a venda aparece no painel do afiliado, por bolão, com o link rastreado.
+  const sales = await call('GET', '/afiliados/me/vendas', undefined, affiliate); ok(sales, 'vendas por bolão');
+  const row = sales.data.items.find((item) => item.bolaoId === state.poolId);
+  assert.ok(row, 'o bolão vendido precisa aparecer nas vendas do afiliado');
+  assert.equal(row.cotasVendidas, 1);
+  assert.equal(row.link, `/r/${state.affiliate.codigoAfiliado}?bolao=${state.poolId}`);
 });
 
 test('Boleto com Pix: devolve linha digitável e vencimento', async () => {

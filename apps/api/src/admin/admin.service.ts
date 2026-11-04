@@ -1,3 +1,4 @@
+import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { assertCanGrantRole, assertCanManage, isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
@@ -354,6 +355,15 @@ export class AdminService {
     const actorAffiliate = actor.papel === 'afiliado' ? await this.requireApprovedAffiliate(actor) : null;
     // O afiliado é um vendedor: ele traz clientes, não monta rede de outros afiliados. Só o admin convida afiliados.
     if (actorAffiliate && dto.tipo === 'afiliado') throw new ForbiddenException('Afiliado não convida outros afiliados. Convide clientes para o seu grupo.');
+    const staffInvite = dto.tipo === 'operacao' || dto.tipo === 'admin';
+    if (staffInvite) {
+      // Link de cadastro da equipe: só administrador gera, e só para papéis abaixo do próprio (administrador, só o superadmin).
+      if (actor.papel !== 'admin') throw new ForbiddenException('Só um administrador gera link de cadastro da equipe.');
+      assertCanGrantRole(actor, dto.tipo);
+      // Link de administrador dá acesso total: só vale para um e-mail definido, para não servir a quem o encontrar.
+      if (dto.tipo === 'admin' && !dto.emailDestino?.trim()) throw new ConflictException('Informe o e-mail da pessoa: o link de administrador só funciona para esse e-mail.');
+      if (dto.afiliadoOrigemId || dto.grupoId || (dto.comissaoPct !== undefined && dto.comissaoPct !== null)) throw new ConflictException('Link da equipe não leva afiliado, grupo nem comissão.');
+    }
     if (dto.tipo === 'afiliado' && (dto.comissaoPct === undefined || dto.comissaoPct === null || Number.isNaN(Number(dto.comissaoPct)))) throw new ConflictException('Defina a comissão (%) do afiliado antes de gerar o convite.');
     const requestedOrigin = dto.afiliadoOrigemId ? await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoOrigemId, statusAprovacao: 'aprovado' } }) : null;
     if (dto.afiliadoOrigemId && !requestedOrigin) throw new NotFoundException('Afiliado de origem não encontrado ou não aprovado.');
@@ -365,16 +375,27 @@ export class AdminService {
       if (!group) throw new NotFoundException('Grupo não encontrado.');
       if (origin && group.afiliadoId !== origin.id) throw new ForbiddenException('Este grupo não é seu.');
     }
-    const expiresAt = dto.expiraEm ? new Date(dto.expiraEm) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Link da equipe vale menos por padrão (7 dias) e nunca passa de 30 dias.
+    const expiresAt = dto.expiraEm ? new Date(dto.expiraEm) : new Date(Date.now() + (staffInvite ? 7 : 30) * 24 * 60 * 60 * 1000);
     if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) throw new ConflictException('A validade do convite precisa estar no futuro.');
+    if (staffInvite && expiresAt.getTime() > Date.now() + 30 * 24 * 60 * 60 * 1000) throw new ConflictException('O link da equipe vale no máximo 30 dias.');
     const invite = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, grupoId: dto.grupoId, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, comissaoPct: dto.tipo === 'afiliado' ? new Prisma.Decimal(dto.comissaoPct!) : undefined, expiraEm: expiresAt } });
+      const created = await tx.convite.create({ data: { codigo: this.makeCode(dto.tipo === 'afiliado' ? 'AF' : dto.tipo === 'operacao' ? 'OP' : dto.tipo === 'admin' ? 'ADM' : 'USR'), tipo: dto.tipo, criadoPorUsuarioId: actor.id, afiliadoOrigemId: origin?.id, grupoId: dto.grupoId, emailDestino: dto.emailDestino?.trim().toLowerCase() || undefined, comissaoPct: dto.tipo === 'afiliado' ? new Prisma.Decimal(dto.comissaoPct!) : undefined, expiraEm: expiresAt } });
       await this.audit.record(tx, { entidade: 'convite', entidadeId: created.id, evento: 'convite.criado', atorId: actor.id, payloadDepois: { codigo: created.codigo, tipo: created.tipo, afiliadoOrigemId: created.afiliadoOrigemId, grupoId: created.grupoId, comissaoPct: created.comissaoPct?.toString() ?? null, expiraEm: created.expiraEm } });
       return created;
     });
     // Convite com e-mail: já sai por e-mail, com o link (o link também continua disponível para copiar).
     let emailEnviado = false;
-    if (invite.emailDestino && this.mail?.isConfigured()) {
+    if (staffInvite && invite.emailDestino && this.mail?.isConfigured()) {
+      const link = `${this.mail.publicUrl()}/r/${invite.codigo}`;
+      const role = invite.tipo === 'admin' ? 'administrador' : 'equipe de operação';
+      emailEnviado = await this.mail.send({
+        to: invite.emailDestino,
+        subject: 'Convite para a equipe do BL — Bolão Livre',
+        text: `Olá!\n\nA administração do BL convidou você para a ${role === 'administrador' ? 'administração' : role} do BL — Bolão Livre.\n\nFaça o seu cadastro por este link (vale até ${invite.expiraEm.toLocaleDateString('pt-BR')} e só pode ser usado uma vez):\n${link}\n\nUse o mesmo e-mail que recebeu este convite. Se você não esperava este convite, ignore esta mensagem.`,
+        html: wrapEmailHtml('Convite para a equipe', `<p>A administração do BL convidou você para ${role === 'administrador' ? 'a administração' : 'a equipe de operação'} do BL — Bolão Livre.</p><p><a href="${escapeHtml(link)}">Fazer o meu cadastro</a></p><p>O link vale até ${invite.expiraEm.toLocaleDateString('pt-BR')} e só pode ser usado uma vez. Se você não esperava este convite, ignore esta mensagem.</p>`),
+      }).catch(() => false);
+    } else if (invite.emailDestino && this.mail?.isConfigured()) {
       const link = `${this.mail.publicUrl()}/r/${invite.codigo}`;
       const who = actor.papel === 'afiliado' ? 'Um vendedor parceiro do BL' : 'A equipe do BL';
       const commissionLine = invite.tipo === 'afiliado' && invite.comissaoPct ? ` Sua comissão: ${Number(invite.comissaoPct)}% sobre a taxa de administração das vendas, conforme o contrato que você lê e aceita no cadastro.` : '';
@@ -393,6 +414,9 @@ export class AdminService {
     const where: Prisma.ConviteWhereInput = {
       ...(actor.papel === 'afiliado' ? { afiliadoOrigemId: (await this.requireApprovedAffiliate(actor)).id } : {}),
       ...(query.status ? { status: query.status as any } : {}),
+      ...(query.tipo ? { tipo: query.tipo as any } : {}),
+      // Quem não é o superadmin não vê link de administrador gerado por outra pessoa.
+      ...(isSuperAdmin(actor) ? {} : { NOT: { tipo: 'admin' as any, criadoPorUsuarioId: { not: actor.id } } }),
       ...(query.busca ? { OR: [{ codigo: { contains: query.busca, mode: 'insensitive' } }, { emailDestino: { contains: query.busca, mode: 'insensitive' } }] } : {}),
     };
     const [items, total] = await Promise.all([
@@ -400,6 +424,19 @@ export class AdminService {
       this.prisma.convite.count({ where }),
     ]);
     return { items: items.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, emailDestino: invite.emailDestino, comissaoPct: invite.comissaoPct ? Number(invite.comissaoPct) : null, expiraEm: invite.expiraEm, usadoEm: invite.usadoEm, afiliadoOrigem: invite.afiliadoOrigem ? { id: invite.afiliadoOrigem.id, codigo: invite.afiliadoOrigem.codigoAfiliado, nome: invite.afiliadoOrigem.usuario.nome } : null, usadoPor: invite.usadoPorUsuario })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  /** Cancela um link ainda não usado (cadastro de equipe, afiliado ou cliente). */
+  async revokeInvite(id: string, actor: AuthUser) {
+    const invite = await this.prisma.convite.findUnique({ where: { id } });
+    if (!invite) throw new NotFoundException('Convite não encontrado.');
+    if (invite.tipo === 'admin' && !isSuperAdmin(actor) && invite.criadoPorUsuarioId !== actor.id) throw new ForbiddenException('Você não tem permissão sobre este convite.');
+    if (invite.status !== 'ativo') throw new ConflictException('Só dá para cancelar um convite que ainda não foi usado.');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.convite.update({ where: { id }, data: { status: 'revogado' } });
+      await this.audit.record(tx, { entidade: 'convite', entidadeId: id, evento: 'convite.revogado', atorId: actor.id, payloadDepois: { codigo: invite.codigo, tipo: invite.tipo } });
+    });
+    return { id, status: 'revogado' };
   }
 
   async affiliateNetwork(actor: AuthUser) {
@@ -676,6 +713,34 @@ export class AdminService {
     return { codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, cadastrosAtribuidos: affiliate._count.usuariosIndicados, participantes: participants.length, cotas: affiliate._count.cotasReferenciadas, volume: Number(volume._sum.valorPago ?? 0).toFixed(2), comissaoPendente: pending.toFixed(2), comissaoPaga: paid.toFixed(2), totalComissoes: affiliate._count.comissoes };
   }
 
+  /** Vendas do afiliado por bolão: quantas cotas foram vendidas pelo link dele (e quantas ainda estão reservadas). */
+  async affiliateSalesByPool(user: AuthUser) {
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true, codigoAfiliado: true } });
+    if (!affiliate) throw new NotFoundException('Usuário ainda não possui cadastro de afiliado.');
+    const rows = await this.prisma.cota.groupBy({
+      by: ['bolaoId', 'status'],
+      where: { afiliadoReferenciaId: affiliate.id, status: { notIn: [StatusCota.cancelada, StatusCota.estornada] } },
+      _sum: { quantidade: true, valorPago: true },
+      _count: { _all: true },
+    });
+    const poolIds = [...new Set(rows.map((row) => row.bolaoId))];
+    const pools = poolIds.length ? await this.prisma.bolao.findMany({ where: { id: { in: poolIds } }, select: { id: true, status: true, valorCota: true, criadoEm: true, grupo: { select: { nome: true } }, concurso: { select: { modalidade: true, numeroConcurso: true, dataSorteio: true } } } }) : [];
+    const soldStatuses: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
+    const items = pools.map((pool) => {
+      const mine = rows.filter((row) => row.bolaoId === pool.id);
+      const sold = mine.filter((row) => soldStatuses.includes(row.status));
+      const reserved = mine.filter((row) => row.status === StatusCota.reservada);
+      return {
+        bolaoId: pool.id, grupo: pool.grupo?.nome ?? null, modalidade: pool.concurso?.modalidade ?? null, concurso: pool.concurso?.numeroConcurso ?? null, sorteio: pool.concurso?.dataSorteio ?? null, status: pool.status,
+        cotasVendidas: sold.reduce((total, row) => total + Number(row._sum.quantidade ?? 0), 0),
+        cotasReservadas: reserved.reduce((total, row) => total + Number(row._sum.quantidade ?? 0), 0),
+        valorVendido: sold.reduce((total, row) => total + Number(row._sum.valorPago ?? 0), 0).toFixed(2),
+        link: `/r/${affiliate.codigoAfiliado}?bolao=${pool.id}`,
+      };
+    }).sort((a, b) => b.cotasVendidas - a.cotasVendidas || b.cotasReservadas - a.cotasReservadas);
+    return { codigoAfiliado: affiliate.codigoAfiliado, totalCotasVendidas: items.reduce((total, item) => total + item.cotasVendidas, 0), items };
+  }
+
   async affiliateCommissions(user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
@@ -716,6 +781,9 @@ export class AdminService {
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
     if (([StatusBolao.fechado, StatusBolao.registrado] as StatusBolao[]).includes(pool.status) === false) throw new ConflictException('O bolão precisa estar fechado ou registrado para receber comprovante.');
     if (!dto.comprovanteUrl && !pool.comprovanteUrl && !(await hasProofFile(this.prisma, id))) throw new BadRequestException('Envie o arquivo do comprovante (ou informe o link) antes de marcar como apostado.');
+    const proofGames = await this.prisma.jogoBolao.findMany({ where: { bolaoId: id }, orderBy: { ordem: 'asc' }, select: { ordem: true, numeros: true } });
+    const proofContest = await this.prisma.concurso.findUnique({ where: { id: pool.concursoId }, select: { modalidade: true } });
+    assertTicketMatchesPool(proofGames, dto.jogosConferidos, proofContest?.modalidade);
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.bolao.update({ where: { id }, data: { ...(dto.comprovanteUrl ? { comprovanteUrl: dto.comprovanteUrl } : {}), ...(dto.codigoBilhete ? { codigoBilhete: dto.codigoBilhete.trim() } : {}), status: StatusBolao.registrado, registradoEm: pool.registradoEm ?? new Date() } });
       await tx.cota.updateMany({ where: { bolaoId: id, status: StatusCota.paga }, data: { status: StatusCota.registrada, ...(dto.comprovanteUrl ? { comprovanteIndividualUrl: dto.comprovanteUrl } : {}) } });
