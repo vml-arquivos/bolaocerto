@@ -138,7 +138,7 @@ describe('Administrative user management', () => {
     it('a conta principal não pode ser excluída por outro administrador', async () => {
       const { service, users, tx } = setup();
       users.push({ id: 'dono', papel: 'admin', email: 'dono@example.invalid', _count: {}, afiliado: null });
-      await expect(service.deleteEmpty('dono', actor)).rejects.toThrow(/conta principal/);
+      await expect(service.deleteEmpty('dono', actor)).rejects.toThrow(/nível igual ou superior|conta principal/);
       expect(tx.usuario.delete).not.toHaveBeenCalled();
     });
     it('convites criados e usados pela pessoa não impedem a exclusão (admin comum também)', async () => {
@@ -147,5 +147,35 @@ describe('Administrative user management', () => {
       await expect(service.deleteEmpty('buyer', actor)).resolves.toEqual({ id: 'buyer', excluido: true });
       expect(tx.convite.deleteMany).toHaveBeenCalledWith({ where: { criadoPorUsuarioId: 'buyer' } });
     });
+  });
+});
+
+describe('Administrative user management — hierarquia', () => {
+  const OLD = process.env.ADMIN_BOOTSTRAP_EMAIL;
+  beforeEach(() => { process.env.ADMIN_BOOTSTRAP_EMAIL = 'dono@example.invalid'; });
+  afterEach(() => { if (OLD === undefined) delete process.env.ADMIN_BOOTSTRAP_EMAIL; else process.env.ADMIN_BOOTSTRAP_EMAIL = OLD; });
+  const dono = { id: 'dono', papel: 'admin', email: 'dono@example.invalid', nome: 'Dono', cpf: '52998224725', telefone: null, dataNascimento: new Date('1990-01-01'), desativadoEm: null, _count: {}, afiliado: null };
+  const outroAdmin = { id: 'adm2', papel: 'admin', email: 'adm2@example.invalid', nome: 'Outro', cpf: '52998224725', telefone: null, dataNascimento: new Date('1990-01-01'), desativadoEm: null, _count: {}, afiliado: null };
+
+  it('administrador comum não vê, edita, desativa, apaga nem reenvia senha da conta principal', async () => {
+    const { service, users, tx } = setup(); users.push(dono);
+    await expect(service.detail('dono', actor)).rejects.toThrow(/nível igual ou superior/);
+    await expect(service.edit('dono', { nome: 'Novo Nome', email: 'x@example.invalid' }, actor)).rejects.toThrow(/nível igual ou superior/);
+    await expect(service.setActive('dono', false, actor)).rejects.toThrow(/nível igual ou superior/);
+    await expect(service.deleteEmpty('dono', actor)).rejects.toThrow(/nível igual ou superior/);
+    await expect(service.sendReset('dono', actor)).rejects.toThrow(/nível igual ou superior/);
+    expect(tx.usuario.update).not.toHaveBeenCalled(); expect(tx.tokenSenha.create).not.toHaveBeenCalled();
+  });
+  it('administrador comum não mexe em outro administrador', async () => {
+    const { service, users, tx } = setup(); users.push(outroAdmin);
+    await expect(service.setActive('adm2', false, actor)).rejects.toThrow(/nível igual ou superior/);
+    await expect(service.sendReset('adm2', actor)).rejects.toThrow(/nível igual ou superior/);
+    expect(tx.usuario.update).not.toHaveBeenCalled();
+  });
+  it('a conta principal gerencia outro administrador', async () => {
+    const { service, users } = setup(); users.push(outroAdmin);
+    const principal = { id: 'dono', papel: 'admin' as const, email: 'dono@example.invalid' };
+    users.push({ ...dono });
+    await expect(service.setActive('adm2', false, principal)).resolves.toEqual({ id: 'adm2', ativo: false });
   });
 });

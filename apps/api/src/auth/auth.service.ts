@@ -1,5 +1,5 @@
-import { isSuperAdmin } from '../admin/superadmin';
-import { ConflictException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { assertCanManage, isSuperAdmin } from '../admin/superadmin';
+import { ConflictException, ForbiddenException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
@@ -238,8 +238,12 @@ export class AuthService {
 
   /** Perdeu o celular? Um administrador desliga o 2FA da conta (auditado) e a pessoa precisa entrar de novo. */
   async adminResetTwoFactor(targetId: string, adminId: string): Promise<{ ok: true }> {
-    const target = await this.prisma.usuario.findUnique({ where: { id: targetId }, select: { id: true } });
+    const target = await this.prisma.usuario.findUnique({ where: { id: targetId }, select: { id: true, email: true, papel: true } });
     if (!target) throw new ConflictException('Usuário não encontrado.');
+    // Ninguém redefine o 2FA de uma conta de nível igual ou superior ao seu (só a própria conta principal mexe em administradores).
+    const actor = await this.prisma.usuario.findUnique({ where: { id: adminId }, select: { id: true, email: true, papel: true } });
+    if (!actor) throw new ForbiddenException('Acesso administrativo indisponível.');
+    assertCanManage(actor, target);
     await this.prisma.usuario.update({ where: { id: targetId }, data: { totpAtivo: false, totpSecret: null, totpRecuperacao: [], tokenVersion: { increment: 1 } } });
     await this.audit?.record(this.prisma, { entidade: 'usuario', entidadeId: targetId, evento: 'auth.2fa_redefinido_por_admin', atorId: adminId }).catch(() => undefined);
     return { ok: true };

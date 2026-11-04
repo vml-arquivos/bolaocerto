@@ -142,11 +142,14 @@ describe('Verificação em duas etapas', () => {
     expect(rows[0]).toMatchObject({ totpAtivo: false, totpSecret: null });
 
     const other = await setup({ totpAtivo: true, totpSecret: sealSecret(secret) });
+    other.rows.push({ id: 'admin-1', email: 'adm@exemplo.com', papel: 'admin' }, { id: 'admin-2', email: 'adm2@exemplo.com', papel: 'admin' });
     await other.service.adminResetTwoFactor('u1', 'admin-1');
     expect(other.rows[0]).toMatchObject({ totpAtivo: false, totpSecret: null, tokenVersion: 1 });
     expect(other.audit).toContain('auth.2fa_redefinido_por_admin');
     expect(audit).toContain('auth.2fa_desativado');
     await expect(other.service.adminResetTwoFactor('nao-existe', 'admin-1')).rejects.toBeInstanceOf(ConflictException);
+    // Um administrador comum não redefine o 2FA de outro administrador.
+    await expect(other.service.adminResetTwoFactor('admin-2', 'admin-1')).rejects.toThrow(/nível igual ou superior/);
   });
 
   it('não permite iniciar de novo com 2FA ativo (evita trocar o segredo sem prova)', async () => {

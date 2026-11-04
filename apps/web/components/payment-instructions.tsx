@@ -1,10 +1,11 @@
 'use client';
 
+import { PixQr } from './pix-qr';
 import { useCallback, useEffect, useState } from 'react';
 import { money } from '../lib/domain';
 
 export type PaymentView = {
-  status: string; metodo?: string; qrCodePix?: string | null; qrCodeUrl?: string | null; linhaDigitavel?: string | null; boletoUrl?: string | null;
+  status: string; metodo?: string; qrCodePix?: string | null; qrCodeUrl?: string | null; linhaDigitavel?: string | null; boletoUrl?: string | null; checkoutUrl?: string | null;
   vencimentoEm?: string | null; valorBruto?: string;
 };
 
@@ -42,12 +43,14 @@ export function PaymentInstructions({ shareId, payment, onPaid }: { shareId: str
   if (current.status === 'confirmado') return <div className="form-message form-success" role="status"><strong>Pagamento confirmado!</strong> Sua cota está garantida.</div>;
   if (current.status === 'falhou' || current.status === 'estornado') return <div className="form-message form-error" role="alert">Esta cobrança foi cancelada. Faça uma nova reserva para participar.</div>;
   const isBoleto = current.metodo === 'boleto';
+  const isCard = current.metodo === 'cartao';
   return <div className="payment-instructions" style={{ display: 'grid', gap: 12 }}>
-    {current.vencimentoEm && <p className="muted">{isBoleto ? 'Boleto' : 'Pix'} válido até <strong>{dueFormat.format(new Date(current.vencimentoEm))}</strong>{current.valorBruto ? <> · valor <strong>{money(current.valorBruto)}</strong></> : null}</p>}
-    {current.qrCodeUrl && !isBoleto && <img src={current.qrCodeUrl} alt="QR Code Pix" width={200} height={200} style={{ background: '#fff', padding: 8, borderRadius: 8, justifySelf: 'center' }} />}
+    {current.vencimentoEm && <p className="muted">{isBoleto ? 'Boleto' : isCard ? 'Pagamento no cartão' : 'Pix'} válido até <strong>{dueFormat.format(new Date(current.vencimentoEm))}</strong>{current.valorBruto ? <> · valor <strong>{money(current.valorBruto)}</strong></> : null}</p>}
+    {current.qrCodePix && !isCard && <div style={{ justifySelf: 'center' }}><PixQr payload={current.qrCodePix} size={220} /></div>}
     {current.qrCodePix && <CopyField label="Pix copia e cola" value={current.qrCodePix} />}
     {isBoleto && current.linhaDigitavel && <CopyField label="Linha digitável do boleto" value={current.linhaDigitavel} />}
+    {isCard && current.checkoutUrl && <a className="button button-primary" href={current.checkoutUrl}>Pagar no cartão (página segura)</a>}
     {isBoleto && current.boletoUrl && <a className="button button-secondary" href={current.boletoUrl} target="_blank" rel="noreferrer">Abrir boleto (PDF)</a>}
-    <p className="muted" role="status">Aguardando pagamento… esta tela atualiza sozinha. {isBoleto ? 'Boletos podem levar até 3 dias úteis para compensar; pagando pelo Pix do boleto a confirmação é imediata.' : ''}</p>
+    <p className="muted" role="status">Aguardando pagamento… esta tela atualiza sozinha. {isCard ? 'Você paga na página segura do Mercado Pago e volta para o site; o número do cartão não passa pelo Bolão Livre. ' : ''}{isBoleto ? 'Boletos podem levar até 3 dias úteis para compensar; pagando pelo Pix do boleto a confirmação é imediata.' : ''}</p>
   </div>;
 }

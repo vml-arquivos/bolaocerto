@@ -76,10 +76,11 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
         </div>}
       </Panel>
 
-      <Panel title="Pagamentos" description="Cobrança por Pix e boleto">
+      <Panel title="Pagamentos" description="Pix e boleto pela Cora, cartão pelo Mercado Pago">
         <StatusList items={[
           { ok: Boolean(pay.habilitado), title: pay.habilitado ? 'Ligados' : 'Desligados', text: pay.habilitado ? `Serviço: ${pay.provedor}${pay.ambiente ? ` (${pay.ambiente === 'production' ? 'valendo' : 'teste'})` : ''}` : 'Ninguém consegue reservar cotas enquanto estiver desligado.' },
           ...(pay.provedor === 'cora' ? [{ ok: Boolean(pay.credenciais), title: 'Chaves da Cora', text: pay.credenciais ? 'Preenchidas' : 'Faltam chaves (CORA_CLIENT_ID, certificado e chave)' }] : []),
+          ...(pay.cartao ? [{ ok: Boolean(pay.cartao.credencial), title: 'Cartão (Mercado Pago)', text: pay.cartao.credencial ? `Ligado${pay.cartao.assinatura ? ' · assinatura dos avisos conferida' : ' · assinatura dos avisos não preenchida (recomendado)'}` : 'Falta a credencial (MERCADOPAGO_ACCESS_TOKEN)' }] : [{ ok: false, title: 'Cartão', text: 'Desligado. Só Pix e boleto estão disponíveis.' }]),
           { ok: Boolean(pay.avisosConfigurados), title: 'Senha dos avisos de pagamento', text: pay.avisosConfigurados ? 'Preenchida' : 'Não preenchida (recomendado preencher)' },
         ]} />
       </Panel>

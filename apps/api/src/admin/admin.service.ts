@@ -1,4 +1,4 @@
-import { isSuperAdmin } from './superadmin';
+import { assertCanGrantRole, assertCanManage, isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
@@ -521,11 +521,13 @@ export class AdminService {
     return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.cotasIlimitadas ? null : pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug } : null };
   }
 
-  async listUsers(query: AdminListQueryDto = {}) {
+  async listUsers(query: AdminListQueryDto, actor: AuthUser) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const search: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
     const roleFilter: Prisma.UsuarioWhereInput = query.papel === 'equipe' ? { papel: { in: ['admin', 'operacao'] } } : query.papel ? { papel: query.papel as PapelUsuario } : {};
-    const where: Prisma.UsuarioWhereInput = { ...search, ...roleFilter, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
+    // Só aparecem contas de nível menor que o do ator (e a própria): um administrador comum não vê o superadmin nem outros administradores.
+    const visibility: Prisma.UsuarioWhereInput = isSuperAdmin(actor) ? {} : { OR: [{ id: actor.id }, { papel: { in: ['cotista', 'afiliado', 'operacao'] } }] };
+    const where: Prisma.UsuarioWhereInput = { AND: [visibility], ...search, ...roleFilter, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
     const [items, total] = await Promise.all([
       this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.usuario.count({ where }),
@@ -537,6 +539,8 @@ export class AdminService {
     if (id === user.id && dto.papel !== 'admin') throw new ConflictException('O administrador não pode remover o próprio acesso.');
     const target = await this.prisma.usuario.findUnique({ where: { id }, select: { id: true, nome: true, email: true, papel: true } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
+    assertCanManage(user, target);
+    if (id !== user.id) assertCanGrantRole(user, dto.papel);
     const updated = await this.prisma.$transaction(async (tx) => {
       await lockAdminActor(tx, user.id);
       const result = await tx.usuario.update({ where: { id }, data: { papel: dto.papel, tokenVersion: { increment: 1 } } });
@@ -560,6 +564,7 @@ export class AdminService {
   async updateUserKyc(id: string, dto: UpdateUserKycDto, user: AuthUser) {
     const target = await this.prisma.usuario.findUnique({ where: { id } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
+    assertCanManage(user, target);
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.usuario.update({ where: { id }, data: { statusKyc: dto.statusKyc } });
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.kyc.alterado', atorId: user.id, payloadAntes: target as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });

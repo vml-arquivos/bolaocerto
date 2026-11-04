@@ -44,7 +44,7 @@ export class ConnectionsService {
       banco: database,
       email: this.mail.describe(),
       push: this.push ? await this.push.stats().then((stats) => ({ disponivel: true, ...stats })).catch(() => ({ disponivel: false, aparelhos: 0, pessoas: 0 })) : { disponivel: false, aparelhos: 0, pessoas: 0 },
-      pagamentos: { provedor: provider, habilitado: paymentsOn, ambiente: this.config.get<string>('CORA_ENV') ?? null, credenciais: provider === 'cora' ? coraCreds : null, avisosConfigurados: Boolean(this.config.get<string>('PAYMENT_WEBHOOK_SECRET')) },
+      pagamentos: { provedor: provider, habilitado: paymentsOn, ambiente: this.config.get<string>('CORA_ENV') ?? null, credenciais: provider === 'cora' ? coraCreds : null, avisosConfigurados: Boolean(this.config.get<string>('PAYMENT_WEBHOOK_SECRET')), cartao: (this.config.get<string>('CARD_PAYMENT_PROVIDER') ?? '').trim().toLowerCase() === 'mercadopago' ? { provedor: 'mercadopago', credencial: Boolean(this.config.get<string>('MERCADOPAGO_ACCESS_TOKEN')), assinatura: Boolean(this.config.get<string>('MERCADOPAGO_SIGNATURE_SECRET')) } : null },
       caixa: { ultimaAtualizacao: lastSync, idadeMinutos: syncAge, ok: syncAge !== null && syncAge <= 90 },
       alertas: { configurado: this.alerts.isConfigured(), rotulo: this.config.get<string>('ALERT_ENV_LABEL') || 'BL' },
       arquivos: { pastaOk: writable.ok, detalhe: writable.detalhe ?? null, pasta: uploadsPath, quantidade: usage.arquivos, bytes: usage.bytes, limiteMb: Math.round(this.storage.maxBytes() / 1024 / 1024), pastaPadraoDocker: uploadsPath === '/data/uploads' },

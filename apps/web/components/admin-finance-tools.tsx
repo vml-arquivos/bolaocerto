@@ -3,6 +3,7 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { concursoNo } from '../lib/contest';
 import { authenticatedFetch as authFetch } from '../lib/client-api';
+import { useIsSuperAdmin } from './staff-gate';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -284,7 +285,7 @@ export function PaymentSettingsPanel({ notify }: { notify: (type: 'success' | 'e
     finally { setBusy(''); }
   }
   if (!settings) return null;
-  return <Panel title="Pagamentos (Cora)" description="Como está a cobrança pela Cora.">
+  return <Panel title="Pagamentos" description="Como estão as cobranças: Pix e boleto pela Cora, cartão pelo Mercado Pago.">
     <div className="admin-summary-list">
       <div><span>Pagamentos habilitados</span><strong>{settings.habilitado ? 'Sim' : 'Não'}</strong></div>
       <div><span>Serviço de cobrança</span><strong>{settings.provedor}{settings.ambienteCora ? ` (${settings.ambienteCora === 'production' ? 'produção' : 'teste'})` : ''}</strong></div>
@@ -292,6 +293,7 @@ export function PaymentSettingsPanel({ notify }: { notify: (type: 'success' | 'e
       <div><span>Valor mínimo por cobrança</span><strong>{brl(settings.valorMinimo)}</strong></div>
       <div><span>Boleto: vencimento / antecedência mínima</span><strong>{settings.boletoVencimentoDias} dias / {settings.boletoAntecedenciaMinimaHoras} h antes do corte</strong></div>
       <div><span>Endereço de avisos da Cora</span><strong style={{ wordBreak: 'break-all' }}>{settings.webhookUrl ?? 'Defina PUBLIC_API_URL'}</strong></div>
+      {settings.webhookCartaoUrl && <div><span>Endereço de avisos do cartão (Mercado Pago)</span><strong style={{ wordBreak: 'break-all' }}>{settings.webhookCartaoUrl}</strong></div>}
       <div><span>Senha dos avisos</span><strong>{settings.webhookTokenConfigurado ? 'Configurado' : 'Não configurado (recomendado)'}</strong></div>
     </div>
     <div className="admin-row-actions" style={{ marginTop: 12 }}>
@@ -354,6 +356,7 @@ function NoteForm({ kind, onSubmit, onCancel, busy }: { kind: 'emitir' | 'manual
 }
 
 export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', text: string) => void }) {
+  const superAdmin = useIsSuperAdmin();
   const [settings, setSettings] = useState<Rec | null>(null);
   const [data, setData] = useState<Rec>({ notas: [], semNota: [] });
   const [loading, setLoading] = useState(true);
@@ -405,8 +408,8 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       </div>
       <div className="admin-callout"><strong>Atenção fiscal</strong><p>{settings.aviso}</p></div>
       <Panel title="Emissor e conexão" description="Parâmetros vêm das variáveis do servidor; nenhum segredo é editável aqui." action={<div className="admin-row-actions">
-        <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : 'Verificar na Cora'}</button>
-        <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>
+        {superAdmin && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : 'Verificar na Cora'}</button>}
+        {superAdmin && <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>}
         <button className="admin-button admin-button-ghost" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
       </div>}>
         <div className="admin-summary-list">

@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'crypto';
 import { AuditService } from '../common/audit.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
+import { assertCanManage } from '../admin/superadmin';
 import { NotificationsService } from '../notifications/notifications.service';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from '../auth/password-policy';
 
@@ -57,11 +58,12 @@ export class AccountService {
     const expiraEm = new Date(Date.now() + RESET_TTL_MINUTES * 60_000);
     await this.prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(28471, 1)`;
-      const actor = await tx.usuario.findUnique({ where: { id: adminId }, select: { papel: true, desativadoEm: true } });
+      const actor = await tx.usuario.findUnique({ where: { id: adminId }, select: { id: true, email: true, papel: true, desativadoEm: true } });
       if (!actor || actor.papel !== 'admin' || actor.desativadoEm) throw new ForbiddenException('Acesso administrativo indisponível.');
       await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${usuarioId}::uuid FOR UPDATE`;
-      const user = await tx.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, desativadoEm: true } });
+      const user = await tx.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, email: true, papel: true, desativadoEm: true } });
       if (!user) throw new NotFoundException('Usuário não encontrado.');
+      assertCanManage(actor, user);
       if (user.desativadoEm) throw new ConflictException('Reative a conta antes de gerar um link.');
       const recent = await tx.tokenSenha.count({ where: { usuarioId, criadoEm: { gt: new Date(Date.now() - 3_600_000) } } });
       if (recent >= RESET_MAX_PER_HOUR) throw new ConflictException('Limite de 3 solicitações por hora. Aguarde antes de gerar outro link.');

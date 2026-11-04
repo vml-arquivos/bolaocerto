@@ -16,7 +16,10 @@ export function homeForRole(papel?: string | null) {
 /** Telas de painel que a equipe de operação pode usar (as demais são só do administrador). */
 export const STAFF_VIEWS = ['operacao'] as const;
 
-const SHARED_PREFIXES = ['/boloes', '/aplicativo', '/minha-conta', '/resultados', '/estatisticas'];
+/** Telas só da conta principal do sistema (a API também bloqueia os demais administradores). */
+export const SUPERADMIN_VIEWS = ['conexoes', 'auditoria', 'configuracoes'] as const;
+
+const SHARED_PREFIXES = ['/boloes', '/aplicativo', '/minha-conta', '/resultados', '/estatisticas', '/checkout'];
 const ALLOWED_NEXT: Record<Papel, string[]> = {
   cotista: SHARED_PREFIXES,
   afiliado: [...SHARED_PREFIXES, '/afiliado'],

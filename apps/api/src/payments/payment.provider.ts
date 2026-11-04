@@ -25,6 +25,10 @@ export interface CreateChargeInput {
   description: string;
   /** Permite forçar uma nova chave de idempotência (nova tentativa após falha). */
   idempotencyKey?: string;
+  /** Até quando a cobrança vale (fim da reserva). Usado pelo cartão para expirar o link de pagamento. */
+  expiresAt?: Date;
+  /** Caminho do site para onde o cliente volta depois de pagar no provedor (ex.: /checkout/<cota>). */
+  returnPath?: string;
 }
 
 export interface CreatedCharge {
@@ -36,6 +40,8 @@ export interface CreatedCharge {
   /** URL da imagem PNG do QR Code, quando fornecida pelo provedor. */
   qrCodeUrl?: string | null;
   boleto?: { digitableLine: string | null; barcode: string | null; url: string | null };
+  /** Endereço da página segura do provedor onde o cliente paga com cartão. */
+  checkoutUrl?: string | null;
 }
 
 export interface PaymentWebhook {
@@ -304,6 +310,149 @@ export function mapCoraStatus(status?: string): ChargeStatus {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Mercado Pago — cartão (Checkout Pro)                                       */
+/* -------------------------------------------------------------------------- */
+
+export interface MercadoPagoRequest { method: 'GET' | 'POST'; path: string; headers: Record<string, string>; body?: string }
+export interface MercadoPagoResponse { status: number; body: string }
+export type MercadoPagoTransport = (request: MercadoPagoRequest) => Promise<MercadoPagoResponse>;
+
+/**
+ * Segundo provedor, só para cartão de crédito e débito. O cliente é levado à página segura do Mercado Pago (Checkout Pro),
+ * paga lá e volta ao site: o número do cartão nunca passa pelo servidor do BL. O aviso de pagamento não é confiado:
+ * o BL consulta o pagamento na API do Mercado Pago antes de confirmar. A cobrança é identificada por `mp_<id do pagamento BL>`.
+ */
+export class MercadoPagoProvider implements PaymentProvider {
+  readonly name = 'mercadopago';
+  readonly methods: ChargeMethod[] = ['cartao'];
+  readonly minAmount: number;
+  private readonly token: string;
+  private readonly baseUrl: string;
+  private readonly webhookSecret: string;
+  private readonly signatureSecret: string;
+  private readonly maxInstallments: number;
+  private readonly transport: MercadoPagoTransport;
+
+  constructor(private readonly config: ConfigService, transport?: MercadoPagoTransport) {
+    this.token = config.get<string>('MERCADOPAGO_ACCESS_TOKEN', '');
+    this.baseUrl = config.get<string>('MERCADOPAGO_BASE_URL', 'https://api.mercadopago.com').replace(/\/$/, '');
+    this.webhookSecret = config.get<string>('PAYMENT_WEBHOOK_SECRET', '');
+    this.signatureSecret = config.get<string>('MERCADOPAGO_SIGNATURE_SECRET', '');
+    this.minAmount = Number(config.get<string>('MERCADOPAGO_MIN_AMOUNT', '5')) || 5;
+    this.maxInstallments = Math.min(12, Math.max(1, Number(config.get<string>('MERCADOPAGO_MAX_INSTALLMENTS', '1')) || 1));
+    this.transport = transport ?? this.defaultTransport();
+  }
+
+  private defaultTransport(): MercadoPagoTransport {
+    return async (request) => {
+      const response = await fetch(`${this.baseUrl}${request.path}`, { method: request.method, headers: request.headers, body: request.body, signal: AbortSignal.timeout(20_000) });
+      return { status: response.status, body: await response.text() };
+    };
+  }
+
+  private async call<T>(method: 'GET' | 'POST', path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
+    if (!this.token) throw new ServiceUnavailableException('Credencial do Mercado Pago não configurada (MERCADOPAGO_ACCESS_TOKEN).');
+    const headers: Record<string, string> = { accept: 'application/json', authorization: `Bearer ${this.token}` };
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    if (idempotencyKey) headers['x-idempotency-key'] = idempotencyKey;
+    let response: MercadoPagoResponse;
+    try { response = await this.transport({ method, path, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+    catch { throw new ServiceUnavailableException('Não foi possível falar com o Mercado Pago. Tente novamente em instantes.'); }
+    if (response.status < 200 || response.status >= 300) {
+      if (response.status === 401 || response.status === 403) throw new ServiceUnavailableException('O Mercado Pago recusou a credencial. Confira MERCADOPAGO_ACCESS_TOKEN.');
+      throw new ServiceUnavailableException(`Mercado Pago respondeu HTTP ${response.status}.`);
+    }
+    try { return JSON.parse(response.body) as T; } catch { throw new ServiceUnavailableException('Resposta inválida do Mercado Pago.'); }
+  }
+
+  async createCharge(input: CreateChargeInput): Promise<CreatedCharge> {
+    if (input.method !== 'cartao') throw new BadRequestException('O Mercado Pago está habilitado só para cartão.');
+    if (input.value < this.minAmount) throw new BadRequestException(`O valor mínimo para pagamento no cartão é R$ ${this.minAmount.toFixed(2).replace('.', ',')}.`);
+    const site = (this.config.get<string>('APP_PUBLIC_URL', '') || this.config.get<string>('WEB_ORIGIN', '')).replace(/\/$/, '');
+    const api = (this.config.get<string>('PUBLIC_API_URL', '') || site).replace(/\/$/, '');
+    const back = input.returnPath && input.returnPath.startsWith('/') && !input.returnPath.startsWith('//') ? input.returnPath : '/minha-conta';
+    const [firstName = '', ...rest] = input.customerName.trim().split(/\s+/);
+    const preference = await this.call<{ id?: string; init_point?: string; sandbox_init_point?: string }>('POST', '/checkout/preferences', {
+      items: [{ id: input.externalReference, title: input.description.slice(0, 120), quantity: 1, currency_id: 'BRL', unit_price: Number(input.value.toFixed(2)) }],
+      payer: { name: firstName, surname: rest.join(' '), email: input.customerEmail, identification: { type: 'CPF', number: input.customerCpf } },
+      external_reference: input.externalReference,
+      ...(api ? { notification_url: `${api}/api/v1/webhooks/pagamento/${this.name}${this.webhookSecret ? `?token=${encodeURIComponent(this.webhookSecret)}` : ''}` } : {}),
+      ...(site ? { back_urls: { success: `${site}${back}`, pending: `${site}${back}`, failure: `${site}${back}` }, auto_return: 'approved' } : {}),
+      payment_methods: { excluded_payment_types: [{ id: 'ticket' }, { id: 'atm' }, { id: 'bank_transfer' }, { id: 'account_money' }], installments: this.maxInstallments },
+      binary_mode: true,
+      statement_descriptor: 'BOLAO LIVRE',
+      ...(input.expiresAt ? { expires: true, expiration_date_from: new Date().toISOString(), expiration_date_to: input.expiresAt.toISOString() } : {}),
+    }, toIdempotencyKey(input.idempotencyKey ?? input.externalReference));
+    const url = this.token.startsWith('TEST-') ? preference.sandbox_init_point ?? preference.init_point : preference.init_point;
+    if (!preference.id || !url) throw new ServiceUnavailableException('O Mercado Pago não devolveu o link de pagamento.');
+    return { provider: this.name, transactionId: `mp_${input.externalReference}`, status: 'pending', qrCode: null, checkoutUrl: url };
+  }
+
+  /** `data.id` vem no corpo (`{ type: 'payment', data: { id } }`) ou na URL (`?type=payment&data.id=…` / `?topic=payment&id=…`). */
+  private paymentIdFrom(rawBody: string, query: Record<string, string | undefined>): string | null {
+    let body: { type?: string; topic?: string; action?: string; data?: { id?: string | number } } = {};
+    try { body = rawBody ? JSON.parse(rawBody) : {}; } catch { body = {}; }
+    const type = body.type ?? query.type ?? query.topic ?? (body.action ?? '').split('.')[0];
+    if (type !== 'payment') return null;
+    const id = body.data?.id ?? query['data.id'] ?? query.id;
+    return id === undefined || id === '' ? null : String(id);
+  }
+
+  private verifySignature(headers: Record<string, string | undefined>, dataId: string): void {
+    if (!this.signatureSecret) return;
+    const signature = headers['x-signature'] ?? '';
+    const parts = Object.fromEntries(signature.split(',').map((piece) => piece.trim().split('=') as [string, string]));
+    const requestId = headers['x-request-id'] ?? '';
+    if (!parts.ts || !parts.v1) throw new UnauthorizedException('Assinatura do Mercado Pago ausente.');
+    const expected = createHmac('sha256', this.signatureSecret).update(`id:${dataId.toLowerCase()};request-id:${requestId};ts:${parts.ts};`).digest('hex');
+    if (!safeEqual(parts.v1, expected)) throw new UnauthorizedException('Assinatura do Mercado Pago inválida.');
+  }
+
+  async resolveWebhook(rawBody: string, headers: Record<string, string | undefined>, query: Record<string, string | undefined> = {}): Promise<PaymentWebhook | null> {
+    if (!this.webhookSecret) throw new UnauthorizedException('Segredo de webhook não configurado.');
+    if (!query.token || !safeEqual(query.token, this.webhookSecret)) throw new UnauthorizedException('Token de webhook inválido.');
+    const paymentId = this.paymentIdFrom(rawBody, query);
+    if (!paymentId) return null; // outros tópicos (ordens, estornos, etc.) não são pagamento
+    this.verifySignature(headers, paymentId);
+    // O aviso nunca é confiado: o estado vem da API do Mercado Pago.
+    const payment = await this.call<MpPayment>('GET', `/v1/payments/${encodeURIComponent(paymentId)}`);
+    return this.toWebhook(payment);
+  }
+
+  private toWebhook(payment: MpPayment): PaymentWebhook | null {
+    if (!payment.external_reference) return null;
+    return { transactionId: `mp_${payment.external_reference}`, status: mapMercadoPagoStatus(payment.status), paidAmount: payment.transaction_amount };
+  }
+
+  async fetchStatus(transactionId: string): Promise<{ status: ChargeStatus; paidAmount?: number }> {
+    const reference = transactionId.replace(/^mp_/, '');
+    const found = await this.call<{ results?: MpPayment[] }>('GET', `/v1/payments/search?external_reference=${encodeURIComponent(reference)}&sort=date_created&criteria=desc&limit=20`);
+    const payments = found.results ?? [];
+    const approved = payments.find((payment) => mapMercadoPagoStatus(payment.status) === 'confirmed');
+    if (approved) return { status: 'confirmed', paidAmount: approved.transaction_amount };
+    const refunded = payments.find((payment) => mapMercadoPagoStatus(payment.status) === 'refunded');
+    if (refunded) return { status: 'refunded' };
+    return { status: 'pending' }; // sem pagamento, recusado ou em análise: segue a reserva
+  }
+}
+
+interface MpPayment { id?: number | string; status?: string; external_reference?: string; transaction_amount?: number }
+
+/**
+ * approved = pago. Recusa (rejected) NÃO libera a cota: no Checkout Pro o cliente pode tentar outro cartão
+ * dentro da mesma cobrança, e a reserva expira sozinha. cancelled/expired encerram a cobrança.
+ */
+export function mapMercadoPagoStatus(status?: string): ChargeStatus {
+  switch ((status ?? '').toLowerCase()) {
+    case 'approved': return 'confirmed';
+    case 'refunded':
+    case 'charged_back': return 'refunded';
+    case 'cancelled': return 'failed';
+    default: return 'pending'; // pending, in_process, authorized, in_mediation, rejected
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Asaas (mantido)                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -416,6 +565,14 @@ export class DisabledPaymentProvider implements PaymentProvider {
   async resolveWebhook(): Promise<PaymentWebhook | null> {
     throw new ServiceUnavailableException('Webhooks de pagamento indisponíveis: provedor não configurado.');
   }
+}
+
+/** Provedor opcional do cartão (CARD_PAYMENT_PROVIDER=mercadopago). Vazio = cartão desligado. */
+export function buildCardProvider(config: ConfigService): PaymentProvider | null {
+  const provider = (config.get<string>('CARD_PAYMENT_PROVIDER', '') || '').trim().toLowerCase();
+  if (!provider) return null;
+  if (provider === 'mercadopago') return new MercadoPagoProvider(config);
+  throw new ServiceUnavailableException(`Provedor de cartão não suportado: ${provider}`);
 }
 
 export function buildPaymentProvider(config: ConfigService): PaymentProvider {

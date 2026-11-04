@@ -117,6 +117,12 @@ describe('AccountService', () => {
     expect(await argon2.verify(users[0].senhaHash, 'Senha2026')).toBe(true);
   });
 
+  it('link de redefinição não é gerado para conta de nível igual ou superior', async () => {
+    const { service, users } = setup();
+    users.push({ id: 'adm2', email: 'adm2@exemplo.com', papel: 'admin', desativadoEm: null });
+    await expect(service.adminResetLink('adm2', 'admin1')).rejects.toThrow(/nível igual ou superior/);
+  });
+
   it('link manual exige administrador ativo, conta ativa e respeita limite', async () => {
     const { service, users } = setup();
     await expect(service.adminResetLink('u1', 'u1')).rejects.toThrow(/administrativo/);

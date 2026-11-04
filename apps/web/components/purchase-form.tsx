@@ -11,7 +11,7 @@ import { NotifyMe } from './notify-me';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
-const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito', pix_automatico: 'Pix Automático (recorrente)' };
+const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito ou débito', pix_automatico: 'Pix Automático (recorrente)' };
 
 export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEnabled, release, cutoffAt, contestStatus, hasResult, serverNow, rules }: { rules?: PoolSalesRules; cutoffAt?: string; contestStatus?: string; hasResult: boolean; serverNow: number; poolId: string; available: number | null; unitPrice: string; status: string; paymentsEnabled: boolean; release?: PoolRelease }) {
   const now = useSaleClock(serverNow);
@@ -35,7 +35,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   useEffect(() => {
     if (!paymentsEnabled) return;
     void fetch('/api/v1/pagamentos/metodos').then((response) => (response.ok ? response.json() : null)).then((data: { metodos?: string[] } | null) => {
-      const available = (data?.metodos ?? ['pix']).filter((item): item is Method => item === 'pix' || item === 'boleto');
+      const available = (data?.metodos ?? ['pix']).filter((item): item is Method => item === 'pix' || item === 'boleto' || item === 'cartao');
       if (available.length) { setMethods(available); setMethod(available[0] as Method); }
     }).catch(() => undefined);
   }, [paymentsEnabled]);
@@ -56,7 +56,11 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
       const payment = await paymentResponse.json() as PaymentView & { message?: string | string[] };
       if (!paymentResponse.ok) throw new Error((Array.isArray(payment.message) ? payment.message.join(' ') : payment.message) || 'Reserva criada, mas o pagamento não pôde ser iniciado. Consulte Minhas Cotas.');
       setCreated({ shareId: reserve.id, payment });
-      setMessage(method === 'boleto' ? 'Reserva concluída. Pague o boleto ou use o Pix incluso.' : 'Reserva concluída. Use o código Pix abaixo para pagar.');
+      // Pagamento em tela própria: QR Code, código e confirmação; depois volta para este bolão.
+      try { window.sessionStorage.setItem(`bl-checkout:${reserve.id}`, JSON.stringify({ voltar: `/boloes/${poolId}`, quantidade: Number(form.get('quantidade')), titular: String(form.get('titularNome')) })); } catch { /* sem sessionStorage: o checkout usa Minhas Cotas */ }
+      setMessage('Reserva concluída. Abrindo o pagamento…');
+      window.location.assign(`/checkout/${reserve.id}?voltar=${encodeURIComponent(`/boloes/${poolId}`)}`);
+      return;
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
 
@@ -72,7 +76,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
         <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div>
         {methods.length > 1 && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
         <details><summary>Contrato desta compra · {contract?.versao ?? 'carregando'}</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito os <Link href="/termos" target="_blank"><u>termos de participação</u></Link>, confirmo ser maior de 18 anos e autorizo o registro.</span></label>
-        <button className="button button-primary" disabled={loading || !accepted || !contract?.aprovado}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : 'Reservar e gerar Pix'}</button>
+        <button className="button button-primary" disabled={loading || !accepted || !contract?.aprovado}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : method === 'cartao' ? 'Reservar e pagar no cartão' : 'Reservar e gerar Pix'}</button>
       </form> : ruleState === 'em_breve' ? <div className="notice"><strong>A venda ainda não começou</strong><span>As cotas abrem em {when(rules?.inicioEm)}.</span></div>
         : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
         : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}

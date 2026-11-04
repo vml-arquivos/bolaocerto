@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
 import { AdminModal } from './admin-attachments';
+import { useIsSuperAdmin } from './staff-gate';
 type User = { id: string; nome: string; email: string; cpf: string; telefone: string | null; dataNascimento: string; papel: string; statusKyc: string; desativadoEm: string | null; criadoEm: string; _count: { cotasCompradas: number; boloesCriados: number } };
 async function api(path: string, options?: RequestInit) {
   const response = await authenticatedFetch(path, { ...options, cache: 'no-store' });
@@ -11,6 +12,7 @@ async function api(path: string, options?: RequestInit) {
 }
 const roleLabels: Record<string, string> = { cotista: 'Cliente / cotista', afiliado: 'Afiliado', operacao: 'Equipe de operação', admin: 'Administrador' };
 export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: () => void; onDone: () => Promise<void> }) {
+  const superAdmin = useIsSuperAdmin();
   const [user, setUser] = useState<User | null>(null);
   const [message, setMessage] = useState('');
   const [savedEmail, setSavedEmail] = useState('');
@@ -64,7 +66,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
         <button className="admin-button" disabled={busy}>{busy ? 'Processando…' : 'Salvar alterações'}</button>
       </form>
       <hr/><h3>Perfil de acesso</h3>
-      <label className="admin-field"><span>Permissões do usuário</span><select value={user.papel} disabled={busy} onChange={e => setUser({ ...user, papel: e.target.value })}><option value="cotista">Cliente / cotista</option><option value="afiliado">Afiliado</option><option value="operacao">Equipe de operação</option><option value="admin">Administrador</option></select></label>
+      <label className="admin-field"><span>Permissões do usuário</span><select value={user.papel} disabled={busy} onChange={e => setUser({ ...user, papel: e.target.value })}><option value="cotista">Cliente / cotista</option><option value="afiliado">Afiliado</option><option value="operacao">Equipe de operação</option>{(superAdmin || user.papel === 'admin') && <option value="admin">Administrador</option>}</select></label>
       <p className="admin-help">Cliente: sua conta e participações. Afiliado: recursos da sua rede conforme aprovação. Equipe: rotinas operacionais autorizadas. Administrador: gestão completa, incluindo contas e acessos. As permissões são verificadas pela API.</p>
       <button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void saveRole()}>Aplicar perfil de acesso</button>
       <hr/><h3>Recuperação de senha</h3>

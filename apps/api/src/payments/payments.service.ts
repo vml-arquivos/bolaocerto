@@ -8,7 +8,7 @@ import { addDaysToDate, brazilDate, endOfBrazilDay, round2 } from '../common/bra
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import { CancelShareDto, CreatePaymentDto, ManualPaymentDto, ManualSaleDto } from './payments.dto';
-import { buildPaymentProvider, ChargeStatus, CoraProvider, PaymentProvider } from './payment.provider';
+import { buildCardProvider, buildPaymentProvider, ChargeMethod, ChargeStatus, CoraProvider, PaymentProvider } from './payment.provider';
 
 export const PAYMENT_PROVIDER_OVERRIDE = 'PAYMENT_PROVIDER_OVERRIDE';
 
@@ -30,7 +30,10 @@ export function computeShareAmounts(valorCota: number, quantidade: number, taxaA
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
+  /** Provedor principal (Pix e boleto). */
   private readonly provider: PaymentProvider;
+  /** Todos os provedores ativos, por nome: o principal e, se houver, o do cartão. */
+  private readonly providers = new Map<string, PaymentProvider>();
   private readonly enabled: boolean;
   private readonly reservationMinutes: number;
   private readonly boletoDueDays: number;
@@ -44,6 +47,9 @@ export class PaymentsService {
   ) {
     this.enabled = config.get<string>('PAYMENTS_ENABLED', 'false') === 'true';
     this.provider = provider ?? buildPaymentProvider(config);
+    this.providers.set(this.provider.name, this.provider);
+    const card = provider ? null : buildCardProvider(config);
+    if (card) this.providers.set(card.name, card);
     this.reservationMinutes = Number(config.get<string>('SHARE_RESERVATION_MINUTES', '15')) || 15;
     this.boletoDueDays = Number(config.get<string>('PAYMENT_BOLETO_DUE_DAYS', '2')) || 2;
     this.boletoMinHoursToCutoff = Number(config.get<string>('PAYMENT_BOLETO_MIN_HOURS_TO_CUTOFF', '96')) || 96;
@@ -62,7 +68,22 @@ export class PaymentsService {
 
   /** Provedor Cora ativo (usado pelo módulo fiscal para emitir NFS-e), ou null. */
   coraProvider(): CoraProvider | null {
-    return this.provider instanceof CoraProvider ? this.provider : null;
+    for (const candidate of this.providers.values()) if (candidate instanceof CoraProvider) return candidate;
+    return null;
+  }
+
+  /** Métodos oferecidos ao cliente: os do provedor principal e os do cartão, sem repetir. */
+  private allMethods(): ChargeMethod[] {
+    return [...new Set([...this.providers.values()].flatMap((candidate) => candidate.methods))];
+  }
+
+  /** Quem cobra cada método: o principal quando o declara; senão o provedor do cartão. */
+  private providerFor(method: ChargeMethod): PaymentProvider | undefined {
+    return [...this.providers.values()].find((candidate) => candidate.methods.includes(method));
+  }
+
+  private providerByName(name?: string): PaymentProvider | undefined {
+    return name ? this.providers.get(name) : this.provider;
   }
 
   /** Estado público da configuração de pagamentos (sem segredos). */
@@ -71,14 +92,21 @@ export class PaymentsService {
     return {
       habilitado: this.enabled,
       provedor: this.provider.name,
-      metodos: this.provider.methods,
+      metodos: this.allMethods(),
       valorMinimo: this.provider.minAmount,
+      valorMinimoPorMetodo: Object.fromEntries(this.allMethods().map((method) => [method, this.providerFor(method)!.minAmount])),
+      provedores: [...this.providers.keys()],
+      webhookCartaoUrl: this.cardProviderName() && publicUrl ? `${publicUrl.replace(/\/$/, '')}/api/v1/webhooks/pagamento/${this.cardProviderName()}` : null,
       boletoVencimentoDias: this.boletoDueDays,
       boletoAntecedenciaMinimaHoras: this.boletoMinHoursToCutoff,
       webhookUrl: publicUrl ? `${publicUrl.replace(/\/$/, '')}/api/v1/webhooks/pagamento/${this.provider.name}` : null,
       webhookTokenConfigurado: Boolean(this.config.get<string>('PAYMENT_WEBHOOK_SECRET', '')),
       ambienteCora: this.provider.name === 'cora' ? this.config.get<string>('CORA_ENV', 'stage') : null,
     };
+  }
+
+  private cardProviderName(): string | null {
+    return [...this.providers.keys()].find((name) => name !== this.provider.name) ?? null;
   }
 
   /* ------------------------------------------------------------------ */
@@ -94,11 +122,12 @@ export class PaymentsService {
     if (share.pagamento && (share.pagamento.status === StatusPagamento.pendente || share.pagamento.status === StatusPagamento.confirmado) && share.pagamento.pspTransactionId) {
       return this.toPublicPayment(share.pagamento);
     }
-    if (!this.provider.methods.includes(dto.metodo)) throw new BadRequestException('Este método de pagamento não está disponível no momento.');
+    const provider = this.providerFor(dto.metodo);
+    if (!provider) throw new BadRequestException('Este método de pagamento não está disponível no momento.');
 
     const amounts = this.shareAmounts(share);
-    if (amounts.gross < this.provider.minAmount) {
-      throw new BadRequestException(`O valor mínimo para pagamento é R$ ${this.provider.minAmount.toFixed(2).replace('.', ',')}. Aumente a quantidade de cotas.`);
+    if (amounts.gross < provider.minAmount) {
+      throw new BadRequestException(`O valor mínimo para pagamento é R$ ${provider.minAmount.toFixed(2).replace('.', ',')}. Aumente a quantidade de cotas.`);
     }
 
     const now = new Date();
@@ -123,7 +152,7 @@ export class PaymentsService {
       valorComissaoAfiliado: new Prisma.Decimal(amounts.affiliateCommission),
       valorCustoBilhete: new Prisma.Decimal(amounts.cost),
       status: StatusPagamento.pendente,
-      pspProvedor: this.provider.name,
+      pspProvedor: provider.name,
       origem: 'gateway',
       vencimentoEm: endOfBrazilDay(dueDate),
     };
@@ -134,14 +163,16 @@ export class PaymentsService {
       const current = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true, bolao: { include: { concurso: { include: { resultado: true } } } } } });
       if (current.status !== StatusCota.reservada || current.bolao.status !== StatusBolao.aberto || current.bolao.concurso.cutoffAt <= new Date() || current.bolao.concurso.status !== 'aberto' || current.bolao.concurso.resultado || (current.expiraReservaEm && current.expiraReservaEm <= new Date())) throw new ConflictException('Reserva indisponível.');
       if (current.pagamento?.pspTransactionId) throw new ConflictException('Já existe uma cobrança. Recarregue para consultá-la.');
-      if (current.pagamento && (current.pagamento.status !== StatusPagamento.falhou || this.provider.name !== 'cora')) throw new ConflictException('Cobrança em processamento ou resultado incerto. Aguarde a conciliação antes de tentar novamente.');
+      if (current.pagamento && (current.pagamento.status !== StatusPagamento.falhou || !['cora', 'mercadopago'].includes(provider.name))) throw new ConflictException('Cobrança em processamento ou resultado incerto. Aguarde a conciliação antes de tentar novamente.');
       return current.pagamento
         ? tx.pagamento.update({ where: { id: current.pagamento.id }, data: base })
         : tx.pagamento.create({ data: { cotaId: share.id, ...base } });
     });
 
     try {
-      const created = await this.provider.createCharge({
+      const created = await provider.createCharge({
+        expiresAt: reservationUntil ?? new Date(now.getTime() + this.reservationMinutes * 60_000),
+        returnPath: `/checkout/${share.id}`,
         externalReference: payment.id,
         method: dto.metodo,
         value: amounts.gross,
@@ -160,14 +191,15 @@ export class PaymentsService {
           qrCodeUrl: created.qrCodeUrl ?? null,
           linhaDigitavel: created.boleto?.digitableLine ?? null,
           codigoBarras: created.boleto?.barcode ?? null,
-          boletoUrl: created.boleto?.url ?? null,
+          // Cartão: o endereço da página segura do provedor fica em boletoUrl e sai como checkoutUrl (toPublicPayment).
+          boletoUrl: created.boleto?.url ?? created.checkoutUrl ?? null,
           status: created.status === 'confirmed' ? StatusPagamento.confirmado : StatusPagamento.pendente,
           confirmadoEm: created.status === 'confirmed' ? new Date() : undefined,
         },
       });
       if (reservationUntil) await this.prisma.cota.update({ where: { id: share.id }, data: { expiraReservaEm: reservationUntil } });
       await this.audit.record(this.prisma, { entidade: 'pagamento', entidadeId: payment.id, evento: 'pagamento.criado', atorId: user.id, payloadDepois: updated as unknown as Prisma.InputJsonValue });
-      if (created.status === 'confirmed') await this.confirmPayment(created.transactionId, user.id);
+      if (created.status === 'confirmed') await this.confirmPayment(created.transactionId, user.id, undefined, provider.name);
       return this.toPublicPayment(updated);
     } catch (error) {
       await this.prisma.pagamento.updateMany({ where: { id: payment.id, status: StatusPagamento.pendente, pspTransactionId: null }, data: { status: StatusPagamento.falhou } });
@@ -186,28 +218,30 @@ export class PaymentsService {
   /* Eventos do provedor                                                 */
   /* ------------------------------------------------------------------ */
 
-  async handleWebhook(rawBody: string, headers: Record<string, string | undefined>, query: Record<string, string | undefined> = {}) {
-    const event = await this.provider.resolveWebhook(rawBody, headers, query);
+  async handleWebhook(rawBody: string, headers: Record<string, string | undefined>, query: Record<string, string | undefined> = {}, providerName?: string) {
+    const provider = this.providerByName(providerName);
+    if (!provider) throw new NotFoundException('Provedor de pagamento desconhecido.');
+    const event = await provider.resolveWebhook(rawBody, headers, query);
     if (!event) return { ignorado: true };
-    return this.applyProviderStatus(event.transactionId, event.status, event.paidAmount);
+    return this.applyProviderStatus(event.transactionId, event.status, event.paidAmount, provider.name);
   }
 
-  async applyProviderStatus(transactionId: string, status: ChargeStatus, paidAmount?: number) {
-    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId, pspProvedor: this.provider.name }, include: { cota: true } });
+  async applyProviderStatus(transactionId: string, status: ChargeStatus, paidAmount?: number, providerName: string = this.provider.name) {
+    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId, pspProvedor: providerName }, include: { cota: true } });
     if (!payment) {
       this.logger.warn(`Evento de pagamento sem registro local: ${transactionId}`);
       return { ignorado: true };
     }
     if (status === 'confirmed') {
       if (paidAmount === undefined || !Number.isFinite(paidAmount)) throw new BadRequestException('Provedor não informou o valor pago; conciliação necessária.');
-      return this.confirmPayment(transactionId, undefined, paidAmount);
+      return this.confirmPayment(transactionId, undefined, paidAmount, providerName);
     }
     if (status === 'pending') return { pendente: true };
     return this.releasePayment(payment.id, status === 'refunded' ? StatusPagamento.estornado : StatusPagamento.falhou);
   }
 
-  async confirmPayment(transactionId: string, actorId?: string, paidAmount?: number) {
-    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId, pspProvedor: this.provider.name }, include: { cota: true } });
+  async confirmPayment(transactionId: string, actorId?: string, paidAmount?: number, providerName: string = this.provider.name) {
+    const payment = await this.prisma.pagamento.findFirst({ where: { pspTransactionId: transactionId, pspProvedor: providerName }, include: { cota: true } });
     if (!payment) throw new NotFoundException('Pagamento não encontrado para confirmação.');
     if (payment.status === StatusPagamento.confirmado && payment.cota.status === StatusCota.paga) return this.toPublicPayment(payment);
     if (paidAmount !== undefined && (!Number.isFinite(paidAmount) || Math.round(paidAmount * 100) !== Math.round(Number(payment.valorBruto) * 100))) {
@@ -303,31 +337,34 @@ export class PaymentsService {
    */
   async reconcilePending(): Promise<{ verificados: number; confirmados: number; cancelados: number; erros: number }> {
     const summary = { verificados: 0, confirmados: 0, cancelados: 0, erros: 0 };
-    if (!this.enabled || !this.provider.fetchStatus) return summary;
-    const pending = await this.prisma.pagamento.findMany({
-      where: { status: StatusPagamento.pendente, origem: 'gateway', pspProvedor: this.provider.name, pspTransactionId: { not: null }, criadoEm: { gt: new Date(Date.now() - 10 * 86_400_000) } },
-      include: { cota: true },
-      orderBy: { criadoEm: 'asc' },
-      take: 200,
-    });
-    for (const payment of pending) {
-      summary.verificados += 1;
-      try {
-        const current = await this.provider.fetchStatus(payment.pspTransactionId as string);
-        if (current.status === 'confirmed') {
-          await this.confirmPayment(payment.pspTransactionId as string, undefined, current.paidAmount);
-          summary.confirmados += 1;
-        } else if (current.status === 'failed' || current.status === 'refunded') {
-          await this.releasePayment(payment.id, current.status === 'refunded' ? StatusPagamento.estornado : StatusPagamento.falhou);
-          summary.cancelados += 1;
-        } else if (payment.cota.status === StatusCota.cancelada || payment.cota.status === StatusCota.estornada) {
-          await this.provider.cancelCharge?.(payment.pspTransactionId as string);
-          await this.releasePayment(payment.id, StatusPagamento.falhou);
-          summary.cancelados += 1;
+    if (!this.enabled) return summary;
+    for (const provider of this.providers.values()) {
+      if (!provider.fetchStatus) continue;
+      const pending = await this.prisma.pagamento.findMany({
+        where: { status: StatusPagamento.pendente, origem: 'gateway', pspProvedor: provider.name, pspTransactionId: { not: null }, criadoEm: { gt: new Date(Date.now() - 10 * 86_400_000) } },
+        include: { cota: true },
+        orderBy: { criadoEm: 'asc' },
+        take: 200,
+      });
+      for (const payment of pending) {
+        summary.verificados += 1;
+        try {
+          const current = await provider.fetchStatus(payment.pspTransactionId as string);
+          if (current.status === 'confirmed') {
+            await this.confirmPayment(payment.pspTransactionId as string, undefined, current.paidAmount, provider.name);
+            summary.confirmados += 1;
+          } else if (current.status === 'failed' || current.status === 'refunded') {
+            await this.releasePayment(payment.id, current.status === 'refunded' ? StatusPagamento.estornado : StatusPagamento.falhou);
+            summary.cancelados += 1;
+          } else if (payment.cota.status === StatusCota.cancelada || payment.cota.status === StatusCota.estornada) {
+            await provider.cancelCharge?.(payment.pspTransactionId as string);
+            await this.releasePayment(payment.id, StatusPagamento.falhou);
+            summary.cancelados += 1;
+          }
+        } catch (error) {
+          summary.erros += 1;
+          this.logger.warn(`Conciliação falhou para ${payment.id}: ${(error as Error).message}`);
         }
-      } catch (error) {
-        summary.erros += 1;
-        this.logger.warn(`Conciliação falhou para ${payment.id}: ${(error as Error).message}`);
       }
     }
     return summary;
@@ -335,12 +372,13 @@ export class PaymentsService {
 
   /** Registra no painel da Cora os webhooks de cobrança paga e cancelada. */
   async registerCoraWebhooks(actorId: string) {
-    if (!(this.provider instanceof CoraProvider)) throw new BadRequestException('O provedor ativo não é a Cora.');
+    const cora = this.coraProvider();
+    if (!cora) throw new BadRequestException('O provedor ativo não é a Cora.');
     const url = this.settings().webhookUrl;
     if (!url) throw new BadRequestException('Defina PUBLIC_API_URL (ex.: https://bl.buscarr.com.br) para registrar o webhook.');
     const token = this.config.get<string>('PAYMENT_WEBHOOK_SECRET', '');
     const target = token ? `${url}?token=${encodeURIComponent(token)}` : url;
-    const results = await this.provider.registerWebhooks(target);
+    const results = await cora.registerWebhooks(target);
     await this.audit.record(this.prisma, { entidade: 'configuracao', entidadeId: actorId, evento: 'cora.webhook_registrado', atorId: actorId, payloadDepois: { url, resultados: results } as unknown as Prisma.InputJsonValue });
     return { url, resultados: results };
   }
@@ -354,8 +392,9 @@ export class PaymentsService {
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.status !== StatusCota.reservada && share.status !== StatusCota.cancelada) throw new ConflictException('Somente cotas reservadas (ou expiradas) podem receber baixa manual.');
     if (share.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Esta cota já possui pagamento confirmado.');
-    if (share.pagamento?.pspTransactionId && this.provider.cancelCharge) {
-      try { await this.provider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Não foi possível cancelar a cobrança no provedor: ${(error as Error).message}`); }
+    const chargeProvider = this.providerByName(share.pagamento?.pspProvedor);
+    if (share.pagamento?.pspTransactionId && chargeProvider?.cancelCharge) {
+      try { await chargeProvider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Não foi possível cancelar a cobrança no provedor: ${(error as Error).message}`); }
     }
     const amounts = this.shareAmounts(share);
     const manualData = { metodo: MetodoPagamento.manual, origem: 'manual', pspProvedor: 'manual', pspTransactionId: null, formaBaixa: dto.forma, observacao: dto.observacao ?? null, baixaPor: admin.id, status: StatusPagamento.pendente, valorBruto: new Prisma.Decimal(amounts.gross), valorTaxaAdmin: new Prisma.Decimal(amounts.adminFee), valorComissaoAfiliado: new Prisma.Decimal(amounts.affiliateCommission), valorCustoBilhete: new Prisma.Decimal(amounts.cost) };
@@ -407,8 +446,9 @@ export class PaymentsService {
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (([StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status)) throw new ForbiddenException('Cotas já registradas na loteria não podem ser canceladas por aqui.');
     if (share.status === StatusCota.cancelada || share.status === StatusCota.estornada) throw new ConflictException('A cota já está cancelada.');
-    if (share.pagamento?.pspTransactionId && share.pagamento.status === StatusPagamento.pendente && this.provider.cancelCharge) {
-      try { await this.provider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Cobrança não cancelada no provedor: ${(error as Error).message}`); }
+    const chargeProvider = this.providerByName(share.pagamento?.pspProvedor);
+    if (share.pagamento?.pspTransactionId && share.pagamento.status === StatusPagamento.pendente && chargeProvider?.cancelCharge) {
+      try { await chargeProvider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Cobrança não cancelada no provedor: ${(error as Error).message}`); }
     }
     if (share.pagamento?.status === StatusPagamento.confirmado && share.pagamento.origem === 'gateway') throw new ConflictException('Solicite o estorno no provedor e aguarde a confirmação do webhook. Cancelamento local não devolve dinheiro.');
     if (share.pagamento) return this.releasePayment(share.pagamento.id, share.pagamento.status === StatusPagamento.confirmado ? StatusPagamento.estornado : StatusPagamento.falhou, admin.id);
@@ -444,7 +484,9 @@ export class PaymentsService {
       qrCodeUrl: payment.qrCodeUrl,
       linhaDigitavel: payment.linhaDigitavel,
       codigoBarras: payment.codigoBarras,
-      boletoUrl: payment.boletoUrl,
+      boletoUrl: payment.metodo === 'cartao' ? null : payment.boletoUrl,
+      /** Cartão: página segura do provedor onde o cliente paga. */
+      checkoutUrl: payment.metodo === 'cartao' ? payment.boletoUrl : null,
       vencimentoEm: payment.vencimentoEm,
       pspTransactionId: payment.pspTransactionId,
     };

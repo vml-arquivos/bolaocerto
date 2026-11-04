@@ -4,6 +4,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SuperAdminGuard } from '../auth/superadmin.guard';
 import { ConnectionsService } from './connections.service';
 
 class TestEmailDto {
@@ -11,9 +12,9 @@ class TestEmailDto {
   para?: string;
 }
 
-/** Só administrador: estado das conexões (e-mail, pagamentos, CAIXA, arquivos, segurança) e testes. */
+/** Só a conta principal: estado das conexões (e-mail, pagamentos, CAIXA, arquivos, segurança) e testes. */
 @Controller('admin/conexoes')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, SuperAdminGuard)
 @Roles('admin')
 export class ConnectionsController {
   constructor(private readonly connections: ConnectionsService) {}

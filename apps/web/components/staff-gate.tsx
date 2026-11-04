@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { homeForRole, isStaff, roleLabels, STAFF_VIEWS } from '../lib/roles';
+import { homeForRole, isStaff, roleLabels, STAFF_VIEWS, SUPERADMIN_VIEWS } from '../lib/roles';
 
 const StaffRoleContext = createContext<'admin' | 'operacao'>('admin');
 export const useStaffRole = () => useContext(StaffRoleContext);
@@ -39,7 +39,9 @@ export function StaffGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (role === 'operacao' && !(STAFF_VIEWS as readonly string[]).includes(view)) router.replace(`${pathname}?view=${STAFF_VIEWS[0]}`);
-  }, [role, view, pathname, router]);
+    // Histórico, Conexões e Configurações são só da conta principal: quem abrir o endereço direto volta ao resumo.
+    if (role === 'admin' && !superadmin && (SUPERADMIN_VIEWS as readonly string[]).includes(view)) router.replace(`${pathname}?view=visao-geral`);
+  }, [role, superadmin, view, pathname, router]);
 
   if (role === null) return <div className="admin-loading"><p>Conferindo seu acesso…</p></div>;
   if (role === 'erro') return <div className="admin-loading"><p>Não foi possível conferir seu acesso. Atualize a página.</p></div>;
@@ -47,5 +49,6 @@ export function StaffGate({ children }: { children: ReactNode }) {
     return <div className="admin-loading"><div className="notice" role="alert"><strong>Esta conta não é da equipe</strong><span>Seu perfil é {roleLabels[role] ?? role}. O painel é só para administradores e equipe.</span><Link className="button button-primary" href={homeForRole(role)}>Ir para a minha área</Link></div></div>;
   }
   if (role === 'operacao' && !(STAFF_VIEWS as readonly string[]).includes(view)) return <div className="admin-loading"><p>Abrindo a sua área…</p></div>;
+  if (role === 'admin' && !superadmin && (SUPERADMIN_VIEWS as readonly string[]).includes(view)) return <div className="admin-loading"><p>Esta área é restrita à conta principal. Abrindo o resumo…</p></div>;
   return <StaffRoleContext.Provider value={role as 'admin' | 'operacao'}><SuperAdminContext.Provider value={superadmin}>{children}</SuperAdminContext.Provider></StaffRoleContext.Provider>;
 }

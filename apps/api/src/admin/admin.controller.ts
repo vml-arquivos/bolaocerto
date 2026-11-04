@@ -3,6 +3,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SuperAdminGuard } from '../auth/superadmin.guard';
 import { AdminService } from './admin.service';
 import {
   AdminListQueryDto,
@@ -91,8 +92,8 @@ export class AdminController {
 
   @Get('admin/usuarios')
   @Roles('admin')
-  users(@Query() query: AdminListQueryDto) {
-    return this.admin.listUsers(query);
+  users(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
+    return this.admin.listUsers(query, user);
   }
 
   @Post('admin/usuarios')
@@ -186,7 +187,7 @@ export class AdminController {
   }
 
   @Get('admin/auditoria')
-  @Roles('admin')
+  @Roles('admin') @UseGuards(SuperAdminGuard)
   audits(@Query() query: AdminListQueryDto) {
     return this.admin.listAudits(query);
   }
@@ -282,7 +283,7 @@ export class AdminController {
   }
 
   @Patch('admin/configuracoes')
-  @Roles('admin')
+  @Roles('admin') @UseGuards(SuperAdminGuard)
   settings(@Body() dto: UpdateSettingsDto, @CurrentUser() user: AuthUser) {
     return this.admin.updateSettings(dto, user);
   }

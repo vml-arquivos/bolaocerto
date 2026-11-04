@@ -3,6 +3,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SuperAdminGuard } from '../auth/superadmin.guard';
 import { AddressDto, CancelNoteDto, EmitNoteDto, ManualNoteDto, NoteQueryDto } from './nfse.dto';
 import { NfseService } from './nfse.service';
 
@@ -16,10 +17,10 @@ export class NfseAdminController {
   @Get('nfse/configuracao')
   settings() { return this.nfse.settings(); }
 
-  @Get('nfse/diagnostico')
+  @Get('nfse/diagnostico') @UseGuards(SuperAdminGuard)
   diagnostics() { return this.nfse.diagnostics(); }
 
-  @Post('nfse/emissor')
+  @Post('nfse/emissor') @UseGuards(SuperAdminGuard)
   registerIssuer(@CurrentUser() admin: AuthUser) { return this.nfse.registerIssuer(admin); }
 
   @Post('nfse/sincronizar')

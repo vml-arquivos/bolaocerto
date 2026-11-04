@@ -5,9 +5,9 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { InstallAppButton } from './pwa-register';
-import { useStaffRole } from './staff-gate';
+import { useIsSuperAdmin, useStaffRole } from './staff-gate';
 import { PushPrompt } from './push-prompt';
-import { STAFF_VIEWS } from '../lib/roles';
+import { STAFF_VIEWS, SUPERADMIN_VIEWS } from '../lib/roles';
 
 /** Atalhos fixos no topo do menu. */
 const topItems = [
@@ -77,9 +77,12 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
   const staffRole = useStaffRole();
   const allowed = (key: string) => staffRole !== 'operacao' || (STAFF_VIEWS as readonly string[]).includes(key);
   const visibleTop = topItems.filter(([key]) => allowed(key));
+  const superAdmin = useIsSuperAdmin();
   const visibleGroups = staffRole === 'operacao'
     ? groups.map((group) => ({ ...group, items: group.items.filter(([key]) => (STAFF_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length)
-    : groups;
+    : superAdmin
+      ? groups
+      : groups.map((group) => ({ ...group, items: group.items.filter(([key]) => !(SUPERADMIN_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);

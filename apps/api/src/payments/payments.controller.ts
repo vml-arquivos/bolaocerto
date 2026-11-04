@@ -25,12 +25,12 @@ export class PaymentsController {
   @Get('pagamentos/metodos')
   methods() {
     const settings = this.payments.settings();
-    return { habilitado: settings.habilitado, metodos: settings.metodos, valorMinimo: settings.valorMinimo };
+    return { habilitado: settings.habilitado, metodos: settings.metodos, valorMinimo: settings.valorMinimo, valorMinimoPorMetodo: settings.valorMinimoPorMetodo };
   }
 
   @Post('webhooks/pagamento/:provedor')
-  webhook(@Req() request: Request & { rawBody?: Buffer }, @Headers() headers: Record<string, string | undefined>, @Query() query: Record<string, string | undefined>) {
+  webhook(@Param('provedor') provider: string, @Req() request: Request & { rawBody?: Buffer }, @Headers() headers: Record<string, string | undefined>, @Query() query: Record<string, string | undefined>) {
     const rawBody = request.rawBody?.toString('utf8') ?? JSON.stringify(request.body ?? {});
-    return this.payments.handleWebhook(rawBody, headers, query);
+    return this.payments.handleWebhook(rawBody, headers, query, provider);
   }
 }

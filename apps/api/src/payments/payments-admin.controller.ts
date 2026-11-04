@@ -3,6 +3,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SuperAdminGuard } from '../auth/superadmin.guard';
 import { CancelShareDto, ManualPaymentDto, ManualSaleDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
 
@@ -13,17 +14,17 @@ import { PaymentsService } from './payments.service';
 export class PaymentsAdminController {
   constructor(private readonly payments: PaymentsService) {}
 
-  @Get('pagamentos/configuracao')
+  @Get('pagamentos/configuracao') @UseGuards(SuperAdminGuard)
   settings() {
     return this.payments.settings();
   }
 
-  @Post('pagamentos/cora/webhooks')
+  @Post('pagamentos/cora/webhooks') @UseGuards(SuperAdminGuard)
   registerWebhooks(@CurrentUser() admin: AuthUser) {
     return this.payments.registerCoraWebhooks(admin.id);
   }
 
-  @Post('pagamentos/conciliar')
+  @Post('pagamentos/conciliar') @UseGuards(SuperAdminGuard)
   reconcile() {
     return this.payments.reconcilePending();
   }

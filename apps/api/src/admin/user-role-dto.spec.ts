@@ -30,9 +30,12 @@ describe('AdminService.updateUserRole', () => {
       usuario: { findUnique: jest.fn().mockResolvedValue(opts.target === null ? null : { id: 'u2', nome: 'Maria', email: 'm@x.com', papel: opts.target?.papel ?? 'cotista' }) },
       $transaction: jest.fn().mockImplementation(async (fn: any) => fn(tx)),
     };
-    return { service: new AdminService(prisma, { record: jest.fn() } as any), tx };
+    return { service: new AdminService(prisma, { record: jest.fn() } as any), tx, prisma };
   }
-  const admin = { id: 'u1', email: 'a@x.com', papel: 'admin' } as any;
+  const admin = { id: 'u1', email: 'a@x.com', papel: 'admin' } as any; // conta principal (superadmin) nos testes abaixo
+  const OLD = process.env.ADMIN_BOOTSTRAP_EMAIL;
+  beforeEach(() => { process.env.ADMIN_BOOTSTRAP_EMAIL = 'a@x.com'; });
+  afterEach(() => { if (OLD === undefined) delete process.env.ADMIN_BOOTSTRAP_EMAIL; else process.env.ADMIN_BOOTSTRAP_EMAIL = OLD; });
 
   it.each(['afiliado', 'operacao', 'admin', 'cotista'] as const)('troca cotista para %s e encerra as sessões', async (papel) => {
     const { service, tx } = setup({ target: { papel: papel === 'cotista' ? 'admin' : 'cotista' } });
@@ -59,5 +62,28 @@ describe('AdminService.updateUserRole', () => {
   it('o administrador não tira o próprio acesso', async () => {
     const { service } = setup({});
     await expect(service.updateUserRole('u1', { papel: 'cotista' }, admin)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  describe('administrador comum (não é a conta principal)', () => {
+    const comum = { id: 'u9', email: 'comum@x.com', papel: 'admin' } as any;
+    it('não promove ninguém a administrador', async () => {
+      const { service, tx } = setup({});
+      await expect(service.updateUserRole('u2', { papel: 'admin' }, comum)).rejects.toThrow(/papéis abaixo/);
+      expect(tx.usuario.update).not.toHaveBeenCalled();
+    });
+    it('não rebaixa nem altera outro administrador', async () => {
+      const { service, tx } = setup({ target: { papel: 'admin' } });
+      await expect(service.updateUserRole('u2', { papel: 'cotista' }, comum)).rejects.toThrow(/nível igual ou superior/);
+      expect(tx.usuario.update).not.toHaveBeenCalled();
+    });
+    it('não altera a conta principal', async () => {
+      const { service, prisma } = setup({ target: { papel: 'admin' } });
+      prisma.usuario.findUnique.mockResolvedValue({ id: 'u1', nome: 'Dono', email: 'a@x.com', papel: 'admin' });
+      await expect(service.updateUserRole('u1', { papel: 'cotista' }, comum)).rejects.toThrow(/nível igual ou superior/);
+    });
+    it('concede papéis abaixo do seu normalmente', async () => {
+      const { service } = setup({});
+      await expect(service.updateUserRole('u2', { papel: 'operacao' }, comum)).resolves.toEqual({ id: 'u2', papel: 'operacao' });
+    });
   });
 });

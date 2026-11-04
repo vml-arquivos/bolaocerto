@@ -39,7 +39,7 @@ describe('Inicialização completa da API (AppModule)', () => {
 
   it('expõe os métodos de pagamento publicamente (Cora: Pix e boleto)', async () => {
     const { body } = await request(app.getHttpServer()).get('/api/v1/pagamentos/metodos').expect(200);
-    expect(body).toEqual({ habilitado: false, metodos: ['pix', 'boleto'], valorMinimo: 5 });
+    expect(body).toEqual({ habilitado: false, metodos: ['pix', 'boleto'], valorMinimo: 5, valorMinimoPorMetodo: { pix: 5, boleto: 5 } });
   });
 
   it('protege rotas de relatório, venda manual e conciliação (401 sem login)', async () => {

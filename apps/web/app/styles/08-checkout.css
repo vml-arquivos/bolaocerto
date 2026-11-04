@@ -1,0 +1,63 @@
+/* Checkout: tela de pagamento (Pix, boleto, cartão). Usa os tokens de 01-base.css. */
+.checkout-page { max-width: 980px; margin: 0 auto; display: grid; gap: 20px; padding-block: 8px 32px; }
+.checkout-head { display: grid; gap: 6px; }
+.checkout-head h1 { margin: 0; font-size: clamp(1.6rem, 4vw, 2.2rem); }
+.checkout-head p { margin: 0; }
+.checkout-back { color: var(--text-secondary); font-size: 0.9rem; text-decoration: none; width: fit-content; }
+.checkout-back:hover { color: var(--text-primary); }
+
+.checkout-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 20px; align-items: start; }
+.checkout-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg, 16px); padding: 24px; display: grid; gap: 16px; }
+.checkout-pay { justify-items: center; text-align: center; }
+.checkout-pay > * { width: 100%; }
+.checkout-side { gap: 14px; }
+.checkout-side h2 { margin: 0; font-size: 1.05rem; }
+
+.checkout-amount { display: grid; gap: 2px; }
+.checkout-amount span { color: var(--text-secondary); font-size: 0.85rem; }
+.checkout-amount strong { font-size: clamp(1.9rem, 6vw, 2.6rem); line-height: 1.1; }
+
+.checkout-qr { display: flex; justify-content: center; }
+.pix-qr { display: block; background: #fff; border-radius: 14px; padding: 6px; max-width: 100%; height: auto; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
+.pix-qr-loading { background: var(--surface-muted); animation: checkout-pulse 1.2s ease-in-out infinite; }
+.checkout-hint { margin: 0; color: var(--text-secondary); font-size: 0.92rem; }
+
+.checkout-copy { display: grid; gap: 8px; text-align: left; }
+.checkout-copy small { color: var(--text-secondary); }
+.checkout-copy code { display: block; max-height: 7.2em; overflow: auto; padding: 10px 12px; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.78rem; word-break: break-all; user-select: all; }
+.checkout-copy .button, .checkout-card-button { width: 100%; justify-content: center; text-align: center; }
+
+.checkout-status { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--primary-soft); border-radius: 12px; text-align: left; }
+.checkout-status div { display: grid; gap: 2px; }
+.checkout-status small { color: var(--text-secondary); }
+
+.checkout-spinner { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--border-strong); border-top-color: var(--primary); animation: checkout-spin 0.9s linear infinite; }
+
+.checkout-timer { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--surface-muted); border: 1px solid var(--border); }
+.checkout-timer span { color: var(--text-secondary); font-size: 0.82rem; }
+.checkout-timer strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.checkout-timer.is-low { border-color: var(--warning); background: var(--warning-soft); }
+.checkout-timer.is-over { border-color: var(--danger); background: var(--danger-soft); }
+.checkout-timer small { color: var(--text-secondary); }
+
+.checkout-steps { margin: 0; padding-left: 1.2rem; display: grid; gap: 8px; color: var(--text-secondary); }
+.checkout-safe { margin: 0; color: var(--text-muted); font-size: 0.82rem; }
+.checkout-link { color: var(--text-secondary); font-size: 0.9rem; }
+
+.checkout-state { justify-items: center; text-align: center; padding: 36px 24px; }
+.checkout-state p { margin: 0; color: var(--text-secondary); max-width: 46ch; }
+.checkout-state.is-success { border-color: var(--success); background: linear-gradient(180deg, var(--success-soft), var(--surface)); }
+.checkout-state.is-error { border-color: var(--danger); background: linear-gradient(180deg, var(--danger-soft), var(--surface)); }
+.checkout-check { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--success); color: #062a1c; font-size: 2rem; font-weight: 800; animation: checkout-pop 0.45s ease-out; }
+.checkout-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+
+@keyframes checkout-spin { to { transform: rotate(360deg); } }
+@keyframes checkout-pulse { 50% { opacity: 0.55; } }
+@keyframes checkout-pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .checkout-spinner, .pix-qr-loading, .checkout-check { animation: none; } }
+
+@media (max-width: 820px) {
+  .checkout-grid { grid-template-columns: minmax(0, 1fr); }
+  .checkout-side { order: 2; }
+  .checkout-card { padding: 18px; }
+}

@@ -4,6 +4,7 @@ Dois arquivos, os dois contra um sistema de verdade (banco, API e site no ar):
 
 - `api-flow.test.mjs` — fluxo de negócio pela API: concurso → bolão → banco de números → comprovante → publicar → página inicial → conciliação financeira → afiliado (cadastro, aprovação, painel, comissões) → limite de acessos.
 - `cora-flow.test.mjs` + `fake-cora.mjs` — compra completa pela Cora **simulada** (certificado de cliente, token, Pix, boleto, aviso de pago, aviso perdido recuperado pela conferência, comissão). Para rodar: `node e2e/fake-cora.mjs &`, subir a API com `PAYMENT_PROVIDER=cora`, `CORA_BASE_URL=localhost:8443`, `CORA_CLIENT_ID=int-teste`, `CORA_CERT_PATH`/`CORA_KEY_PATH` apontando para `e2e/.cora-certs/`, `NODE_EXTRA_CA_CERTS=e2e/.cora-certs/ca.pem`, `PAYMENT_WEBHOOK_SECRET=segredo-teste-webhook`, `PAYMENTS_ENABLED=true` e os `LEGAL_*`; depois `node --test e2e/cora-flow.test.mjs`. Os valores completos estão no job `navegacao` do CI.
+- `checkout-browser.test.mjs` — compra pelo site até a tela de pagamento (QR Code e código Pix), aviso de pago da Cora simulada e volta automática ao bolão. Precisa da API com a Cora simulada, do `fake-cora.mjs` e do site com `PLATFORM_PAYMENTS_ENABLED=true`.
 - `browser.test.mjs` — navegação no Chromium: páginas públicas (computador e celular), as 24 telas do painel, salvar a página inicial, banco de números e as abas do painel do afiliado. Falha se aparecer erro de página, resposta 5xx, aviso de erro na tela ou barra de rolagem lateral.
 
 ## Rodar
