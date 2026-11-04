@@ -109,3 +109,21 @@ describe('CoraProvider', () => {
     expect(toIdempotencyKey('abc')).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
+
+describe('CoraProvider — endereço da Cora', () => {
+  const alvo = (values: Record<string, string>) => {
+    const provider = new CoraProvider(config({ CORA_CLIENT_ID: 'int-abc', ...values }), transport(() => token).fn) as unknown as { host: string; port?: number };
+    return { host: provider.host, port: provider.port };
+  };
+
+  it('usa o endereço de teste da Cora por padrão e o de produção quando pedido', () => {
+    expect(alvo({ CORA_ENV: 'stage' })).toEqual({ host: 'matls-clients.api.stage.cora.com.br', port: undefined });
+    expect(alvo({ CORA_ENV: 'production' })).toEqual({ host: 'matls-clients.api.cora.com.br', port: undefined });
+  });
+
+  it('CORA_BASE_URL aceita host, host:porta e https://host:porta/', () => {
+    expect(alvo({ CORA_BASE_URL: 'localhost:8443' })).toEqual({ host: 'localhost', port: 8443 });
+    expect(alvo({ CORA_BASE_URL: 'https://cora.teste.local/' })).toEqual({ host: 'cora.teste.local', port: undefined });
+    expect(alvo({ CORA_BASE_URL: 'https://cora.teste.local:9443/' })).toEqual({ host: 'cora.teste.local', port: 9443 });
+  });
+});

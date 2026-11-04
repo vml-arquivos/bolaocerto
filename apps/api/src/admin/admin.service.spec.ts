@@ -89,3 +89,16 @@ describe('AdminService — somas no banco', () => {
     expect(result).toEqual(expect.objectContaining({ comissaoPendente: '12.50', comissaoPaga: '30.00', totalComissoes: 4, participantes: 2, cotas: 3, volume: '300.00' }));
   });
 });
+
+describe('AdminService — busca de afiliados', () => {
+  it('procura por código, nome e e-mail', async () => {
+    const prisma = { afiliado: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) }, aceiteLegal: { findMany: jest.fn().mockResolvedValue([]) } };
+    const service = new AdminService(prisma as any, { record: jest.fn() } as any);
+
+    await service.listAffiliates({ busca: 'maria@exemplo.com' } as any);
+
+    const where = prisma.afiliado.findMany.mock.calls[0][0].where;
+    expect(JSON.stringify(where.OR)).toContain('"email":{"contains":"maria@exemplo.com"');
+    expect(where.OR).toHaveLength(3);
+  });
+});

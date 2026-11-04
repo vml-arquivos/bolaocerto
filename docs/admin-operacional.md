@@ -88,3 +88,5 @@ Painel → Jogos e vendas → **Página inicial**.
 - **Funções compartilhadas**: `authenticatedFetch` em `lib/client-api.ts`, `modalityNames` em `lib/domain.ts`, `formatBRL` em `lib/format.ts`. Não copie essas funções para dentro dos componentes (o teste `structure.test.mjs` avisa).
 - **Estilos**: `app/globals.css` só importa os blocos de `app/styles/01…07`. A ordem dos arquivos é a ordem da cascata; novos estilos entram no bloco do assunto (ou em `07-painel.css`).
 - **API**: resumo financeiro e painel do afiliado somam no banco (`aggregate`/`groupBy`), sem carregar todas as linhas. Rotas públicas de análise estatística (`/estatisticas/:modalidade/analisar|sugestoes|probabilidades`) têm limite de 30 por minuto por IP.
+- **Testes automáticos**: pasta `e2e/` (fluxo pela API e navegação em todas as telas) e job `navegacao` no GitHub. Detalhes em `e2e/README.md` e `docs/staging.md`.
+- **Variável opcional**: `RATE_LIMIT_PER_MINUTE` (padrão 120) muda o limite geral de acessos por IP. Só precisa ser mexida em ambiente de teste.

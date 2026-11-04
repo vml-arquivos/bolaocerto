@@ -247,7 +247,7 @@ export class AdminService {
 
   async listAffiliates(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
-    const where: Prisma.AfiliadoWhereInput = { ...(query.status ? { statusAprovacao: query.status } : {}), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
+    const where: Prisma.AfiliadoWhereInput = { ...(query.status ? { statusAprovacao: query.status } : {}), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }, { usuario: { email: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
     const [items, total] = await Promise.all([
       this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.afiliado.count({ where }),

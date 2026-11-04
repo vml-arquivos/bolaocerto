@@ -26,6 +26,12 @@ Conforme a documentação oficial da Cora (Integração Direta):
    base64 -w0 certificate.pem    # -> CORA_CERT_BASE64
    base64 -w0 private-key.key    # -> CORA_KEY_BASE64
    ```
+   No Windows (PowerShell), na pasta onde estão os arquivos:
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("certificate.pem"))   # -> CORA_CERT_BASE64
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("private-key.key"))   # -> CORA_KEY_BASE64
+   ```
+   O resultado é uma linha só, sem quebras. Cole inteira no Coolify.
    > Guarde a chave privada como segredo. Nunca a coloque no repositório.
 
 ## 3. Variáveis de ambiente (Coolify → Environment Variables)
@@ -44,6 +50,10 @@ Conforme a documentação oficial da Cora (Integração Direta):
 | `PAYMENT_BOLETO_MIN_HOURS_TO_CUTOFF` | `96` | boleto só até 96 h antes do corte (compensa em até 3 dias úteis) |
 | `CORA_MIN_AMOUNT` | `5` | mínimo da Cora |
 | `NFSE_*` | veja a seção 7-A | nota fiscal de serviço; comece com `NFSE_MODE=off` ou `manual` |
+| `LEGAL_APPROVED_VERSION` | `2026-10-29.1` | sem isto (e sem os `LEGAL_*` abaixo) a API **não aceita reservas** |
+| `LEGAL_OPERATOR_NAME`, `LEGAL_OPERATOR_CNPJ`, `LEGAL_OPERATOR_ADDRESS`, `LEGAL_CONTACT_EMAIL` | dados da empresa | aparecem no aceite do termo |
+| `LEGAL_REFUND_TERMS`, `LEGAL_AFFILIATE_PAYOUT_TERMS` | texto curto | regras de estorno e de repasse ao afiliado |
+| `CORA_BASE_URL` | (não preencher) | só para testes: aceita `host` ou `host:porta` e substitui o endereço da Cora |
 
 **Segurança:** no Coolify, desmarque *Build Variable* para `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORA_*` e `PAYMENT_WEBHOOK_SECRET`. Variáveis de build aparecem em texto nos logs de deploy. Se os segredos JWT já apareceram em logs, **gere novos** antes de abrir ao público.
 
@@ -60,6 +70,10 @@ Conforme a documentação oficial da Cora (Integração Direta):
 5. Só então troque `CORA_ENV=production`, refaça o cadastro do webhook (com as credenciais de produção) e teste com R$ 5,00 reais.
 
 > O webhook da Cora **não é assinado**. Por isso o sistema nunca confia no aviso: ao recebê-lo, consulta a cobrança na API da Cora e só então confirma. Se o aviso falhar, a conciliação automática (a cada 3 min) confirma do mesmo jeito.
+
+### Teste automático com Cora simulada
+
+Sem credenciais, dá para conferir todo o caminho da compra contra uma Cora simulada (`e2e/fake-cora.mjs`), que exige certificado de cliente como a verdadeira: token, cobrança Pix e boleto, repetição segura (Idempotency-Key), cadastro de webhook, aviso de pago, aviso perdido (a conferência automática recupera) e comissão do afiliado. O CI roda isso em todo envio (`e2e/cora-flow.test.mjs`). Ela **não substitui** a homologação real acima: só prova que o BL fala o protocolo documentado.
 
 ## 5. Regras de pagamento
 

@@ -103,6 +103,7 @@ export class CoraProvider implements PaymentProvider {
   readonly methods: ChargeMethod[] = ['pix', 'boleto'];
   readonly minAmount: number;
   private readonly host: string;
+  private readonly port: number | undefined;
   private readonly clientId: string;
   private readonly webhookSecret: string;
   private readonly transport: CoraTransport;
@@ -111,7 +112,11 @@ export class CoraProvider implements PaymentProvider {
   constructor(private readonly config: ConfigService, transport?: CoraTransport) {
     const environment = config.get<string>('CORA_ENV', 'stage');
     const override = config.get<string>('CORA_BASE_URL', '');
-    this.host = (override || `matls-clients.api${environment === 'production' ? '' : '.stage'}.cora.com.br`).replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const target = (override || `matls-clients.api${environment === 'production' ? '' : '.stage'}.cora.com.br`).replace(/^https?:\/\//, '').replace(/\/$/, '');
+    // CORA_BASE_URL aceita "host" ou "host:porta" (a porta serve para ambiente de teste com uma Cora simulada).
+    const [hostname = '', port] = target.split(':');
+    this.host = hostname;
+    this.port = port ? Number(port) : undefined;
     this.clientId = config.get<string>('CORA_CLIENT_ID', '');
     this.webhookSecret = config.get<string>('PAYMENT_WEBHOOK_SECRET', '');
     this.minAmount = Number(config.get<string>('CORA_MIN_AMOUNT', '5'));
@@ -133,6 +138,7 @@ export class CoraProvider implements PaymentProvider {
       try { cached ??= this.credentials(); } catch (error) { reject(error); return; }
       const req = httpsRequest({
         host: this.host,
+        ...(this.port ? { port: this.port } : {}),
         path: request.path,
         method: request.method,
         headers: request.body ? { ...request.headers, 'content-length': String(Buffer.byteLength(request.body)) } : request.headers,

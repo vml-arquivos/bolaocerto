@@ -46,3 +46,103 @@ jobs:
         env:
           DISPOSABLE_TEST_DATABASE: 'true'
       - run: pnpm build
+
+  # Navegação de verdade: sobe banco, API e site e percorre o sistema num navegador (Chromium).
+  navegacao:
+    runs-on: ubuntu-latest
+    needs: validate
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bolao
+          POSTGRES_PASSWORD: bolao
+          POSTGRES_DB: bolao
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bolao"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bolao:bolao@localhost:5432/bolao
+      NEXT_TELEMETRY_DISABLED: '1'
+      NODE_ENV: development
+      PORT: '3001'
+      WEB_ORIGIN: http://localhost:3000
+      APP_PUBLIC_URL: http://localhost:3000
+      JWT_ACCESS_SECRET: ci-acesso-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      JWT_REFRESH_SECRET: ci-refresh-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      RECEIPT_SECRET: ci-recibo-cccccccccccccccccccccccccccccccccccc
+      TOTP_ENC_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      ADMIN_BOOTSTRAP_EMAIL: admin@teste.local
+      ADMIN_BOOTSTRAP_PASSWORD: Senha123
+      ADMIN_BOOTSTRAP_CPF: '11144477735'
+      # Pagamentos pela Cora SIMULADA (e2e/fake-cora.mjs): nada é cobrado de verdade.
+      PAYMENTS_ENABLED: 'true'
+      PLATFORM_PAYMENTS_ENABLED: 'true'
+      PAYMENT_PROVIDER: cora
+      CORA_ENV: stage
+      CORA_BASE_URL: localhost:8443
+      CORA_CLIENT_ID: int-teste
+      CORA_CERT_PATH: ${{ github.workspace }}/e2e/.cora-certs/certificate.pem
+      CORA_KEY_PATH: ${{ github.workspace }}/e2e/.cora-certs/private-key.key
+      NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/e2e/.cora-certs/ca.pem
+      PAYMENT_WEBHOOK_SECRET: segredo-teste-webhook
+      PUBLIC_API_URL: http://localhost:3001
+      LEGAL_APPROVED_VERSION: '2026-10-29.1'
+      LEGAL_OPERATOR_NAME: BL Teste Ltda
+      LEGAL_OPERATOR_CNPJ: '11222333000181'
+      LEGAL_OPERATOR_ADDRESS: Rua do Teste 100, Sao Paulo SP
+      LEGAL_CONTACT_EMAIL: contato@teste.local
+      LEGAL_REFUND_TERMS: Estorno em ate 7 dias.
+      LEGAL_AFFILIATE_PAYOUT_TERMS: Repasse mensal.
+      RATE_LIMIT_PER_MINUTE: '5000'
+      UPLOAD_DIR: /tmp/bl-uploads
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm --filter @bolaocerto/api exec prisma migrate deploy
+      - run: pnpm db:seed
+      - run: pnpm build
+      - name: Subir API e site
+        run: |
+          mkdir -p /tmp/bl-uploads
+          (node e2e/fake-cora.mjs > /tmp/cora.log 2>&1 &)
+          for i in $(seq 1 30); do curl -fs http://localhost:8444/__state >/dev/null && break; sleep 1; done
+          (node apps/api/dist/main.js > /tmp/api.log 2>&1 &)
+          (pnpm --filter @bolaocerto/web start > /tmp/web.log 2>&1 &)
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:3001/api/v1/health >/dev/null && curl -fs http://localhost:3000/login >/dev/null; then echo "no ar"; exit 0; fi
+            sleep 2
+          done
+          echo "--- api.log"; tail -40 /tmp/api.log; echo "--- web.log"; tail -40 /tmp/web.log; exit 1
+      - name: Fluxo completo pela API (banco real)
+        run: node --test e2e/api-flow.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+      - name: Compra completa pela Cora simulada (Pix, boleto, aviso de pago, conferência, comissão)
+        run: node --test e2e/cora-flow.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+      - name: Navegador (site público e todas as telas do painel)
+        run: |
+          npm install -g playwright@1.49.1
+          npx playwright install --with-deps chromium
+          NODE_PATH=$(npm root -g) node --test e2e/browser.test.mjs
+        env:
+          E2E_BASE_URL: http://localhost:3000
+      - name: Logs quando falha
+        if: failure()
+        run: |
+          echo "--- api.log"; tail -80 /tmp/api.log || true
+          echo "--- web.log"; tail -80 /tmp/web.log || true
+          echo "--- cora.log"; tail -40 /tmp/cora.log || true

@@ -22,7 +22,8 @@ async function bootstrap(): Promise<void> {
     response.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
-  app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
+  // Limite geral por IP. RATE_LIMIT_PER_MINUTE é opcional (padrão 120); serve para testes automáticos em ambiente de teste.
+  app.use(rateLimit({ windowMs: 60_000, limit: Number(config.get('RATE_LIMIT_PER_MINUTE', 120)) || 120, standardHeaders: true, legacyHeaders: false }));
   // Freio por IP nas rotas sensíveis (além do bloqueio por conta): tentativa de força bruta e abuso de e-mail.
   const strict = (windowMs: number, limit: number) => rateLimit({ windowMs, limit, standardHeaders: true, legacyHeaders: false, message: { statusCode: 429, message: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' } });
   app.use('/api/v1/auth/login', strict(15 * 60_000, 30));
