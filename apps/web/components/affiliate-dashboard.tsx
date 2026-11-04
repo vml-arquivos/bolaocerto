@@ -1,9 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AffiliateContract } from './legal-document';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { AffiliateSales } from './affiliate-sales';
+import { AffiliateQuotas } from './affiliate-quotas';
+import { AffiliateMore, parseAffiliateTab, type AffiliateTab } from './affiliate-shell';
 import { PoolWizard } from './pool-wizard';
 import { concursoNo } from '../lib/contest';
 import { authenticatedFetch } from '../lib/client-api';
@@ -24,7 +27,7 @@ const modalityMinimums: Record<string, number> = { megasena: 6, lotofacil: 15, q
 
 async function authFetch(path: string, options?: RequestInit) {
   const response = await authenticatedFetch(path, options);
-  if (response.status === 401) { window.location.href = '/login?next=/afiliado'; throw new Error('Sessão expirada.'); }
+  if (response.status === 401) { window.location.href = '/afiliado/entrar'; throw new Error('Sessão expirada.'); }
   return response;
 }
 
@@ -49,7 +52,9 @@ export function AffiliateDashboard() {
   const [copied, setCopied] = useState('');
   const [busy, setBusy] = useState(false);
   const [editingPool, setEditingPool] = useState<Pool | null>(null);
-  const [tab, setTab] = useState<'visao' | 'grupos' | 'boloes' | 'vendas' | 'comissoes'>('visao');
+  const router = useRouter();
+  const tab = parseAffiliateTab(useSearchParams().get('aba'));
+  const setTab = (next: AffiliateTab) => router.push(next === 'visao' ? '/afiliado' : `/afiliado?aba=${next}`, { scroll: true });
   const [inviteGroupId, setInviteGroupId] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [groupForm, setGroupForm] = useState({ nome: '', slug: '', descricao: '' });
@@ -92,9 +97,9 @@ export function AffiliateDashboard() {
 
   const ownPools = workspace.boloes;
   return <div className="affiliate-page"><PushPrompt audience="afiliado" /><AffiliateContract />
-    <div className="affiliate-heading"><div><span className="overline">Workspace do afiliado</span><h1>Seus grupos, seus bolões, sua comissão.</h1><p>Monte seu grupo, convide pessoas e venda cotas dos bolões aprovados pela administração.</p></div><span className={`affiliate-status ${data.statusAprovacao}`}>{statusText(data.statusAprovacao)}</span></div>
+    {tab === 'visao' && <div className="affiliate-heading"><div><span className="overline">Workspace do afiliado</span><h1>Seus grupos, seus bolões, sua comissão.</h1><p>Monte seu grupo, convide pessoas e venda cotas dos bolões aprovados pela administração.</p></div><span className={`affiliate-status ${data.statusAprovacao}`}>{statusText(data.statusAprovacao)}</span></div>}
+    {tab !== 'visao' && data.statusAprovacao && data.statusAprovacao !== 'aprovado' && <div className="form-message form-error" role="status">Seu cadastro de afiliado está {statusText(data.statusAprovacao)}. Algumas ações só liberam depois da aprovação da administração.</div>}
     {(error || notice) && <div className={`form-message ${error ? 'form-error' : 'form-success'}`} role="status">{error || notice}</div>}
-    <nav className="affiliate-tabs" aria-label="Navegação do workspace"><button className={tab === 'visao' ? 'is-active' : ''} onClick={() => setTab('visao')}>Visão geral</button><button className={tab === 'grupos' ? 'is-active' : ''} onClick={() => setTab('grupos')}>Grupos</button><button className={tab === 'boloes' ? 'is-active' : ''} onClick={() => setTab('boloes')}>Meus bolões</button><button className={tab === 'vendas' ? 'is-active' : ''} onClick={() => setTab('vendas')}>Vendas</button><button className={tab === 'comissoes' ? 'is-active' : ''} onClick={() => setTab('comissoes')}>Comissões</button></nav>
 
     {tab === 'visao' && <>
       <section className="affiliate-link-card"><div><span className="overline">Link principal de convite</span><strong>{referralUrl}</strong><small>Quem se cadastra por este link fica ligado a você e entra no seu grupo. Sua comissão é {data.comissaoPadraoPct ?? workspace.afiliado.comissaoPadraoPct ?? 0}% da taxa de administração de cada cota paga. Ela é definida pela administração do BL e fica no seu contrato.</small></div><div className="affiliate-card-actions"><button className="button button-primary" onClick={() => copyText(referralUrl, 'principal')}>{copied === 'principal' ? 'Link copiado' : 'Copiar link'}</button><button className="button button-secondary" disabled={busy} onClick={() => void createInvite()}>Gerar convite</button></div></section>
@@ -107,7 +112,9 @@ export function AffiliateDashboard() {
 
     {tab === 'boloes' && <div className="affiliate-workspace-grid"><section className="affiliate-table-card"><PoolWizard contests={openContests} groups={workspace.grupos} groupId={workspace.grupos[0]?.id ?? null} role="affiliate" editPool={editingPool} onCancelEdit={() => setEditingPool(null)} onSuccess={async () => { setEditingPool(null); await refresh(); }} /></section><section className="affiliate-table-card"><div className="affiliate-card-heading"><div><h2>Meus bolões</h2><p>Ações disponíveis somente sobre recursos do seu workspace.</p></div></div>{ownPools.length ? <div className="affiliate-list-cards">{ownPools.map((pool) => <article key={pool.id}><div className="pool-card-topline"><strong>{modalityLabels[pool.concurso?.modalidade ?? ''] ?? pool.concurso?.modalidade ?? 'Loteria'} · {pool.concurso?.nomeEspecial ? `${pool.concurso.nomeEspecial} · ` : ''}{concursoNo(pool.concurso?.numeroConcurso) === 'a definir' ? 'número a definir' : `#${pool.concurso?.numeroConcurso ?? '—'}`}</strong><span className={`affiliate-status ${pool.status}`}>{pool.status === 'rascunho' && pool.aprovacao?.solicitadaEm ? 'aguardando aprovação' : statusText(pool.status)}</span></div><strong>{pool.cotasIlimitadas ? 'Cotas ilimitadas' : `${pool.totalCotas ?? 0} cotas`} · {money(pool.valorCota)}</strong><small>{pool.cotasIlimitadas ? 'Disponibilidade sob demanda' : `${pool.cotasDisponiveis ?? 0} disponíveis`} · {pool.jogos?.length ?? 0} jogo(s) · Grupo {pool.grupo?.nome ?? '—'}</small><div className="affiliate-row-actions">{pool.status === 'aberto' && <button onClick={() => void copyText(`${window.location.origin}/r/${data.codigoAfiliado}?bolao=${pool.id}`, `bolao-${pool.id}`)}>{copied === `bolao-${pool.id}` ? 'Link copiado!' : 'Copiar link de venda'}</button>}{['rascunho', 'aberto'].includes(pool.status) && <button onClick={() => setEditingPool(pool)}>Editar</button>}{pool.status === 'rascunho' && !pool.aprovacao?.solicitadaEm && <button onClick={() => void mutate(`/api/v1/afiliados/me/boloes/${pool.id}/publicar`, { method: 'POST' }, 'Pedido enviado. A administração do BL vai analisar e liberar a venda.')}>Pedir aprovação</button>}{pool.status === 'rascunho' && pool.aprovacao?.solicitadaEm && <small>Enviado para a administração em {date(pool.aprovacao.solicitadaEm)}.</small>}{pool.status === 'aberto' && <button onClick={() => void mutate(`/api/v1/afiliados/me/boloes/${pool.id}/fechar`, { method: 'POST' }, 'Bolão fechado.')}>Fechar</button>}<button onClick={() => void mutate(`/api/v1/afiliados/me/boloes/${pool.id}/duplicar`, { method: 'POST' }, 'Bolão duplicado como rascunho.')}>Duplicar</button>{!['registrado', 'apurado', 'cancelado'].includes(pool.status) && <button onClick={() => { if (window.confirm('Cancelar este bolão?')) void mutate(`/api/v1/afiliados/me/boloes/${pool.id}`, { method: 'DELETE' }, 'Bolão cancelado.') }}>Cancelar</button>}</div></article>)}</div> : <div className="affiliate-empty"><strong>Nenhum bolão próprio.</strong><p>Crie um grupo e escolha um concurso para montar o primeiro.</p></div>}</section></div>}
 
+    {tab === 'cotas' && <AffiliateQuotas />}
     {tab === 'vendas' && <AffiliateSales />}
+    {tab === 'mais' && <AffiliateMore pending={money(data.comissaoPendente)} status={data.statusAprovacao} />}
     {tab === 'comissoes' && <section className="affiliate-table-card"><div className="affiliate-card-heading"><div><span className="overline">Financeiro</span><h2>Minhas comissões</h2><p>Valores vinculados a cotas pagas e repasses registrados pelo administrador.</p></div></div><div className="affiliate-kpis compact"><article><span>Pendente</span><strong>{money(data.comissaoPendente)}</strong></article><article><span>Pago</span><strong>{money(data.comissaoPaga)}</strong></article><article><span>Total de registros</span><strong>{commissions.length}</strong></article></div>{commissions.length ? <div className="affiliate-table-scroll"><table><thead><tr><th>Comissão</th><th>Cota</th><th>Base</th><th>Percentual</th><th>Valor</th><th>Status</th><th>Data</th></tr></thead><tbody>{commissions.map((commission) => <tr key={commission.id}><td>{commission.id.slice(0, 8)}</td><td>{commission.cotaId.slice(0, 8)}</td><td>{money(commission.baseCalculo)}</td><td>{commission.percentual ?? '—'}%</td><td><strong>{money(commission.valor)}</strong></td><td><span className="affiliate-status">{statusText(commission.status)}</span></td><td>{date(commission.repassadoEm ?? commission.criadoEm)}</td></tr>)}</tbody></table></div> : <div className="affiliate-empty"><strong>Nenhuma comissão confirmada ainda.</strong><p>Quando uma cota do seu link for paga, ela aparecerá aqui.</p></div>}</section>}
   </div>;
 }

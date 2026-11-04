@@ -47,7 +47,8 @@ export function InstallAppButton({ label = 'Instalar aplicativo', hideWhenInstal
 export function PwaRegister() {
   const pathname = usePathname();
   const staff = /^\/(admin|afiliado|operacao)(\/|$)/.test(pathname);
-  const adminApp = /^\/admin(\/|$)/.test(pathname);
+  // Painel e área do afiliado são aplicativos próprios: também recebem o aviso de nova versão.
+  const adminApp = /^\/(admin|afiliado)(\/|$)/.test(pathname);
   const { prompt, installed } = useInstallState();
   const onInstallPage = pathname === '/instalar';
   const [ios, setIos] = useState(false);

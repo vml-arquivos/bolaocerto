@@ -264,6 +264,12 @@ export class AdminController {
     return this.admin.affiliateSalesByPool(user);
   }
 
+  @Get('afiliados/me/cotas')
+  @Roles('afiliado')
+  affiliateQuotas(@CurrentUser() user: AuthUser, @Query('status') status?: string) {
+    return this.admin.affiliateQuotas(user, status);
+  }
+
   @Get('afiliados/me/comissoes')
   @Roles('afiliado')
   affiliateCommissions(@CurrentUser() user: AuthUser) {

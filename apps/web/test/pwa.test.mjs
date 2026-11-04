@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import vm from 'node:vm';
 const source = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
 function worker() {
@@ -55,6 +56,33 @@ test('painel e cliente são dois aplicativos separados (id, escopo, ícone e man
   assert.match(layout, /manifest: '\/admin\/manifest\.webmanifest'/);
   const root = await readFile(new URL('../app/layout.tsx', import.meta.url), 'utf8');
   assert.match(root, /manifest: '\/manifest\.webmanifest'/);
+});
+test('afiliado é o terceiro aplicativo: id, escopo, ícones, atalhos e entrada próprios', async () => {
+  const manifest = await readFile(new URL('../app/afiliado/manifest.webmanifest/route.ts', import.meta.url), 'utf8');
+  assert.match(manifest, /id: '\/afiliado'/); assert.match(manifest, /scope: '\/afiliado'/); assert.match(manifest, /start_url: '\/afiliado/);
+  assert.match(manifest, /bl-afiliado-icon-maskable-512\.png/); assert.match(manifest, /bl-afiliado-icon-512\.png/);
+  for (const aba of ['cotas', 'vendas', 'boloes', 'comissoes', 'grupos']) assert.match(manifest, new RegExp(`/afiliado\\?aba=${aba}`));
+  const layout = await readFile(new URL('../app/afiliado/layout.tsx', import.meta.url), 'utf8');
+  assert.match(layout, /manifest: '\/afiliado\/manifest\.webmanifest'/); assert.match(layout, /robots: \{ index: false/);
+  for (const file of ['bl-afiliado-icon-180', 'bl-afiliado-icon-192', 'bl-afiliado-icon-512', 'bl-afiliado-icon-maskable-192', 'bl-afiliado-icon-maskable-512']) assert.ok(existsSync(new URL(`../public/brand/${file}.png`, import.meta.url)), `falta ${file}.png`);
+  // Os três manifestos têm id e escopo diferentes entre si.
+  const others = [await readFile(new URL('../app/admin/manifest.webmanifest/route.ts', import.meta.url), 'utf8'), await readFile(new URL('../app/manifest.webmanifest/route.ts', import.meta.url), 'utf8')];
+  assert.ok(others.every((code) => !/id: '\/afiliado'/.test(code)));
+  assert.ok(existsSync(new URL('../app/afiliado/entrar/page.tsx', import.meta.url)), 'a entrada do afiliado fica dentro do escopo do app');
+});
+test('área do afiliado usa a casca do app (menu embaixo) e as abas ficam na URL', async () => {
+  const page = await readFile(new URL('../app/afiliado/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /AffiliateShell/); assert.ok(!/SiteHeader|SiteFooter/.test(page));
+  const shell = await readFile(new URL('../components/affiliate-shell.tsx', import.meta.url), 'utf8');
+  assert.match(shell, /aff-bottomnav/); assert.match(shell, /\?aba=/);
+  const dash = await readFile(new URL('../components/affiliate-dashboard.tsx', import.meta.url), 'utf8');
+  assert.match(dash, /AffiliateQuotas/); assert.match(dash, /useSearchParams/); assert.ok(!/\/login\?next=\/afiliado/.test(dash), 'sessão expirada volta para a entrada do app, dentro do escopo');
+  const quotas = await readFile(new URL('../components/affiliate-quotas.tsx', import.meta.url), 'utf8');
+  assert.ok(!/cpf|email|telefone/i.test(quotas), 'o afiliado não vê dados pessoais do comprador');
+});
+test('/instalar apresenta os três aplicativos, cada um instalado na sua entrada', async () => {
+  const page = await readFile(new URL('../app/instalar/page.tsx', import.meta.url), 'utf8');
+  for (const trecho of ['bl-icon-192.png', 'bl-afiliado-icon-192.png', 'bl-admin-icon-192.png', '/afiliado/entrar', '/admin/entrar']) assert.ok(page.includes(trecho), `faltou ${trecho}`);
 });
 test('senha: regra única (mínimo 6, letra e número) no formulário', async () => {
   const lib = await readFile(new URL('../lib/password.ts', import.meta.url), 'utf8');

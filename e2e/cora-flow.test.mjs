@@ -104,6 +104,16 @@ test('Pix: gera a cobrança na Cora, o aviso confirma e a cota fica paga com com
   assert.ok(row, 'o bolão vendido precisa aparecer nas vendas do afiliado');
   assert.equal(row.cotasVendidas, 1);
   assert.equal(row.link, `/r/${state.affiliate.codigoAfiliado}?bolao=${state.poolId}`);
+
+  // Cota a cota: o afiliado vê o comprador só com nome e inicial, a situação e a comissão; nada de CPF.
+  const quotas = await call('GET', '/afiliados/me/cotas', undefined, affiliate); ok(quotas, 'cotas do afiliado');
+  const quota = quotas.data.items.find((item) => item.bolaoId === state.poolId && ['paga', 'registrada'].includes(item.status));
+  assert.ok(quota, 'a cota paga precisa aparecer em Cotas');
+  assert.equal(quota.comprador, 'Comprador T.');
+  assert.equal(quota.comissao?.status, 'pendente');
+  assert.ok(!JSON.stringify(quotas.data).includes(state.cpf), 'o CPF do comprador não pode sair para o afiliado');
+  const noAccess = await call('GET', '/afiliados/me/cotas', undefined, buyer);
+  assert.ok([401, 403].includes(noAccess.status), 'quem não é afiliado não vê as cotas');
 });
 
 test('Boleto com Pix: devolve linha digitável e vencimento', async () => {

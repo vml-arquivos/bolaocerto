@@ -1,13 +1,8 @@
-import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { SiteFooter, SiteHeader } from '../../components/site-header';
 import { AffiliateDashboard } from '../../components/affiliate-dashboard';
+import { AffiliateShell } from '../../components/affiliate-shell';
 
-export const metadata: Metadata = {
-  title: 'Área do afiliado | BL — Bolão Livre',
-  description: 'Acompanhe seu link, cotas atribuídas e comissões no BL.',
-};
-
+// Aplicativo do afiliado: casca própria (menu embaixo no celular), sem o cabeçalho e o rodapé do site.
 export default function AffiliatePage() {
-  return <><SiteHeader /><main className="app-page" id="main-content"><div className="shell"><Suspense fallback={<div className="empty-state"><h3>Carregando área do afiliado…</h3></div>}><AffiliateDashboard /></Suspense></div></main><SiteFooter /></>;
+  return <Suspense fallback={<div className="affiliate-loading">Abrindo o aplicativo do afiliado…</div>}><AffiliateShell><AffiliateDashboard /></AffiliateShell></Suspense>;
 }

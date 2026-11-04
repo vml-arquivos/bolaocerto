@@ -122,10 +122,11 @@ test('afiliado: entra pelo site e abre todas as abas do painel dele', async () =
   await page.fill('#senha', 'Senha123');
   await Promise.all([page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 60000 }), page.click('button.button-primary')]);
   await page.goto(BASE + '/afiliado', { waitUntil: 'load', timeout: 90000 });
-  await page.waitForSelector('.affiliate-tabs', { timeout: 60000 });
-  for (const name of ['Visão geral', 'Grupos', 'Bolões', 'Comissões']) {
-    await page.locator('.affiliate-tabs button', { hasText: name }).first().click();
-    await page.waitForTimeout(400);
+  await page.waitForSelector('.aff-tabs', { timeout: 60000 });
+  await page.waitForSelector('.affiliate-kpis', { timeout: 60000 });
+  for (const name of ['Início', 'Cotas', 'Vendas', 'Bolões', 'Grupos', 'Comissões']) {
+    await page.locator('.aff-tabs a', { hasText: new RegExp(`^${name}$`) }).first().click();
+    await page.waitForTimeout(600);
     assert.equal(await page.locator('.form-error, .admin-toast-error').count(), 0, `aba ${name} mostrou erro`);
   }
   assert.deepEqual(problems, [], problems.join(' | '));

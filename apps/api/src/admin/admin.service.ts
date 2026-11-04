@@ -741,6 +741,48 @@ export class AdminService {
     return { codigoAfiliado: affiliate.codigoAfiliado, totalCotasVendidas: items.reduce((total, item) => total + item.cotasVendidas, 0), items };
   }
 
+  /**
+   * Cotas vindas do link do afiliado, uma a uma (as 200 mais recentes), com a comissão de cada uma.
+   * O afiliado vê só o primeiro nome e a inicial do sobrenome do comprador: CPF, e-mail e telefone não saem daqui.
+   */
+  async affiliateQuotas(user: AuthUser, status?: string) {
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true } });
+    if (!affiliate) throw new NotFoundException('Usuário ainda não possui cadastro de afiliado.');
+    const filter = status && (Object.values(StatusCota) as string[]).includes(status) ? { status: status as StatusCota } : {};
+    const [rows, total] = await Promise.all([
+      this.prisma.cota.findMany({
+        where: { afiliadoReferenciaId: affiliate.id, ...filter },
+        orderBy: { criadoEm: 'desc' },
+        take: 200,
+        select: {
+          id: true, quantidade: true, valorPago: true, status: true, criadoEm: true, titularNome: true,
+          bolao: { select: { id: true, valorCota: true, concurso: { select: { modalidade: true, numeroConcurso: true, dataSorteio: true } } } },
+          comissao: { select: { valor: true, status: true } },
+        },
+      }),
+      this.prisma.cota.count({ where: { afiliadoReferenciaId: affiliate.id, ...filter } }),
+    ]);
+    const items = rows.map((cota) => {
+      const [first = '', ...rest] = String(cota.titularNome ?? '').trim().split(/\s+/);
+      const initial = rest.length ? ` ${rest[rest.length - 1]!.charAt(0).toUpperCase()}.` : '';
+      return {
+        id: cota.id,
+        comprador: `${first}${initial}`.trim() || 'Cotista',
+        bolaoId: cota.bolao.id,
+        modalidade: cota.bolao.concurso?.modalidade ?? null,
+        concurso: cota.bolao.concurso?.numeroConcurso ?? null,
+        sorteio: cota.bolao.concurso?.dataSorteio ?? null,
+        quantidade: cota.quantidade,
+        // Cota ainda não paga não tem valorPago: mostra o valor a pagar (valor da cota × quantidade).
+        valor: Number(cota.valorPago ?? Number(cota.bolao.valorCota) * cota.quantidade).toFixed(2),
+        status: cota.status,
+        criadoEm: cota.criadoEm,
+        comissao: cota.comissao ? { valor: Number(cota.comissao.valor).toFixed(2), status: cota.comissao.status } : null,
+      };
+    });
+    return { total, items };
+  }
+
   async affiliateCommissions(user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');

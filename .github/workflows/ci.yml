@@ -144,6 +144,10 @@ jobs:
           NODE_PATH=$(npm root -g) node --test e2e/checkout-browser.test.mjs
         env:
           E2E_BASE_URL: http://localhost:3000
+      - name: App do afiliado (entrada própria, instalação, menu de baixo e aba Cotas)
+        run: NODE_PATH=$(npm root -g) node --test e2e/affiliate-app.test.mjs
+        env:
+          E2E_BASE_URL: http://localhost:3000
       - name: Navegador (site público e todas as telas do painel)
         run: |
           npm install -g playwright@1.49.1

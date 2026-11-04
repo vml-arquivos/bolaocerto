@@ -42,3 +42,47 @@ describe('vendas do afiliado por bolão', () => {
     await expect(service.affiliateSalesByPool(user)).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('cotas do afiliado, uma a uma', () => {
+  const user = { id: 'u1', papel: 'afiliado' } as never;
+  function setupQuotas(rows: unknown[], total = rows.length) {
+    const prisma = {
+      afiliado: { findUnique: jest.fn().mockResolvedValue({ id: 'af1' }) },
+      cota: { findMany: jest.fn().mockResolvedValue(rows), count: jest.fn().mockResolvedValue(total) },
+    };
+    return { service: new AdminService(prisma as never, { record: jest.fn() } as never), prisma };
+  }
+  const base = { id: 'c1', quantidade: 2, valorPago: 40, status: 'paga', criadoEm: new Date('2026-11-03T12:00:00Z'), titularNome: 'Maria da Silva Souza', bolao: { id: 'b1', valorCota: 20, concurso: { modalidade: 'megasena', numeroConcurso: 3081, dataSorteio: new Date('2026-11-04T22:00:00Z') } }, comissao: { valor: 1.2, status: 'pendente' } };
+
+  it('mostra só o primeiro nome e a inicial do sobrenome, com a comissão da cota', async () => {
+    const { service, prisma } = setupQuotas([base]);
+    const result = await service.affiliateQuotas(user);
+    expect(result.items[0]).toMatchObject({ comprador: 'Maria S.', quantidade: 2, valor: '40.00', status: 'paga', comissao: { valor: '1.20', status: 'pendente' }, modalidade: 'megasena', concurso: 3081 });
+    // Nada de CPF, e-mail ou telefone no que é pedido ao banco.
+    const select = (prisma.cota.findMany.mock.calls[0]![0] as { select: Record<string, unknown> }).select;
+    expect(Object.keys(select)).not.toEqual(expect.arrayContaining(['titularCpf']));
+    expect(JSON.stringify(result)).not.toMatch(/cpf|email|telefone/i);
+    expect(prisma.cota.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { afiliadoReferenciaId: 'af1' }, take: 200 }));
+  });
+
+  it('cota ainda não paga mostra o valor a pagar e não tem comissão', async () => {
+    const { service } = setupQuotas([{ ...base, id: 'c2', valorPago: null, status: 'reservada', titularNome: 'João', comissao: null }]);
+    const result = await service.affiliateQuotas(user);
+    expect(result.items[0]).toMatchObject({ comprador: 'João', valor: '40.00', status: 'reservada', comissao: null });
+  });
+
+  it('filtra por status válido e ignora status inventado', async () => {
+    const a = setupQuotas([]);
+    await a.service.affiliateQuotas(user, 'reservada');
+    expect(a.prisma.cota.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { afiliadoReferenciaId: 'af1', status: 'reservada' } }));
+    const b = setupQuotas([]);
+    await b.service.affiliateQuotas(user, 'qualquer-coisa');
+    expect(b.prisma.cota.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { afiliadoReferenciaId: 'af1' } }));
+  });
+
+  it('quem não é afiliado não vê nada', async () => {
+    const { service, prisma } = setupQuotas([]);
+    prisma.afiliado.findUnique.mockResolvedValue(null);
+    await expect(service.affiliateQuotas(user)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
