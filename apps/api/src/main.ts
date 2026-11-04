@@ -30,6 +30,8 @@ async function bootstrap(): Promise<void> {
   app.use('/api/v1/auth/esqueci-senha', strict(60 * 60_000, 10));
   app.use('/api/v1/auth/redefinir-senha', strict(60 * 60_000, 20));
   app.use('/api/v1/auth/2fa', strict(15 * 60_000, 30));
+  // Análises estatísticas são as consultas públicas mais pesadas: limite próprio por IP.
+  app.use(/^\/api\/v1\/estatisticas\/[^/]+\/(analisar|sugestoes|probabilidades)/, strict(60_000, 30));
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, transformOptions: { enableImplicitConversion: true }, forbidNonWhitelisted: true }));
   await app.listen(config.get<number>('PORT', 3001), '0.0.0.0');
 }

@@ -55,3 +55,37 @@ describe('PoolsService', () => {
     expect(() => service.normalizeGames([{ ordem: 2, numeros: [1, 2] }], [1])).toThrow(ConflictException);
   });
 });
+
+describe('AdminService — somas no banco', () => {
+  it('concilia o financeiro sem carregar todos os pagamentos', async () => {
+    const prisma = {
+      pagamento: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { valorBruto: '110.00', valorTaxaAdmin: '10.00', valorCustoBilhete: '100.00', valorComissaoAfiliado: '2.00' } }),
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn(),
+      },
+      cota: { count: jest.fn().mockResolvedValue(0) },
+    };
+    const audit = { record: jest.fn() };
+    const service = new AdminService(prisma as any, audit as any);
+
+    const result = await service.financialReconciliation({ id: 'admin-1', papel: 'admin' } as any);
+
+    expect(prisma.pagamento.findMany).not.toHaveBeenCalled();
+    expect(prisma.pagamento.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'confirmado' } }));
+    expect(result).toEqual(expect.objectContaining({ valorArrecadado: '110.00', taxaAdministracao: '10.00', custoBilhetes: '100.00', comissoes: '2.00', resultadoLiquidoPlataforma: '8.00', conciliado: true }));
+  });
+
+  it('painel do afiliado soma comissões por status no banco', async () => {
+    const prisma = {
+      afiliado: { findUnique: jest.fn().mockResolvedValue({ id: 'a1', codigoAfiliado: 'ABC', statusAprovacao: 'aprovado', _count: { cotasReferenciadas: 3, usuariosIndicados: 2, comissoes: 4 } }) },
+      cota: { aggregate: jest.fn().mockResolvedValue({ _sum: { valorPago: '300.00' } }), findMany: jest.fn().mockResolvedValue([{ compradorId: 'u1' }, { compradorId: 'u2' }]) },
+      comissao: { groupBy: jest.fn().mockResolvedValue([{ status: 'pendente', _sum: { valor: '12.50' } }, { status: 'paga', _sum: { valor: '30.00' } }]) },
+    };
+    const service = new AdminService(prisma as any, { record: jest.fn() } as any);
+
+    const result = await service.affiliateDashboard({ id: 'u9', papel: 'afiliado' } as any);
+
+    expect(result).toEqual(expect.objectContaining({ comissaoPendente: '12.50', comissaoPaga: '30.00', totalComissoes: 4, participantes: 2, cotas: 3, volume: '300.00' }));
+  });
+});

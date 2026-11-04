@@ -657,27 +657,31 @@ export class AdminService {
   }
 
   async affiliateDashboard(user: AuthUser) {
-    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, include: { comissoes: true, _count: { select: { cotasReferenciadas: true, usuariosIndicados: true } } } });
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, include: { _count: { select: { cotasReferenciadas: true, usuariosIndicados: true, comissoes: true } } } });
     if (!affiliate) throw new NotFoundException('Usuário ainda não possui cadastro de afiliado.');
-    const [volume, participants] = await Promise.all([
+    const [volume, participants, commissionSums] = await Promise.all([
       this.prisma.cota.aggregate({ where: { afiliadoReferenciaId: affiliate.id, status: { in: [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] } }, _sum: { valorPago: true } }),
       this.prisma.cota.findMany({ where: { afiliadoReferenciaId: affiliate.id }, select: { compradorId: true }, distinct: ['compradorId'] }),
+      // Somas feitas no banco, sem carregar todas as comissões do afiliado.
+      this.prisma.comissao.groupBy({ by: ['status'], where: { afiliadoId: affiliate.id }, _sum: { valor: true } }),
     ]);
-    const pending = affiliate.comissoes.filter((commission) => commission.status === StatusComissao.pendente).reduce((sum, commission) => sum + Number(commission.valor), 0);
-    const paid = affiliate.comissoes.filter((commission) => commission.status === StatusComissao.paga).reduce((sum, commission) => sum + Number(commission.valor), 0);
-    return { codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, cadastrosAtribuidos: affiliate._count.usuariosIndicados, participantes: participants.length, cotas: affiliate._count.cotasReferenciadas, volume: Number(volume._sum.valorPago ?? 0).toFixed(2), comissaoPendente: pending.toFixed(2), comissaoPaga: paid.toFixed(2), totalComissoes: affiliate.comissoes.length };
+    const sumOf = (status: StatusComissao) => Number(commissionSums.find((row) => row.status === status)?._sum.valor ?? 0);
+    const pending = sumOf(StatusComissao.pendente);
+    const paid = sumOf(StatusComissao.paga);
+    return { codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, cadastrosAtribuidos: affiliate._count.usuariosIndicados, participantes: participants.length, cotas: affiliate._count.cotasReferenciadas, volume: Number(volume._sum.valorPago ?? 0).toFixed(2), comissaoPendente: pending.toFixed(2), comissaoPaga: paid.toFixed(2), totalComissoes: affiliate._count.comissoes };
   }
 
   async affiliateCommissions(user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
-    const commissions = await this.prisma.comissao.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, select: { id: true, cotaId: true, valor: true, baseCalculo: true, percentual: true, status: true, repassadoEm: true, loteRepasseId: true, criadoEm: true } });
+    const commissions = await this.prisma.comissao.findMany({ where: { afiliadoId: affiliate.id }, orderBy: { criadoEm: 'desc' }, take: 500, select: { id: true, cotaId: true, valor: true, baseCalculo: true, percentual: true, status: true, repassadoEm: true, loteRepasseId: true, criadoEm: true } });
     return commissions.map((commission) => ({ ...commission, valor: commission.valor.toFixed(2), baseCalculo: commission.baseCalculo?.toFixed(2) ?? null, percentual: commission.percentual?.toFixed(2) ?? null }));
   }
 
   async financialReconciliation(user: AuthUser) {
-    const payments = await this.prisma.pagamento.findMany({ where: { status: StatusPagamento.confirmado }, select: { valorBruto: true, valorTaxaAdmin: true, valorCustoBilhete: true, valorComissaoAfiliado: true } });
-    const totals = payments.reduce((acc, payment) => ({ gross: acc.gross + Number(payment.valorBruto), fees: acc.fees + Number(payment.valorTaxaAdmin), cost: acc.cost + Number(payment.valorCustoBilhete), commissions: acc.commissions + Number(payment.valorComissaoAfiliado) }), { gross: 0, fees: 0, cost: 0, commissions: 0 });
+    // A soma é feita no banco: não traz todos os pagamentos para a memória.
+    const sums = await this.prisma.pagamento.aggregate({ where: { status: StatusPagamento.confirmado }, _sum: { valorBruto: true, valorTaxaAdmin: true, valorCustoBilhete: true, valorComissaoAfiliado: true } });
+    const totals = { gross: Number(sums._sum.valorBruto ?? 0), fees: Number(sums._sum.valorTaxaAdmin ?? 0), cost: Number(sums._sum.valorCustoBilhete ?? 0), commissions: Number(sums._sum.valorComissaoAfiliado ?? 0) };
     await this.audit.record(this.prisma, { entidade: 'financeiro', entidadeId: user.id, evento: 'financeiro.consultado', atorId: user.id, payloadDepois: totals });
     const pagamentosSemCota = await this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, cota: { status: { in: [StatusCota.cancelada, StatusCota.estornada] } } } });
     const cotasPagasSemPagamento = await this.prisma.cota.count({ where: { status: { in: [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] }, OR: [{ pagamento: null }, { pagamento: { status: { not: StatusPagamento.confirmado } } }] } });

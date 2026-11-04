@@ -3,6 +3,9 @@
 import { LotteryPriceAdmin } from './lottery-price-admin';
 import { BankPicker } from './admin-numbers';
 import { concursoNo } from '../lib/contest';
+import { authenticatedFetch as authFetch } from '../lib/client-api';
+import { modalityNames } from '../lib/domain';
+import { formatBRL as money } from '../lib/format';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type RecordValue = Record<string, any>;
@@ -22,18 +25,6 @@ type PoolWizardProps = {
   onContestCreated?: () => Promise<void> | void;
 };
 
-const modalityNames: Record<string, string> = {
-  megasena: 'Mega-Sena',
-  lotofacil: 'Lotofácil',
-  quina: 'Quina',
-  lotomania: 'Lotomania',
-  duplasena: 'Dupla Sena',
-  timemania: 'Timemania',
-  diadesorte: 'Dia de Sorte',
-  supersete: 'Super Sete',
-  loteca: 'Loteca',
-};
-
 const modalityLimits: Record<string, { max: number; min: number }> = {
   megasena: { max: 60, min: 6 },
   lotofacil: { max: 25, min: 15 },
@@ -46,23 +37,10 @@ const modalityLimits: Record<string, { max: number; min: number }> = {
   loteca: { max: 14, min: 1 },
 };
 
-function money(value: unknown) {
-  return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
 function dateOnly(value: unknown) {
   if (!value) return '—';
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR');
-}
-
-async function authFetch(path: string, options?: RequestInit) {
-  let response = await fetch(path, { ...options, credentials: 'include' });
-  if (response.status === 401) {
-    const refresh = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (refresh.ok) response = await fetch(path, { ...options, credentials: 'include' });
-  }
-  return response;
 }
 
 function toLocalInput(value: unknown) {

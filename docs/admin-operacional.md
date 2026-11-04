@@ -81,3 +81,10 @@ Painel → Jogos e vendas → **Página inicial**.
 
 - As tabelas se ajustam à largura da tela (sem barra de rolagem em telas largas). A lista de **Bolões** tem 8 colunas, um botão principal (Publicar ou Fechar) e o menu **Mais ▾** com as demais ações; no celular vira cartões.
 - Botões de texto são azuis; só **Excluir/Remover** ficam vermelhos.
+
+## Organização do código (para quem for dar manutenção)
+
+- **Painel admin**: `apps/web/components/admin-dashboard.tsx` só cuida de dados, filtros e ações. Cada tela fica em `apps/web/components/admin-views/<tela>-view.tsx` e recebe tudo por um objeto `ctx` (tipo `AdminCtx` em `admin-views/shared.tsx`, junto com `money`, `dateTime`, `statusClass` e as peças `Panel`, `Table`, `Empty`, `Kpi`). Tela nova = arquivo novo + uma linha em `renderView`. Não declare telas dentro do painel: elas são recriadas a cada atualização e perdem o que foi digitado.
+- **Funções compartilhadas**: `authenticatedFetch` em `lib/client-api.ts`, `modalityNames` em `lib/domain.ts`, `formatBRL` em `lib/format.ts`. Não copie essas funções para dentro dos componentes (o teste `structure.test.mjs` avisa).
+- **Estilos**: `app/globals.css` só importa os blocos de `app/styles/01…07`. A ordem dos arquivos é a ordem da cascata; novos estilos entram no bloco do assunto (ou em `07-painel.css`).
+- **API**: resumo financeiro e painel do afiliado somam no banco (`aggregate`/`groupBy`), sem carregar todas as linhas. Rotas públicas de análise estatística (`/estatisticas/:modalidade/analisar|sugestoes|probabilidades`) têm limite de 30 por minuto por IP.

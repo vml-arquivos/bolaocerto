@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useState } from 'react';
+import { authenticatedFetch as authFetch } from '../lib/client-api';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Rec = Record<string, any>;
@@ -10,7 +11,7 @@ export const brl = (value: unknown) => new Intl.NumberFormat('pt-BR', { style: '
 export const dateTime = (value: unknown) => (value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(String(value))) : '—');
 export const dateOnly = (value: unknown) => (value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(String(value))) : '—');
 export const label = (value: unknown) => String(value ?? '—').replaceAll('_', ' ');
-export const modalityNames: Record<string, string> = { megasena: 'Mega-Sena', lotofacil: 'Lotofácil', quina: 'Quina', lotomania: 'Lotomania', duplasena: 'Dupla Sena', timemania: 'Timemania', diadesorte: 'Dia de Sorte', supersete: 'Super Sete', loteca: 'Loteca' };
+export { modalityNames } from '../lib/domain';
 
 export function chip(status: unknown) {
   const s = String(status ?? '').toLowerCase();
@@ -20,14 +21,7 @@ export function chip(status: unknown) {
   return 'status-chip';
 }
 
-export async function authFetch(path: string, options?: RequestInit) {
-  let response = await fetch(path, { ...options, credentials: 'include' });
-  if (response.status === 401) {
-    const refresh = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (refresh.ok) response = await fetch(path, { ...options, credentials: 'include' });
-  }
-  return response;
-}
+export { authFetch };
 
 export async function api<T = Rec>(path: string, options?: RequestInit): Promise<T> {
   const response = await authFetch(path, options);

@@ -60,7 +60,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
 
-  return <aside className="purchase-card"><span className="overline">Participar agora</span><p className="price">{money(unitPrice)}</p><p className="muted">por cota · {unlimited ? 'cotas ilimitadas' : `${available} disponíveis`}</p>
+  return <aside className="purchase-card"><span className="overline">Participar agora</span><p className="muted">{money(unitPrice)} por cota · {unlimited ? 'cotas ilimitadas' : `${available} disponíveis`}</p>
     {rules?.antecipada && <div className="notice presale-notice"><strong>Pré-venda</strong><span>O jogo será registrado na lotérica depois do fim das vendas e o comprovante será enviado a todos os cotistas.</span></div>}
     {(rules?.inicioEm || rules?.fimEm) && <p className="muted sale-window">{rules?.inicioEm ? `Venda de ${when(rules.inicioEm)}` : 'Venda'}{rules?.fimEm ? ` até ${when(rules.fimEm)}` : ''}</p>}
     {rules?.texto && <div className="sale-rules-text"><strong>Regras de venda</strong><p>{rules.texto}</p></div>}

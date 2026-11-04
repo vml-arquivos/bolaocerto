@@ -28,7 +28,7 @@ export type PublicPool = {
 
 export const modalityNames: Record<string, string> = {
   megasena: 'Mega-Sena', lotofacil: 'Lotofácil', quina: 'Quina', lotomania: 'Lotomania',
-  duplasena: 'Dupla Sena', timemania: 'Timemania', diadesorte: 'Dia de Sorte', loteca: 'Loteca', supersete: 'Super Sete',
+  duplasena: 'Dupla Sena', timemania: 'Timemania', diadesorte: 'Dia de Sorte', supersete: 'Super Sete', loteca: 'Loteca',
 };
 
 export function money(value: string | number | null | undefined) {

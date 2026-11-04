@@ -5,6 +5,8 @@ import { AffiliateContract } from './legal-document';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { PoolWizard } from './pool-wizard';
 import { concursoNo } from '../lib/contest';
+import { authenticatedFetch } from '../lib/client-api';
+import { formatBRL as money } from '../lib/format';
 
 type AffiliateData = { id?: string; comissaoPadraoPct?: number; codigoAfiliado?: string; statusAprovacao?: string; cadastrosAtribuidos?: number; participantes?: number; cotas?: number; volume?: string; comissaoPendente?: string; comissaoPaga?: string; totalComissoes?: number };
 type Commission = { id: string; cotaId: string; valor: string; baseCalculo?: string | null; percentual?: string | null; status: string; criadoEm: string; repassadoEm?: string | null };
@@ -20,11 +22,7 @@ const modalityLabels: Record<string, string> = { megasena: 'Mega-Sena', lotofaci
 const modalityMinimums: Record<string, number> = { megasena: 6, lotofacil: 15, quina: 5, lotomania: 50, duplasena: 6, timemania: 10, diadesorte: 7, supersete: 7, loteca: 1 };
 
 async function authFetch(path: string, options?: RequestInit) {
-  let response = await fetch(path, { ...options, credentials: 'include' });
-  if (response.status === 401) {
-    const refresh = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'include' });
-    if (refresh.ok) response = await fetch(path, { ...options, credentials: 'include' });
-  }
+  const response = await authenticatedFetch(path, options);
   if (response.status === 401) { window.location.href = '/login?next=/afiliado'; throw new Error('Sessão expirada.'); }
   return response;
 }
@@ -36,7 +34,6 @@ async function load(path: string, options?: RequestInit) {
   return data;
 }
 
-function money(value: unknown) { return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function date(value: unknown) { const parsed = new Date(String(value)); return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('pt-BR'); }
 function statusText(value: unknown) { return String(value ?? '—').replaceAll('_', ' '); }
 

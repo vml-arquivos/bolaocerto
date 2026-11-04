@@ -1,0 +1,294 @@
+/* ============================================================
+   BL — Bolão Livre — Design System
+   Tokens + temas claro/escuro. Um único conjunto de componentes,
+   toda a variação visual acontece via custom properties abaixo.
+   ============================================================ */
+
+/* ---------- Tokens: tema escuro (padrão) ----------
+   Paleta derivada da identidade de marca BL (Digital Highlights, ago/2026):
+   navy profundo de fundo, azul royal para preenchimentos sólidos e azul
+   elétrico para texto/links/realces sobre fundo escuro. */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --font-sans: 'Figtree Variable', Figtree, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --bg-page: #05091f;
+  --bg-page-alt: #070d29;
+  --bg-sidebar-start: #030820;
+  --bg-sidebar-end: #12224f;
+  --bg-header: rgba(5, 9, 31, 0.86);
+
+  --surface: #0b1330;
+  --surface-hover: #121d42;
+  --surface-raised: #16234f;
+  --surface-muted: #080e26;
+  --overlay: rgba(2, 5, 16, 0.6);
+
+  --text-primary: #f3f6ff;
+  --text-secondary: #b9c4ea;
+  --text-muted: #8790b8;
+  --text-on-primary: #ffffff;
+  --text-on-accent-panel: #eef2ff;
+
+  --border: rgba(150, 172, 255, 0.16);
+  --border-strong: rgba(160, 182, 255, 0.32);
+
+  /* --primary/--accent: legiveis como texto/link/icone sobre fundo escuro (WCAG >=4.5:1). */
+  --primary: #3d84fd;
+  --primary-hover: #5b9bff;
+  --primary-soft: rgba(61, 132, 253, 0.16);
+  --primary-contrast: #ffffff;
+  --accent: #5b9bff;
+  --accent-hover: #7fb0ff;
+  --accent-soft: rgba(91, 155, 255, 0.16);
+
+  /* --primary-solid/--accent-solid: preenchimento solido para texto branco em cima
+     (botoes, badges ativos, chips) - tom mais profundo para garantir contraste AA. */
+  --primary-solid: #0028b4;
+  --primary-solid-hover: #0033c4;
+  --accent-solid: #0056e8;
+  --accent-solid-hover: #1c66ec;
+
+  --success: #3ecf97;
+  --success-soft: rgba(62, 207, 151, 0.14);
+  --success-strong: #bdf5df;
+  --warning: #f6bb4c;
+  --warning-soft: rgba(246, 187, 76, 0.14);
+  --warning-strong: #ffe6b0;
+  --danger: #ff7288;
+  --danger-soft: rgba(255, 114, 136, 0.14);
+  --danger-strong: #ffcdd6;
+  --info: #55d3ec;
+  --info-soft: rgba(85, 211, 236, 0.14);
+  --info-strong: #bdf1fa;
+  --neutral-soft: rgba(150, 165, 210, 0.16);
+
+  --shadow-sm: 0 2px 10px rgba(2, 5, 18, 0.35);
+  --shadow-md: 0 14px 32px rgba(2, 5, 18, 0.4);
+  --shadow-lg: 0 30px 70px rgba(1, 4, 16, 0.5);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --focus-ring: 0 0 0 3px rgba(61, 132, 253, 0.4);
+}
+
+/* ---------- Tokens: tema claro ----------
+   Mesma familia de azul da marca, ajustada para leitura sobre fundo claro;
+   sidebar do admin reaproveita o navy da marca para reforcar identidade. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-page: #f3f5fb;
+  --bg-page-alt: #eef1fa;
+  --bg-sidebar-start: #030a24;
+  --bg-sidebar-end: #12224f;
+  --bg-header: rgba(255, 255, 255, 0.88);
+
+  --surface: #ffffff;
+  --surface-hover: #f4f6fc;
+  --surface-raised: #ffffff;
+  --surface-muted: #eef1fa;
+  --overlay: rgba(15, 23, 55, 0.4);
+
+  --text-primary: #101a3d;
+  --text-secondary: #4a5578;
+  --text-muted: #646b86;
+  --text-on-primary: #ffffff;
+  --text-on-accent-panel: #ffffff;
+
+  --border: #e3e7f4;
+  --border-strong: #ccd3ec;
+
+  --primary: #003ce1;
+  --primary-hover: #0029b6;
+  --primary-soft: #e7edff;
+  --primary-contrast: #ffffff;
+  --accent: #0054e5;
+  --accent-hover: #0041b2;
+  --accent-soft: #e7f0ff;
+  --primary-solid: #003ce1;
+  --primary-solid-hover: #0029b6;
+  --accent-solid: #0054e5;
+  --accent-solid-hover: #0041b2;
+
+  --success: #0f754f;
+  --success-soft: #e5f8ef;
+  --success-strong: #0d6a49;
+  --warning: #8e5a08;
+  --warning-soft: #fff3da;
+  --warning-strong: #855109;
+  --danger: #c22c46;
+  --danger-soft: #ffe9ed;
+  --danger-strong: #9c2038;
+  --info: #0c6b84;
+  --info-soft: #e2f6fa;
+  --info-strong: #0b6478;
+  --neutral-soft: #eef0f8;
+
+  --shadow-sm: 0 1px 3px rgba(23, 35, 77, 0.07);
+  --shadow-md: 0 10px 26px rgba(23, 35, 77, 0.08);
+  --shadow-lg: 0 26px 56px rgba(23, 35, 77, 0.12);
+
+  --focus-ring: 0 0 0 3px rgba(0, 60, 225, 0.25);
+}
+
+/* Fallback quando o script de tema ainda não rodou (sem JS) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg-page: #f3f5fb;
+    --bg-page-alt: #eef1fa;
+    --bg-sidebar-start: #030a24;
+    --bg-sidebar-end: #12224f;
+    --bg-header: rgba(255, 255, 255, 0.88);
+    --surface: #ffffff;
+    --surface-hover: #f4f6fc;
+    --surface-raised: #ffffff;
+    --surface-muted: #eef1fa;
+    --overlay: rgba(15, 23, 55, 0.4);
+    --text-primary: #101a3d;
+    --text-secondary: #4a5578;
+    --text-muted: #646b86;
+    --text-on-primary: #ffffff;
+    --border: #e3e7f4;
+    --border-strong: #ccd3ec;
+    --primary: #003ce1;
+    --primary-hover: #0029b6;
+    --primary-soft: #e7edff;
+    --accent: #0054e5;
+    --accent-hover: #0041b2;
+    --accent-soft: #e7f0ff;
+    --primary-solid: #003ce1;
+    --primary-solid-hover: #0029b6;
+    --accent-solid: #0054e5;
+    --accent-solid-hover: #0041b2;
+    --success: #0f754f;
+    --success-soft: #e5f8ef;
+    --warning: #8e5a08;
+    --warning-soft: #fff3da;
+    --danger: #c22c46;
+    --danger-soft: #ffe9ed;
+    --info: #0c6b84;
+    --info-soft: #e2f6fa;
+    --neutral-soft: #eef0f8;
+    --shadow-sm: 0 1px 3px rgba(23, 35, 77, 0.07);
+    --shadow-md: 0 10px 26px rgba(23, 35, 77, 0.08);
+    --shadow-lg: 0 26px 56px rgba(23, 35, 77, 0.12);
+  }
+}
+
+/* ---------- Reset & base ---------- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition: background-color .2s ease, color .2s ease;
+}
+a { color: inherit; text-decoration: none; }
+strong, b, th { font-weight: 600; }
+h1, h2, h3, h4 { font-weight: 600; line-height: 1.2; letter-spacing: -.012em; text-wrap: balance; }
+p { text-wrap: pretty; }
+small { line-height: 1.5; }
+:where(.money, .kpi, [class*='kpi'] strong, td, .tabular) { font-variant-numeric: tabular-nums; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+h1, h2, h3, p { margin-top: 0; }
+img { max-width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+::selection { background: var(--primary-soft); color: var(--text-primary); }
+
+.shell { width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
+.muted { color: var(--text-muted); }
+
+/* Foco visível consistente em toda a aplicação */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.skip-link { position: absolute; z-index: 100; top: -60px; left: 12px; padding: 10px 16px; border-radius: var(--radius-sm); background: var(--primary-solid); color: #fff; font-weight: 600; font-size: .85rem; transition: top .15s ease; }
+.skip-link:focus { top: 12px; }
+
+/* ---------- Tipografia utilitária ---------- */
+.overline { margin: 0; color: var(--primary); font-size: .8rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.eyebrow-soft { color: var(--text-muted); font-size: .8rem; font-weight: 560; letter-spacing: .08em; text-transform: uppercase; }
+
+/* ---------- Theme toggle ---------- */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; flex: 0 0 auto;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface); color: var(--text-secondary);
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+.theme-toggle:hover { color: var(--primary); border-color: var(--border-strong); transform: translateY(-1px); }
+.theme-toggle svg { width: 19px; height: 19px; }
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle .icon-moon { display: block; }
+:root[data-theme='light'] .theme-toggle .icon-sun { display: block; }
+:root[data-theme='light'] .theme-toggle .icon-moon { display: none; }
+
+/* ---------- Botões ---------- */
+.button {
+  min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 17px; border: 1px solid transparent; border-radius: var(--radius-md);
+  font-size: .9rem; font-weight: 600; letter-spacing: -.004em;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease;
+}
+.button:hover { transform: translateY(-1px); }
+.button-primary { background: linear-gradient(135deg, var(--primary-solid), var(--accent-solid)); color: var(--text-on-primary); box-shadow: 0 10px 22px rgba(0, 40, 180, .32); }
+.button-primary:hover { box-shadow: 0 14px 28px rgba(86, 128, 255, .34); filter: brightness(1.04); }
+.button-ghost { background: var(--surface); border-color: var(--border); color: var(--text-primary); }
+.button-ghost:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.button-secondary { background: linear-gradient(135deg, var(--bg-sidebar-start), var(--bg-sidebar-end)); color: #fff; border-color: transparent; }
+.button-danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.button-danger:hover { filter: brightness(1.08); }
+.button-large { min-height: 54px; padding-inline: 23px; font-size: .96rem; }
+.button-disabled, .button:disabled { pointer-events: none; opacity: .55; background: var(--surface-muted); color: var(--text-muted); box-shadow: none; }
+.text-link, .section-link { border: 0; background: none; padding: 0; color: var(--primary); font-weight: 600; font: inherit; }
+.text-link { font-size: .8rem; cursor: pointer; }
+.text-link:hover, .section-link:hover { color: var(--accent); }
+.text-link span, .featured-link span, .section-link span { font-size: 1.2em; }
+
+/* ---------- Badges / status ---------- */
+.status-chip, .tag, .pool-status, .contest-status, .affiliate-status {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  border-radius: 999px; padding: 5px 10px; font-size: .76rem; font-weight: 600;
+  letter-spacing: .02em; text-transform: capitalize;
+  background: var(--neutral-soft); color: var(--text-secondary);
+}
+.status-success, .tag-open, .pool-status.is-open, .contest-status.is-open,
+.affiliate-status.aprovado, .affiliate-status.aberto, .affiliate-status.paga, .affiliate-status.pago,
+.affiliate-status.registrado, .affiliate-status.apurado {
+  background: var(--success-soft); color: var(--success-strong);
+}
+.status-warning, .affiliate-status.pendente, .affiliate-status.rascunho, .affiliate-status.reservada {
+  background: var(--warning-soft); color: var(--warning-strong);
+}
+.status-danger, .tag-closed, .affiliate-status.cancelado, .affiliate-status.falhou {
+  background: var(--danger-soft); color: var(--danger-strong);
+}
+.status-info, .contest-status.is-closed, .pool-status.is-closed, .affiliate-status.fechado {
+  background: var(--info-soft); color: var(--info-strong);
+}
+.status-dot-indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-soft); }
