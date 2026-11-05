@@ -37,7 +37,13 @@ export function money(value: string | number | null | undefined) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
 }
 
+/** Data e hora no horário de Brasília. Quando só se sabe o dia (meia-noite), mostra só a data para não inventar um horário. */
 export function shortDate(value?: string) {
   if (!value) return 'A definir';
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).format(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'A definir';
+  const timeZone = 'America/Sao_Paulo';
+  const clock = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(date);
+  if (clock === '00:00') return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone }).format(date);
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone }).format(date);
 }

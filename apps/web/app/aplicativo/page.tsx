@@ -11,7 +11,7 @@ export const metadata = { title: 'Bolões' };
 export default async function ClientApp() {
   const result = await apiGet<PublicPool[]>('/boloes/disponiveis');
   return <><SiteHeader/><LiveStorefront/><RoleLaunch/><main className="shell client-app-home client-page" id="main-content"><PushPrompt audience="cliente" />
-    <header className="account-top"><div><small>Bolão Livre</small><h1>Escolha seu bolão</h1></div></header>
-    {result.error ? <div className="notice" role="status">Não foi possível consultar os bolões agora. Verifique sua conexão e tente novamente.</div> : <PoolCarousel pools={result.data ?? []} serverNow={Date.now()}/>}
+    <div className="account-app"><header className="account-top"><div><small>Bolão Livre</small><h1>Escolha seu bolão</h1></div></header>
+    {result.error ? <div className="notice" role="status">Não foi possível consultar os bolões agora. Verifique sua conexão e tente novamente.</div> : <PoolCarousel pools={result.data ?? []} serverNow={Date.now()}/>}</div>
   </main><ClientFooter/></>;
 }
