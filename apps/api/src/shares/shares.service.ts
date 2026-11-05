@@ -18,7 +18,16 @@ export class SharesService {
 
   async reserve(dto: ReserveShareDto, user: AuthUser, requestMeta: { ip: string; userAgent?: string }) {
     if (process.env.PAYMENTS_ENABLED !== 'true') throw new ServiceUnavailableException('As reservas estão temporariamente indisponíveis. Tente novamente em instantes.');
-    const titularCpf = normalizeCpf(dto.titularCpf);
+    // Sem titular informado, usa o nome e o CPF do cadastro de quem compra (ninguém digita os mesmos dados duas vezes).
+    let titularCpfRaw = dto.titularCpf;
+    let titularNomeFinal = dto.titularNome?.trim();
+    if (!titularCpfRaw || !titularNomeFinal) {
+      const owner = await this.prisma.usuario.findUnique({ where: { id: user.id }, select: { nome: true, cpf: true } });
+      if (!owner) throw new ConflictException('Cadastro do comprador não encontrado.');
+      titularCpfRaw = titularCpfRaw || owner.cpf;
+      titularNomeFinal = titularNomeFinal || owner.nome;
+    }
+    const titularCpf = normalizeCpf(titularCpfRaw);
     if (!isValidCpf(titularCpf)) throw new ConflictException('CPF do titular inválido.');
     if (dto.aceitoTermos !== true) throw new ConflictException('O aceite expresso do contrato é obrigatório.');
     const document = approvedDocument('participacao');
@@ -67,7 +76,7 @@ export class SharesService {
           bolaoId: pool.id,
           compradorId: user.id,
           titularCpf,
-          titularNome: dto.titularNome.trim(),
+          titularNome: titularNomeFinal,
           quantidade: dto.quantidade,
           afiliadoReferenciaId: referenceAffiliateId,
           status: StatusCota.reservada,

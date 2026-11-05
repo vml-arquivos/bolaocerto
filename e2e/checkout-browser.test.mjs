@@ -47,8 +47,10 @@ test('compra pelo site: checkout com QR Code, confirmação automática e volta 
     await api('POST', '/auth/registrar', { nome: 'Comprador Checkout', cpf, email: `checkout.${Date.now()}@teste.local`, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' });
     const poolPage = `/boloes/${pool.id}`;
     await page.goto(BASE + poolPage, { waitUntil: 'load', timeout: 90000 });
-    await page.fill('#titularNome', 'Comprador Checkout');
-    await page.fill('#titularCpf', cpf);
+    await page.waitForSelector('.purchase-card form');
+    // O pagamento usa o nome e o CPF do cadastro: nenhum campo de titular na tela.
+    assert.equal(await page.locator('#titularNome').count(), 0, 'não pede o titular de novo');
+    assert.equal(await page.locator('#titularCpf').count(), 0);
     await page.check('.purchase-card form input[type=checkbox]');
     await page.click('.purchase-card form button.button-primary');
 

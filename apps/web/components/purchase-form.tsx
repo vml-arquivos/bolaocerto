@@ -21,6 +21,10 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const [accepted, setAccepted] = useState(false);
   useEffect(() => { void fetch('/api/v1/config/mandato', { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Contrato indisponível.'); setContract(await response.json()); }).catch(e => setMessage(e.message)); }, []);
   const [loading, setLoading] = useState(false);
+  const [me, setMe] = useState<{ nome: string } | null | undefined>(undefined);
+  const [qty, setQty] = useState(1);
+  const [otherHolder, setOtherHolder] = useState(false);
+  useEffect(() => { void fetch('/api/v1/auth/me', { credentials: 'include', cache: 'no-store' }).then(async (response) => setMe(response.ok ? await response.json() as { nome: string } : null)).catch(() => setMe(null)); }, []);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
   const [created, setCreated] = useState<{ shareId: string; payment: PaymentView } | null>(null);
@@ -48,7 +52,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     const form = new FormData(event.currentTarget);
     try {
       if (!contract?.aprovado || !accepted) throw new Error('Leia e aceite o contrato vigente antes de reservar.');
-      const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: Number(form.get('quantidade')), titularCpf: String(form.get('titularCpf')), titularNome: String(form.get('titularNome')), termoMandatoHash: contract.hash, aceitoTermos: true }) });
+      const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: Number(form.get('quantidade')), ...(otherHolder ? { titularCpf: String(form.get('titularCpf')), titularNome: String(form.get('titularNome')) } : {}), termoMandatoHash: contract.hash, aceitoTermos: true }) });
       if (reserveResponse.status === 401) throw new Error('Entre na sua conta antes de reservar uma cota.');
       const reserve = await reserveResponse.json() as { id?: string; message?: string | string[] };
       if (!reserveResponse.ok || !reserve.id) throw new Error(Array.isArray(reserve.message) ? reserve.message.join(' ') : reserve.message || 'Falha ao reservar.');
@@ -57,25 +61,34 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
       if (!paymentResponse.ok) throw new Error((Array.isArray(payment.message) ? payment.message.join(' ') : payment.message) || 'Reserva criada, mas o pagamento não pôde ser iniciado. Consulte Minhas Cotas.');
       setCreated({ shareId: reserve.id, payment });
       // Pagamento em tela própria: QR Code, código e confirmação; depois volta para este bolão.
-      try { window.sessionStorage.setItem(`bl-checkout:${reserve.id}`, JSON.stringify({ voltar: `/boloes/${poolId}`, quantidade: Number(form.get('quantidade')), titular: String(form.get('titularNome')) })); } catch { /* sem sessionStorage: o checkout usa Minhas Cotas */ }
+      try { window.sessionStorage.setItem(`bl-checkout:${reserve.id}`, JSON.stringify({ voltar: `/boloes/${poolId}`, quantidade: Number(form.get('quantidade')), titular: otherHolder ? String(form.get('titularNome')) : (me?.nome ?? '') })); } catch { /* sem sessionStorage: o checkout usa Minhas Cotas */ }
       setMessage('Reserva concluída. Abrindo o pagamento…');
       window.location.assign(`/checkout/${reserve.id}?voltar=${encodeURIComponent(`/boloes/${poolId}`)}`);
       return;
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
 
-  return <aside className="purchase-card"><span className="overline">Participar agora</span><p className="muted">{money(unitPrice)} por cota · {unlimited ? 'cotas ilimitadas' : `${available} disponíveis`}</p>
+  return <aside className="purchase-card"><span className="overline">Participar</span><div className="purchase-price"><strong>{money(unitPrice)}</strong><span>por cota · {unlimited ? 'cotas ilimitadas' : `${available} ${available === 1 ? 'disponível' : 'disponíveis'}`}</span></div>
     {rules?.antecipada && <div className="notice presale-notice"><strong>Pré-venda</strong><span>O jogo será registrado na lotérica depois do fim das vendas e o comprovante será enviado a todos os cotistas.</span></div>}
     {(rules?.inicioEm || rules?.fimEm) && <p className="muted sale-window">{rules?.inicioEm ? `Venda de ${when(rules.inicioEm)}` : 'Venda'}{rules?.fimEm ? ` até ${when(rules.fimEm)}` : ''}</p>}
     {rules?.texto && <div className="sale-rules-text"><strong>Regras de venda</strong><p>{rules.texto}</p></div>}
     {release?.condicional && <ReleaseMeter release={release} />}
     {!paymentsEnabled ? <div className="notice payment-disabled"><strong>Reservas temporariamente indisponíveis</strong><span>As reservas deste bolão estão pausadas no momento. Tente novamente em alguns instantes.</span></div>
+      : enabled && me === null ? <div className="buy-login"><p>Entre na sua conta para participar. Leva um minuto.</p><Link className="button button-primary" href={`/login?next=${encodeURIComponent(`/boloes/${poolId}`)}`}>Entrar</Link><Link className="button button-secondary" href="/cadastro">Criar conta</Link></div>
+      : enabled && me === undefined ? <p className="muted" aria-busy="true">Carregando…</p>
       : enabled ? <form onSubmit={submit}>
-        <div className="field"><label htmlFor="quantidade">Quantidade de cotas</label><input id="quantidade" name="quantidade" type="number" min={1} {...(maxQuantity === undefined ? {} : { max: maxQuantity })} defaultValue={1} required />{maxPerPerson !== null && <small>Máximo de {maxPerPerson} {maxPerPerson === 1 ? 'cota' : 'cotas'} por pessoa.</small>}</div>
-        <div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required /></div>
-        <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div>
+        <div className="buy-qty"><label htmlFor="quantidade">Cotas</label>
+          <div className="stepper"><button type="button" aria-label="Menos uma cota" onClick={() => setQty((value) => Math.max(1, value - 1))} disabled={qty <= 1}>−</button>
+            <input id="quantidade" name="quantidade" type="number" inputMode="numeric" min={1} {...(maxQuantity === undefined ? {} : { max: maxQuantity })} value={qty} onChange={(event) => setQty(Math.max(1, Math.trunc(Number(event.target.value) || 1)))} required />
+            <button type="button" aria-label="Mais uma cota" onClick={() => setQty((value) => (maxQuantity === undefined ? value + 1 : Math.min(maxQuantity, value + 1)))} disabled={maxQuantity !== undefined && qty >= maxQuantity}>+</button></div>
+          <strong className="buy-total" aria-live="polite">{money(Number(unitPrice) * qty)}</strong></div>
+        {maxPerPerson !== null && <small className="muted">Máximo de {maxPerPerson} {maxPerPerson === 1 ? 'cota' : 'cotas'} por pessoa.</small>}
+        {!otherHolder ? <p className="buy-holder">Em nome de <strong>{me?.nome}</strong> · <button type="button" className="text-link" onClick={() => setOtherHolder(true)}>outro titular</button></p>
+          : <div className="buy-holder-fields"><div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required /></div>
+            <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div>
+            <button type="button" className="text-link" onClick={() => setOtherHolder(false)}>Usar meu cadastro</button></div>}
         {methods.length > 1 && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
-        <details><summary>Contrato desta compra · {contract?.versao ?? 'carregando'}</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito os <Link href="/termos" target="_blank"><u>termos de participação</u></Link>, confirmo ser maior de 18 anos e autorizo o registro.</span></label>
+        <details className="buy-contract"><summary>Ler o contrato desta compra</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito o <Link href="/termos" target="_blank"><u>contrato de participação</u></Link> e confirmo ter mais de 18 anos.</span></label>
         <button className="button button-primary" disabled={loading || !accepted || !contract?.aprovado}>{loading ? 'Processando…' : method === 'boleto' ? 'Reservar e gerar boleto' : method === 'cartao' ? 'Reservar e pagar no cartão' : 'Reservar e gerar Pix'}</button>
       </form> : ruleState === 'em_breve' ? <div className="notice"><strong>A venda ainda não começou</strong><span>As cotas abrem em {when(rules?.inicioEm)}.</span></div>
         : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>

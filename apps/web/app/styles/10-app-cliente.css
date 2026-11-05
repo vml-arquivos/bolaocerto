@@ -1,0 +1,156 @@
+/* Aplicativo do cliente: telas enxutas, tipografia compacta e componentes no padrão de app (carrossel, abas, linhas recolhíveis). */
+.client-page { padding-top: 18px; padding-bottom: 28px; }
+.account-app { display: grid; gap: 14px; max-width: 760px; margin: 0 auto; font-size: .92rem; }
+.account-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.account-top small { color: var(--text-muted); font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+.account-top h1 { margin: 2px 0 0; font-size: 1.45rem; line-height: 1.15; letter-spacing: -.015em; }
+.account-top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.account-top-actions .button { min-height: 36px; padding: 0 14px; font-size: .84rem; }
+
+.account-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.account-stats > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); min-width: 0; }
+.account-stats small { color: var(--text-muted); font-size: .72rem; }
+.account-stats strong { color: var(--text-primary); font-size: 1.02rem; overflow-wrap: anywhere; }
+
+.account-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 12px; background: var(--surface-muted); border: 1px solid var(--border); }
+.account-tabs button { min-height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--text-secondary); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; }
+.account-tabs button.is-on { background: var(--surface-raised); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.account-section { display: grid; gap: 10px; }
+.account-updated { margin: 0; text-align: center; color: var(--text-muted); font-size: .74rem; }
+
+/* Minhas cotas */
+.cota-list { display: grid; gap: 10px; }
+.cota-card { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.cota-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.cota-card header > div { display: grid; gap: 2px; min-width: 0; }
+.cota-card header strong { font-size: .95rem; color: var(--text-primary); }
+.cota-card header small, .cota-more-body small { color: var(--text-muted); font-size: .76rem; }
+.cota-status { flex: 0 0 auto; padding: 4px 9px; border-radius: 999px; font-size: .7rem; font-weight: 700; background: var(--neutral-soft); color: var(--text-secondary); white-space: nowrap; }
+.cota-status.is-ok { background: var(--success-soft); color: var(--success); }
+.cota-status.is-warn { background: var(--warning-soft); color: var(--warning); }
+.cota-status.is-gold { background: var(--warning-soft); color: var(--warning-strong); }
+.cota-meta { display: flex; justify-content: space-between; align-items: baseline; color: var(--text-secondary); font-size: .86rem; }
+.cota-meta strong { color: var(--text-primary); font-size: 1.05rem; }
+.cota-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cota-actions .button { min-height: 38px; padding: 0 14px; font-size: .84rem; flex: 1 1 auto; justify-content: center; }
+.cota-payment { padding-top: 4px; }
+.cota-more > summary { cursor: pointer; color: var(--text-muted); font-size: .8rem; font-weight: 600; }
+.cota-more-body { display: grid; gap: 8px; padding-top: 8px; }
+.cota-more-body ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; }
+.cota-more-body code { font-size: .8rem; }
+.notices-card { padding: 14px; }
+.notices-card h2 { font-size: .95rem; margin: 0; }
+
+/* Minha conta: linhas recolhíveis */
+.app-rows { display: grid; gap: 8px; }
+.app-row, .app-row-link { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.app-row > summary, .app-row-link { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; cursor: pointer; list-style: none; color: var(--text-primary); font-size: .92rem; font-weight: 600; text-decoration: none; }
+.app-row > summary::-webkit-details-marker { display: none; }
+.app-row-icon { flex: 0 0 auto; color: var(--primary); }
+.app-row > summary > span:nth-child(2), .app-row-link > span:nth-child(2), .app-row-link > span:first-child:not(.app-row-icon) { flex: 1; min-width: 0; }
+.app-row-chevron, .app-row-link > span:last-child { margin-left: auto; color: var(--text-muted); font-size: 1.3rem; transition: transform .15s ease; }
+.app-row[open] .app-row-chevron { transform: rotate(90deg); }
+.app-row-link strong { display: block; font-size: .92rem; }
+.app-row-link small { display: block; color: var(--text-muted); font-size: .76rem; font-weight: 400; margin-top: 1px; }
+.app-row-body { padding: 4px 14px 16px; display: grid; gap: 12px; border-top: 1px solid var(--border); font-size: .88rem; }
+.app-row-body .dashboard-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.app-row-body .dashboard-card:not(.keep-title) > h2, .app-row-body .dashboard-card:not(.keep-title) > .card-heading:only-child { display: none; }
+.app-row-body .dashboard-card.keep-title > h2 { font-size: .95rem; margin: 6px 0; }
+.app-row-body .push-card .card-heading { display: none; }
+.app-row-body p { margin: 0; }
+.app-row-body .profile-panel { margin: 8px 0 0; gap: 12px; }
+.app-row-body .profile-form { max-width: none; gap: 10px; }
+.app-row-body .profile-form label { font-size: .8rem; }
+.app-row-body input, .app-row-body select { min-height: 42px; }
+.app-row-body .button { min-height: 40px; font-size: .86rem; }
+.app-row-body .profile-fixed { font-size: .8rem; }
+
+/* Carrossel de bolões */
+.carousel-app { display: grid; gap: 12px; }
+.chip-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.chip-row::-webkit-scrollbar { display: none; }
+.chip-row button { flex: 0 0 auto; min-height: 34px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.chip-row button.is-on { background: var(--primary-soft); border-color: var(--primary); color: var(--text-primary); }
+.carousel-frame { position: relative; }
+.carousel-track { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 4px; padding: 2px 2px 6px; scrollbar-width: none; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.carousel-track::-webkit-scrollbar { display: none; }
+.slide { flex: 0 0 min(82%, 340px); scroll-snap-align: center; display: grid; grid-template-rows: auto 1fr; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; color: inherit; text-decoration: none; box-shadow: var(--shadow-sm); }
+.slide-art { position: relative; height: 112px; display: flex; align-items: flex-end; padding: 12px 14px; color: #fff; overflow: hidden; }
+.slide-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.slide-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(3, 8, 32, .05), rgba(3, 8, 32, .78)); }
+.slide-art strong { position: relative; font-size: 1.15rem; letter-spacing: -.01em; }
+.slide-tag { position: absolute; top: 10px; right: 10px; padding: 4px 9px; border-radius: 999px; font-size: .68rem; font-weight: 700; background: rgba(255, 255, 255, .18); backdrop-filter: blur(6px); color: #fff; }
+.slide-tag.is-open { background: rgba(62, 207, 151, .9); color: #052a1b; }
+.slide-body { display: grid; gap: 10px; align-content: start; padding: 14px; }
+.slide-body > small { color: var(--text-muted); font-size: .74rem; line-height: 1.35; }
+.slide-prize { display: grid; gap: 1px; }
+.slide-prize span, .slide-facts span { color: var(--text-muted); font-size: .72rem; }
+.slide-prize strong { color: var(--text-primary); font-size: 1.35rem; letter-spacing: -.015em; }
+.slide-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.slide-facts > div { display: grid; gap: 1px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-muted); }
+.slide-facts strong { color: var(--text-primary); font-size: .98rem; }
+.slide-progress { height: 5px; border-radius: 3px; background: var(--surface-muted); overflow: hidden; }
+.slide-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--primary-solid), var(--accent-solid)); }
+.slide .button { min-height: 42px; justify-content: center; width: 100%; font-size: .88rem; }
+.carousel-dots { display: flex; justify-content: center; gap: 6px; }
+.carousel-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: width .15s ease, background .15s ease; }
+.carousel-dots i.is-on { width: 18px; border-radius: 3px; background: var(--primary); }
+.carousel-arrow { display: none; }
+@media (min-width: 821px) {
+  .carousel-arrow { display: grid; place-items: center; position: absolute; top: 40%; z-index: 2; width: 40px; height: 40px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface-raised); color: var(--text-primary); font-size: 1.4rem; cursor: pointer; box-shadow: var(--shadow-md); }
+  .carousel-arrow:disabled { opacity: .35; cursor: default; }
+  .carousel-arrow.is-prev { left: -14px; }
+  .carousel-arrow.is-next { right: -14px; }
+  .slide { flex-basis: 320px; }
+  .client-app-home .account-app, .client-app-home .carousel-app { max-width: 1040px; }
+}
+
+/* Rodapé curto */
+.client-footer { max-width: 760px; margin: 0 auto; padding: 8px 18px 24px; color: var(--text-muted); font-size: .74rem; text-align: center; display: grid; gap: 8px; }
+.client-footer p { margin: 0; }
+.client-footer nav { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+.client-footer a { color: var(--text-secondary); }
+
+/* Compra: quantidade, titular e contrato discretos */
+.purchase-card form { display: grid; gap: 12px; }
+.buy-qty { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
+.buy-qty label { font-size: .84rem; font-weight: 600; color: var(--text-secondary); }
+.stepper { display: inline-grid; grid-template-columns: 40px 56px 40px; align-items: center; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; justify-self: start; }
+.stepper button { height: 42px; border: 0; background: var(--surface-muted); color: var(--text-primary); font-size: 1.2rem; cursor: pointer; }
+.stepper button:disabled { opacity: .4; cursor: default; }
+.stepper input { height: 42px; border: 0; border-radius: 0; text-align: center; padding: 0; background: var(--surface); appearance: textfield; -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.buy-total { justify-self: end; color: var(--text-primary); font-size: 1.15rem; }
+.buy-holder { margin: 0; color: var(--text-secondary); font-size: .84rem; }
+.buy-holder-fields { display: grid; gap: 10px; }
+.buy-contract summary { cursor: pointer; color: var(--text-muted); font-size: .8rem; }
+.buy-login { display: grid; gap: 10px; }
+.buy-login p { margin: 0; color: var(--text-secondary); font-size: .9rem; }
+.purchase-card .check-line { font-size: .82rem; color: var(--text-secondary); }
+.purchase-card form .button-primary { min-height: 46px; justify-content: center; }
+
+@media (max-width: 560px) {
+  .account-app { font-size: .9rem; }
+  .account-top h1 { font-size: 1.3rem; }
+  .buy-qty { grid-template-columns: auto 1fr; }
+  .buy-qty .buy-total { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* Campos dos formulários dentro do app: mesmo acabamento em todo lugar */
+.app-row-body input:not([type=checkbox]):not([type=radio]), .app-row-body select, .buy-holder-fields input, .purchase-card select { width: 100%; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: .92rem; }
+.app-row-body input:focus, .app-row-body select:focus, .purchase-card select:focus { outline: none; border-color: var(--primary); box-shadow: var(--focus-ring); }
+.app-row-body .profile-fixed { padding: 10px 12px; border-radius: 12px; background: var(--surface-muted); display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.app-row-body .profile-fixed small { grid-column: 1 / -1; }
+
+/* Tela do bolão no celular: só o que importa antes da compra */
+@media (max-width: 760px) {
+  main .detail-hero .lottery-artwork, main .breadcrumb, main .detail-hero-copy > p:not(.detail-subtitle), main .detail-kicker .overline, main .share-pool-note { display: none; }
+  .detail-hero { margin-bottom: 14px; }
+  .detail-hero-copy { padding: 4px 0 0; }
+  .detail-hero-copy h1 { font-size: 1.5rem; margin: 6px 0 4px; }
+  .detail-subtitle { font-size: .84rem; margin: 0 0 10px; }
+  .detail-main, .purchase-card { padding: 16px; }
+  .detail-prize-banner { padding: 14px 16px; }
+  .detail-prize-banner strong { font-size: 1.7rem; }
+  .share-pool-button { min-height: 36px; font-size: .82rem; padding: 0 12px; }
+}

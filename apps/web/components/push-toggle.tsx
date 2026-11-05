@@ -7,6 +7,9 @@ export function PushToggle() {
   const [state, setState] = useState<PushState>('checking');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  // O aviso de teste serve para conferir um aparelho: só aparece com ?teste=1 no endereço.
+  const [showTest, setShowTest] = useState(false);
+  useEffect(() => { try { setShowTest(new URLSearchParams(window.location.search).get('teste') === '1'); } catch { setShowTest(false); } }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,8 +47,8 @@ export function PushToggle() {
     {state === 'in-app-browser' && <p className="muted">Você abriu o site dentro de outro aplicativo (WhatsApp, Instagram…), que não recebe avisos. Abra o endereço no Chrome (Android) ou no Safari (iPhone) e ligue os avisos por lá.</p>}
     {(state === 'unsupported' || state === 'needs-install') && <p className="muted">{state === 'needs-install' ? 'No iPhone, os avisos só funcionam com o aplicativo instalado: toque em Compartilhar → Adicionar à Tela de Início e abra o BL por esse ícone (iOS 16.4 ou mais novo).' : 'Este navegador não recebe avisos fora do site. Use o Chrome atualizado. Os avisos continuam aparecendo aqui na sua conta e por e-mail.'}</p>}
     {state === 'blocked' && <p className="muted">Os avisos estão bloqueados neste navegador. Libere nas configurações do navegador (cadeado ao lado do endereço) e volte aqui.</p>}
-    {state === 'off' && <><p className="muted">Receba pagamento confirmado, comprovante do jogo e novidades dos bolões direto no celular, mesmo com o site fechado.</p><button type="button" className="button button-primary" disabled={busy} onClick={() => void enable()}>{busy ? 'Ligando…' : 'Ligar avisos neste aparelho'}</button></>}
-    {state === 'on' && <><p>Os avisos estão <strong>ligados</strong> neste aparelho.</p><div className="push-actions"><button type="button" className="button button-primary" disabled={busy} onClick={() => void test()}>Enviar aviso de teste</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => void disable()}>Desligar neste aparelho</button></div></>}
+    {state === 'off' && <><p className="muted">Pagamento confirmado, comprovante e novidades direto no celular.</p><button type="button" className="button button-primary" disabled={busy} onClick={() => void enable()}>{busy ? 'Ligando…' : 'Ligar avisos neste aparelho'}</button></>}
+    {state === 'on' && <><p className="muted">Avisos <strong>ligados</strong> neste aparelho.</p><div className="push-actions">{showTest && <button type="button" className="button button-primary" disabled={busy} onClick={() => void test()}>Enviar aviso de teste</button>}<button type="button" className="button button-secondary" disabled={busy} onClick={() => void disable()}>Desligar neste aparelho</button></div></>}
     {message && <p role="status" className="muted">{message}</p>}
   </article>;
 }

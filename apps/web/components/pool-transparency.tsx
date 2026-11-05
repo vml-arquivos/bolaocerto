@@ -13,9 +13,7 @@ export function PoolTransparency({ pool }: { pool: PublicPool }) {
   const drawnSecond = new Set(result?.segundoSorteio ?? []);
   const registered = Boolean(info.registradoEm);
   const settled = Boolean(info.apuradoEm && result);
-  return <section className="transparency" aria-labelledby="transparencia-titulo">
-    <span className="overline">Transparência</span>
-    <h2 id="transparencia-titulo">Acompanhe este bolão</h2>
+  return <section className="transparency" aria-label="Acompanhamento do bolão">
     <ol className="timeline">
       <li className="is-done"><strong>Cotas vendidas</strong><small>{pool.cotasVendidas ?? 0} cota(s) pagas</small></li>
       <li className={registered ? 'is-done' : ''}><strong>Aposta registrada na CAIXA</strong><small>{registered ? `${shortDate(info.registradoEm!)}${info.codigoBilhete ? ` · bilhete ${info.codigoBilhete}` : ''}` : 'aguardando o registro'}</small>{info.comprovanteUrl?.startsWith('https://') && <a className="text-link" href={info.comprovanteUrl} target="_blank" rel="noopener noreferrer">Ver comprovante da aposta</a>}</li>

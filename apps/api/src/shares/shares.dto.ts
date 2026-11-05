@@ -11,13 +11,16 @@ export class ReserveShareDto {
   @Min(1)
   quantidade!: number;
 
+  /** Sem titular informado, a cota fica no nome e CPF do cadastro de quem compra. */
+  @IsOptional()
   @IsString()
   @Length(11, 11)
-  titularCpf!: string;
+  titularCpf?: string;
 
+  @IsOptional()
   @IsString()
   @Length(2, 150)
-  titularNome!: string;
+  titularNome?: string;
 
   @IsString()
   @Length(64, 64)

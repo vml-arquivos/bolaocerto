@@ -19,7 +19,7 @@ async function shrink(file: File): Promise<Blob> {
 function initials(name: string) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('') || 'BL'; }
 
 /** Dados da própria conta: nome, telefone, chave Pix e foto. CPF e e-mail aparecem, mas só mudam pelo suporte. */
-export function ProfilePanel({ pixLabel = 'Chave Pix' }: { pixLabel?: string }) {
+export function ProfilePanel({ pixLabel = 'Chave Pix', showPix = true, showPhoto = true }: { pixLabel?: string; showPix?: boolean; showPhoto?: boolean }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [form, setForm] = useState({ nome: '', telefone: '', chavePix: '' });
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -36,7 +36,7 @@ export function ProfilePanel({ pixLabel = 'Chave Pix' }: { pixLabel?: string }) 
   async function save(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage(null);
     try {
-      const response = await authenticatedFetch('/api/v1/usuarios/me', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: form.nome, ...(form.telefone ? { telefone: form.telefone } : {}), chavePix: form.chavePix }) });
+      const response = await authenticatedFetch('/api/v1/usuarios/me', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: form.nome, ...(form.telefone ? { telefone: form.telefone } : {}), ...(showPix ? { chavePix: form.chavePix } : {}) }) });
       const result = await response.json().catch(() => ({})) as Profile & { message?: string | string[] };
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || 'Não foi possível salvar.');
       apply(result); setMessage({ ok: true, text: 'Dados salvos.' });
@@ -64,14 +64,14 @@ export function ProfilePanel({ pixLabel = 'Chave Pix' }: { pixLabel?: string }) 
 
   if (!profile) return <section className="profile-panel" aria-busy="true"><p className="muted">Carregando seus dados…</p></section>;
   return <section className="profile-panel" aria-label="Meus dados">
-    <div className="profile-photo">
+    {showPhoto && <div className="profile-photo">
       {profile.foto ? <img src={`/api/v1/usuarios/me/foto?v=${profile.foto.versao}`} alt="Sua foto" width={88} height={88} /> : <span className="profile-initials" aria-hidden="true">{initials(profile.nome)}</span>}
       <div><button type="button" className="button button-secondary" disabled={busy} onClick={() => input.current?.click()}>{profile.foto ? 'Trocar foto' : 'Colocar uma foto'}</button>{profile.foto && <button type="button" className="button button-ghost" disabled={busy} onClick={() => void removePhoto()}>Remover</button>}<input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => void upload(event.target.files?.[0])} /><small className="muted">PNG, JPG ou WEBP. A foto é ajustada para ficar leve.</small></div>
-    </div>
+    </div>}
     <form className="profile-form" onSubmit={save}>
       <label>Nome completo<input required minLength={2} maxLength={150} value={form.nome} onChange={(event) => setForm({ ...form, nome: event.target.value })} /></label>
       <label>Telefone com DDD<input type="tel" inputMode="tel" value={form.telefone} onChange={(event) => setForm({ ...form, telefone: event.target.value })} placeholder="(11) 91234-5678" /></label>
-      <label>{pixLabel}<input maxLength={140} value={form.chavePix} onChange={(event) => setForm({ ...form, chavePix: event.target.value })} placeholder="CPF, e-mail, telefone ou chave aleatória" /></label>
+      {showPix && <label>{pixLabel}<input maxLength={140} value={form.chavePix} onChange={(event) => setForm({ ...form, chavePix: event.target.value })} placeholder="CPF, e-mail, telefone ou chave aleatória" /></label>}
       <div className="profile-fixed"><span>CPF</span><strong>{profile.cpf}</strong><span>E-mail de acesso</span><strong>{profile.email}</strong><small className="muted">CPF e e-mail não mudam por aqui. Para trocar, fale com o suporte.</small></div>
       {message && <div className={`form-message ${message.ok ? 'form-success' : 'form-error'}`} role="status">{message.text}</div>}
       <button className="button button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar dados'}</button>
