@@ -20,6 +20,9 @@ import {
   proximoSorteioFesta,
   provisionalContestNumber,
   brazilDayKey,
+  ensureUpcomingContests,
+  ensureUpcomingContestsSoon,
+  FONTE_PROJETADA,
 } from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -45,6 +48,7 @@ export class LotteriesService {
   async list(modalidade?: string, status?: string, tipo?: string) {
     const allowed = modalidade ? this.assertModalidade(modalidade) : undefined;
     const openOnly = !status || status === 'aberto';
+    if (openOnly) await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
     // Concursos de festa (Mega da Virada etc.) só aparecem quando pedidos (tipo=festa ou tipo=todos): a lista normal traz só os da CAIXA.
     const kind: Prisma.ConcursoWhereInput = tipo === 'festa' ? { especial: { not: null } } : tipo === 'todos' ? {} : openOnly ? { especial: null } : {};
     const contests = await this.prisma.concurso.findMany({
@@ -103,6 +107,8 @@ export class LotteriesService {
     }
 
     await this.closeExpired();
+    // Modalidade sem concurso aberto (a CAIXA ainda não publicou o seguinte, ou está fora do ar) recebe o concurso previsto.
+    try { await ensureUpcomingContests(this.prisma as never, calculateBrazilCutoff); } catch { /* melhor esforço */ }
 
     // Uma modalidade com problema não derruba as demais; só falha por inteiro se nada foi sincronizado.
     if (sincronizados === 0 && falhas.length > 0) {
@@ -239,11 +245,12 @@ export class LotteriesService {
    * Serve para explicar no painel por que uma modalidade está sem concurso aberto (ex.: dia de sorteio, depois do corte).
    */
   async situationByModality() {
+    await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
     const now = Date.now();
     return Promise.all([...MODALIDADES_LOTERIA].map(async (modalidade) => {
-      const latest = await this.prisma.concurso.findFirst({ where: { modalidade, especial: null }, orderBy: { numeroConcurso: 'desc' }, select: { numeroConcurso: true, status: true, dataSorteio: true, cutoffAt: true, sincronizadoEm: true } });
+      const latest = await this.prisma.concurso.findFirst({ where: { modalidade, especial: null }, orderBy: { numeroConcurso: 'desc' }, select: { numeroConcurso: true, status: true, dataSorteio: true, cutoffAt: true, sincronizadoEm: true, fonteSincronizacao: true } });
       const open = Boolean(latest && latest.status === 'aberto' && latest.cutoffAt.getTime() > now);
-      return { modalidade, ultimo: latest ? { numero: latest.numeroConcurso, status: latest.status, dataSorteio: latest.dataSorteio, cutoffAt: latest.cutoffAt, sincronizadoEm: latest.sincronizadoEm } : null, aberto: open };
+      return { modalidade, ultimo: latest ? { numero: latest.numeroConcurso, status: latest.status, previsto: latest.fonteSincronizacao === FONTE_PROJETADA, dataSorteio: latest.dataSorteio, cutoffAt: latest.cutoffAt, sincronizadoEm: latest.sincronizadoEm } : null, aberto: open };
     }));
   }
 
@@ -352,7 +359,7 @@ export class LotteriesService {
     return value as ModalidadeLoteria;
   }
 
-  private toPublicContest(contest: { id: string; modalidade: string; numeroConcurso: number; dataSorteio: Date; cutoffAt: Date; valorEstimadoPremio: unknown; acumulado: boolean; especial?: string | null; nomeEspecial?: string | null; numeroDefinido?: boolean }) {
+  private toPublicContest(contest: { id: string; modalidade: string; numeroConcurso: number; dataSorteio: Date; cutoffAt: Date; valorEstimadoPremio: unknown; acumulado: boolean; especial?: string | null; nomeEspecial?: string | null; numeroDefinido?: boolean; fonteSincronizacao?: string | null }) {
     return {
       id: contest.id,
       modalidade: contest.modalidade,
@@ -364,6 +371,7 @@ export class LotteriesService {
       especial: contest.especial ?? null,
       nomeEspecial: contest.nomeEspecial ?? null,
       numeroDefinido: contest.numeroDefinido ?? true,
+      previsto: contest.fonteSincronizacao === FONTE_PROJETADA,
     };
   }
 }

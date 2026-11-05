@@ -5,6 +5,7 @@ import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PapelUsuario, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import { calculateBrazilCutoff, ensureUpcomingContestsSoon } from '@bolaocerto/shared-types';
 import * as argon2 from 'argon2';
 import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from '../auth/password-policy';
@@ -164,6 +165,8 @@ export class AdminService {
     const { page, pageSize, skip, take } = this.pagination(query);
     const dateRange = this.dateRange({ de: query.de, ate: query.ate });
     const now = new Date();
+    // Toda modalidade precisa de um concurso aberto: se a CAIXA ainda não publicou o seguinte, entra o concurso previsto.
+    if (query.status === 'aberto') await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
     const scope: Prisma.ConcursoWhereInput =
       query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now }, especial: null }
       : query.status === 'festas' ? { status: 'aberto', cutoffAt: { gt: now }, especial: { not: null } }

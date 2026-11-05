@@ -12,6 +12,7 @@ import {
   parseCaixaDate,
   resolveCaixaTimeout,
   adoptProvisionalContests,
+  ensureUpcomingContests,
   type FestaTx,
 } from '@bolaocerto/shared-types';
 import { sendAlert } from './alert';
@@ -146,6 +147,13 @@ async function syncOnce(): Promise<void> {
     }
   }
   await closeExpiredContests();
+  // Modalidade sem concurso aberto (CAIXA ainda sem o seguinte, ou fora do ar) recebe o concurso previsto.
+  try {
+    const created = await ensureUpcomingContests(prisma as never, calculateBrazilCutoff);
+    for (const item of created) console.log(JSON.stringify({ event: 'concursos.previstos_criados', modalidade: item.modalidade, numero: item.numeroConcurso, dataSorteio: item.dataSorteio.toISOString() }));
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'concursos.previsao_falhou', error: error instanceof Error ? error.message : String(error) }));
+  }
   if (failed > 0 && failed === modalities.length) await sendAlert('caixa-falha-total', 'Todas as sincronizações com a CAIXA falharam neste ciclo. Veja o diagnóstico no painel admin.', 2 * 3_600_000);
   await syncHistory();
 }

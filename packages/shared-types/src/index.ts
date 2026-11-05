@@ -242,3 +242,4 @@ export * from './caixa-client';
 export * from './lottery-stats';
 export * from './settlement';
 export * from './festas';
+export * from './upcoming';
