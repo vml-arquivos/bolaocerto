@@ -31,6 +31,16 @@ export function toReceiptAddress(user: AddressUser): { address: ReceiptAddress |
   return { address: { street, number, district, city, state, zip_code: zip, complement: user.enderecoComplemento?.trim() || undefined }, missing };
 }
 
+/**
+ * Base da nota: só a taxa de administração (o serviço da plataforma). O custo dos jogos registrados na CAIXA é repasse, não faturamento de serviço.
+ * `registro` é o que sobra do valor pago depois da taxa.
+ */
+export function noteBase(payment: { valorBruto: Prisma.Decimal | number; valorTaxaAdmin: Prisma.Decimal | number }) {
+  const gross = round2(Number(payment.valorBruto));
+  const service = round2(Number(payment.valorTaxaAdmin));
+  return { bruto: gross, servico: service, registro: round2(Math.max(gross - service, 0)) };
+}
+
 @Injectable()
 export class NfseService {
   private readonly logger = new Logger(NfseService.name);
@@ -57,6 +67,9 @@ export class NfseService {
 
   private get issPct(): number { return Number(this.config.get<string>('NFSE_ISS_PCT', '')) || 0; }
 
+  /** A API da Cora emite a nota pelo valor da cobrança inteira. Só liga se o contador aceitar tributar também o custo dos jogos. */
+  private get coraNotaValorTotal(): boolean { return this.config.get<string>('NFSE_CORA_VALOR_TOTAL', '') === 'true'; }
+
   private client(): CoraFiscalClient {
     if (this.overrideClient) return this.overrideClient;
     const cora = this.payments.coraProvider();
@@ -77,9 +90,10 @@ export class NfseService {
   }
 
   async settings() {
-    const [byStatus, withoutNote] = await Promise.all([
+    const [byStatus, withoutNote, withoutNoteSum] = await Promise.all([
       this.prisma.notaFiscal.groupBy({ by: ['status'], _count: true, _sum: { valor: true } }),
       this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, notaFiscal: null } }),
+      this.prisma.pagamento.aggregate({ where: { status: StatusPagamento.confirmado, notaFiscal: null }, _sum: { valorTaxaAdmin: true, valorBruto: true } }),
     ]);
     const issuer = this.issuerConfig();
     return {
@@ -93,8 +107,14 @@ export class NfseService {
       emissorConfigurado: Boolean(issuer.municipalRegister),
       pronto: this.mode !== 'off' && this.issPct > 0 && Boolean(this.config.get<string>('NFSE_SERVICE_CODE', '')),
       pagamentosSemNota: withoutNote,
+      baseDaNota: 'taxa_administracao',
+      valorServicoSemNota: round2(Number(withoutNoteSum._sum.valorTaxaAdmin ?? 0)),
+      valorRegistroSemNota: round2(Math.max(Number(withoutNoteSum._sum.valorBruto ?? 0) - Number(withoutNoteSum._sum.valorTaxaAdmin ?? 0), 0)),
+      emissaoCoraValorTotal: this.coraNotaValorTotal,
       porStatus: byStatus.map((row) => ({ status: row.status, notas: row._count, valor: round2(Number(row._sum.valor ?? 0)) })),
-      aviso: 'A API da Cora vincula a nota à cobrança e a emite pelo valor dela (não há campo de valor próprio). Confirme com seu contador se isso atende ao seu enquadramento, pois a receita do serviço é a taxa de administração.',
+      aviso: this.coraNotaValorTotal
+        ? 'Atenção: a emissão pela Cora usa o valor da cobrança inteira (taxa de administração + custo dos jogos). Só mantenha NFSE_CORA_VALOR_TOTAL=true se o seu contador aceitar tributar também o custo dos jogos.'
+        : 'A nota é sempre sobre a taxa de administração (o serviço). O custo dos jogos registrados na CAIXA não entra. Como a API da Cora emite pelo valor da cobrança inteira, a nota desses pagamentos é emitida pelo valor do serviço no app da Cora ou na prefeitura e registrada aqui com o número e o PDF.',
     };
   }
 
@@ -151,6 +171,10 @@ export class NfseService {
       throw new ConflictException('A NFS-e da Cora é vinculada a uma cobrança da Cora. Para vendas de balcão e baixas manuais, use "Registrar nota manual".');
     }
     if (payment.notaFiscal && OPEN_STATUSES.includes(payment.notaFiscal.status)) throw new ConflictException('Este pagamento já possui nota fiscal.');
+    const base = noteBase(payment);
+    if (base.registro > 0.004 && !this.coraNotaValorTotal) {
+      throw new ConflictException(`A Cora emite a nota pelo valor da cobrança inteira (R$ ${base.bruto.toFixed(2)}), que inclui R$ ${base.registro.toFixed(2)} de custo dos jogos. A nota deve ser só da taxa de administração (R$ ${base.servico.toFixed(2)}): emita por esse valor no app da Cora ou na prefeitura e use "Registrar nota manual".`);
+    }
     if (addressOverride) await this.saveAddress(payment.cota.comprador.id, addressOverride);
     const buyer = addressOverride ? await this.prisma.usuario.findUniqueOrThrow({ where: { id: payment.cota.comprador.id }, select: USER_ADDRESS_SELECT }) : payment.cota.comprador;
     const { address, missing } = toReceiptAddress(buyer);
@@ -239,6 +263,8 @@ export class NfseService {
     const candidates = await this.prisma.pagamento.findMany({
       where: {
         status: StatusPagamento.confirmado, pspProvedor: 'cora', origem: 'gateway', notaFiscal: null, confirmadoEm: { gt: from },
+        // Sem NFSE_CORA_VALOR_TOTAL, a emissão automática só pega cobranças sem custo de jogos (a nota sairia só do serviço).
+        ...(this.coraNotaValorTotal ? {} : { valorCustoBilhete: new Prisma.Decimal(0) }),
         cota: { comprador: { enderecoCep: { not: null }, enderecoLogradouro: { not: null }, enderecoNumero: { not: null }, enderecoBairro: { not: null }, enderecoCidade: { not: null }, enderecoUf: { not: null } } },
       },
       orderBy: { confirmadoEm: 'asc' },
@@ -265,7 +291,7 @@ export class NfseService {
     if (!payment) throw new NotFoundException('Pagamento não encontrado.');
     if (payment.status !== StatusPagamento.confirmado) throw new ConflictException('Só é possível registrar nota de pagamentos confirmados.');
     if (payment.notaFiscal && OPEN_STATUSES.includes(payment.notaFiscal.status)) throw new ConflictException('Este pagamento já possui nota fiscal.');
-    const data = { status: StatusNotaFiscal.emitida, origem: 'manual', numero: dto.numero, pdfUrl: dto.pdfUrl ?? null, observacao: dto.observacao ?? null, valor: payment.valorBruto, emitidaEm: new Date(), erro: null, canceladaEm: null, provedorId: null, criadoPor: actor.id };
+    const data = { status: StatusNotaFiscal.emitida, origem: 'manual', numero: dto.numero, pdfUrl: dto.pdfUrl ?? null, observacao: dto.observacao ?? null, valor: payment.valorTaxaAdmin, emitidaEm: new Date(), erro: null, canceladaEm: null, provedorId: null, criadoPor: actor.id };
     const note = await this.prisma.notaFiscal.upsert({ where: { pagamentoId: payment.id }, create: { pagamentoId: payment.id, ...data }, update: data });
     await this.audit.record(this.prisma, { entidade: 'nota_fiscal', entidadeId: note.id, evento: 'nfse.registrada_manual', atorId: actor.id, payloadDepois: { pagamentoId: payment.id, numero: dto.numero } as unknown as Prisma.InputJsonValue });
     return note;
@@ -310,10 +336,10 @@ export class NfseService {
         participante: note.pagamento.cota.titularNome, email: note.pagamento.cota.comprador.email, bolao: note.pagamento.cota.bolaoId.slice(0, 8),
       })),
       semNota: pending.map((payment) => ({
-        pagamentoId: payment.id, valor: Number(payment.valorBruto), taxaAdmin: Number(payment.valorTaxaAdmin), metodo: payment.metodo, confirmadoEm: payment.confirmadoEm,
+        pagamentoId: payment.id, valor: Number(payment.valorBruto), taxaAdmin: Number(payment.valorTaxaAdmin), valorServico: noteBase(payment).servico, valorRegistro: noteBase(payment).registro, issEstimado: round2(noteBase(payment).servico * this.issPct / 100), metodo: payment.metodo, confirmadoEm: payment.confirmadoEm,
         participante: payment.cota.titularNome, email: payment.cota.comprador.email, bolao: payment.cota.bolaoId.slice(0, 8),
         enderecoCompleto: toReceiptAddress({ ...payment.cota.comprador, enderecoComplemento: null }).address !== null,
-        emitivelPelaCora: payment.pspProvedor === 'cora',
+        emitivelPelaCora: payment.pspProvedor === 'cora' && (this.coraNotaValorTotal || noteBase(payment).registro <= 0.004),
       })),
     };
   }

@@ -8,6 +8,7 @@ import { InstallAppButton } from './pwa-register';
 import { useIsSuperAdmin, useStaffRole } from './staff-gate';
 import { PushPrompt } from './push-prompt';
 import { STAFF_VIEWS, SUPERADMIN_VIEWS } from '../lib/roles';
+import { hubOf, viewTitle } from '../lib/admin-nav';
 
 /** Atalhos fixos no topo do menu. */
 const topItems = [
@@ -15,17 +16,13 @@ const topItems = [
   ['relatorios', 'Relatórios', 'RL'],
 ] as const;
 
-/** Grupos que abrem e fecham; só o grupo da tela atual fica aberto. */
+/** Grupos que abrem e fecham; só o grupo da tela atual fica aberto. Financeiro e Operação são itens únicos com abas. */
 const groups = [
   {
     label: 'Jogos e vendas',
     items: [
       ['concursos', 'Concursos', 'CO'],
       ['boloes', 'Bolões', 'BO'],
-      ['vitrine', 'Página inicial', 'PI'],
-      ['jogos', 'Apostas', 'JG'],
-      ['cotas', 'Cotas', 'CT'],
-      ['controle', 'Acompanhar bolão', 'CB'],
     ],
   },
   {
@@ -37,27 +34,9 @@ const groups = [
     ],
   },
   {
-    label: 'Financeiro',
-    items: [
-      ['recebimentos', 'Recebimentos', 'RE'],
-      ['pagamentos', 'Pagamentos', 'PG'],
-      ['comissoes', 'Comissões', 'CM'],
-      ['repasses', 'Pagar comissões', 'RP'],
-      ['notas-fiscais', 'Notas fiscais', 'NF'],
-    ],
-  },
-  {
-    label: 'Operação',
-    items: [
-      ['operacao', 'Para fazer', 'OP'],
-      ['comprovantes', 'Comprovantes', 'CP'],
-      ['lotericas', 'Lotéricas', 'LP'],
-      ['comunicados', 'Mensagens aos clientes', 'MS'],
-    ],
-  },
-  {
     label: 'Administração',
     items: [
+      ['vitrine', 'Página inicial', 'PI'],
       ['usuarios', 'Usuários e acessos', 'US'],
       ['conexoes', 'Conexões', 'CX'],
       ['auditoria', 'Histórico', 'HI'],
@@ -66,14 +45,22 @@ const groups = [
   },
 ] as const;
 
+/** Itens únicos entre os grupos: cada um abre um painel com abas (ver lib/admin-nav). */
+const hubItems = [
+  ['financeiro', 'Financeiro', 'FN'],
+  ['operacao', 'Operação', 'OP'],
+] as const;
+
 type NavItem = readonly [string, string, string];
-const titles: Record<string, string> = Object.fromEntries([...(topItems as readonly NavItem[]), ...groups.flatMap((group) => group.items as readonly NavItem[])].map(([key, label]) => [key, label]));
+const titles: Record<string, string> = Object.fromEntries([...(topItems as readonly NavItem[]), ...(hubItems as readonly NavItem[]), ...groups.flatMap((group) => group.items as readonly NavItem[])].map(([key, label]) => [key, label]));
 const COLLAPSE_KEY = 'bl-admin-sidebar-collapsed';
 
 export function AdminShell({ children, testMode = false }: { children: ReactNode; testMode?: boolean }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const current = params.get('view') || 'visao-geral';
+  // Telas que são abas de um mesmo item (Financeiro, Operação, Bolões) marcam o item do menu.
+  const activeKey = hubOf(current)?.entry ?? current;
   const staffRole = useStaffRole();
   const allowed = (key: string) => staffRole !== 'operacao' || (STAFF_VIEWS as readonly string[]).includes(key);
   const visibleTop = topItems.filter(([key]) => allowed(key));
@@ -83,6 +70,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
     : superAdmin
       ? groups
       : groups.map((group) => ({ ...group, items: group.items.filter(([key]) => !(SUPERADMIN_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length);
+  const visibleHubItems = hubItems.filter(([key]) => allowed(key));
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
@@ -114,13 +102,13 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
       <Link
         key={key}
         href={`${pathname}?view=${key}`}
-        className={`admin-nav-link ${current === key ? 'is-active' : ''}`}
+        className={`admin-nav-link ${activeKey === key ? 'is-active' : ''}`}
         onClick={() => setOpen(false)}
         onMouseEnter={(event) => showTooltip(label, event.currentTarget)}
         onMouseLeave={hideTooltip}
         onFocus={(event) => showTooltip(label, event.currentTarget)}
         onBlur={hideTooltip}
-        aria-current={current === key ? 'page' : undefined}
+        aria-current={activeKey === key ? 'page' : undefined}
         data-label={label}
         title={collapsed ? label : undefined}
       >
@@ -141,8 +129,14 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
         {testMode && <p className="admin-environment-note">Não faça pagamentos de verdade.</p>}
         <nav className="admin-nav" aria-label="Menu do painel">
           {visibleTop.length > 0 && <div className="admin-nav-top">{visibleTop.map(([key, label, icon]) => navLink(key, label, icon))}</div>}
-          {visibleGroups.map((group) => (
-            <details className="admin-nav-group" key={`${group.label}-${current}-${collapsed}`} open={collapsed || group.items.some(([key]) => key === current)}><summary className="admin-nav-label">{group.label}</summary>
+          {visibleGroups.filter((group) => group.label !== 'Administração').map((group) => (
+            <details className="admin-nav-group" key={`${group.label}-${activeKey}-${collapsed}`} open={collapsed || group.items.some(([key]) => key === activeKey)}><summary className="admin-nav-label">{group.label}</summary>
+              {group.items.map(([key, label, icon]) => navLink(key, label, icon))}
+            </details>
+          ))}
+          <div className="admin-nav-top">{visibleHubItems.map(([key, label, icon]) => navLink(key, label, icon))}</div>
+          {visibleGroups.filter((group) => group.label === 'Administração').map((group) => (
+            <details className="admin-nav-group" key={`${group.label}-${activeKey}-${collapsed}`} open={collapsed || group.items.some(([key]) => key === activeKey)}><summary className="admin-nav-label">{group.label}</summary>
               {group.items.map(([key, label, icon]) => navLink(key, label, icon))}
             </details>
           ))}
@@ -172,7 +166,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
       <section className={`admin-content ${collapsed ? 'is-collapsed-content' : ''}`}>
         <header className="admin-topbar">
           <button type="button" className="admin-menu-toggle" onClick={() => setOpen((value) => !value)} aria-label="Abrir menu">Menu</button>
-          <div className="admin-topbar-context"><span className="admin-eyebrow">Painel</span><strong>{titles[current] || 'Painel'}</strong></div>
+          <div className="admin-topbar-context"><span className="admin-eyebrow">Painel</span><strong>{viewTitle(current, titles[current] || 'Painel')}</strong></div>
           <div className="admin-topbar-actions">
             <ThemeToggle />
             <Link href="/" className="admin-topbar-link">Ver o site</Link>

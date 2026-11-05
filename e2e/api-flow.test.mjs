@@ -72,28 +72,48 @@ test('digita e gera jogos no banco de números', async () => {
   assert.equal(generated.data.quantidade, 3);
 });
 
-test('não publica sem comprovante e publica depois de enviar o arquivo', async () => {
-  const early = await call('POST', `/admin/boloes/${state.poolId}/publicar`);
-  assert.ok(early.status >= 400 && early.status < 500, `publicar sem comprovante deveria ser recusado (veio ${early.status})`);
+test('publica sem o registro da lotérica e anexa o comprovante depois, dentro do bolão', async () => {
+  const publish = await call('POST', `/admin/boloes/${state.poolId}/publicar`);
+  ok(publish, 'publicar sem comprovante');
+  const page = await call('GET', `/boloes/${state.poolId}`);
+  ok(page, 'página pública do bolão');
+  assert.equal(page.data.status, 'aberto');
+
+  const before = await call('GET', '/admin/boloes');
+  ok(before, 'lista de bolões');
+  const rowBefore = (Array.isArray(before.data) ? before.data : before.data.items).find((row) => row.id === state.poolId);
+  assert.ok(rowBefore, 'o bolão precisa estar na lista');
+  assert.equal(rowBefore.registro.registrado, false, 'ainda sem registro da lotérica');
 
   const form = new FormData();
   form.set('tipo', 'comprovante_aposta');
   form.set('visivelParticipantes', 'true');
   form.set('arquivo', new Blob([PNG], { type: 'image/png' }), 'comprovante.png');
   const upload = await call('POST', `/operacao/boloes/${state.poolId}/anexos`, form);
-  ok(upload, 'enviar comprovante');
+  ok(upload, 'enviar comprovante dentro do bolão');
 
-  const queue = await call('GET', '/admin/operacao');
-  ok(queue, 'fila de operação');
-  const item = (Array.isArray(queue.data) ? queue.data : queue.data.items).find((row) => row.id === state.poolId);
-  assert.ok(item, 'o rascunho precisa aparecer na fila de comprovantes');
-  assert.equal(item.arquivos, 1);
+  const after = await call('GET', '/admin/boloes');
+  const rowAfter = (Array.isArray(after.data) ? after.data : after.data.items).find((row) => row.id === state.poolId);
+  assert.equal(rowAfter.registro.arquivos, 1);
+  assert.equal(rowAfter.registro.registrado, false, 'anexar o arquivo não muda o estado: quem marca a aposta como feita é a operação');
+});
 
-  const publish = await call('POST', `/admin/boloes/${state.poolId}/publicar`);
-  ok(publish, 'publicar');
-  const page = await call('GET', `/boloes/${state.poolId}`);
-  ok(page, 'página pública do bolão');
-  assert.equal(page.data.status, 'aberto');
+test('vários bolões no mesmo concurso: jogos de 7 e de 10 números', async () => {
+  const seven = [3, 9, 14, 27, 41, 52, 60];
+  const ten = [2, 8, 15, 22, 30, 37, 44, 51, 56, 59];
+  const base = { concursoId: state.contestId, grupoId: state.groupId, cotasIlimitadas: false, totalCotas: 10, taxaAdministracaoPct: 10, modeloOperacional: 'mandato' };
+  const a = await call('POST', '/admin/boloes', { ...base, numerosApostados: seven, jogos: [{ ordem: 1, numeros: seven, quantidadeDezenas: 7, custo: 42 }], valorCota: 8 });
+  ok(a, 'bolão de 7 números');
+  const b = await call('POST', '/admin/boloes', { ...base, numerosApostados: ten, jogos: [{ ordem: 1, numeros: ten, quantidadeDezenas: 10, custo: 1260 }], totalCotas: 20, valorCota: 70 });
+  ok(b, 'bolão de 10 números');
+  assert.notEqual(a.data.id, b.data.id);
+  assert.notEqual(a.data.id, state.poolId);
+  for (const id of [a.data.id, b.data.id]) ok(await call('POST', `/admin/boloes/${id}/publicar`), 'publicar');
+  const list = await call('GET', '/admin/boloes');
+  const rows = (Array.isArray(list.data) ? list.data : list.data.items).filter((row) => (row.concursoId) === state.contestId);
+  assert.ok(rows.length >= 3, `deveria haver 3 bolões no mesmo concurso (veio ${rows.length})`);
+  const sizes = rows.map((row) => row.jogos?.[0]?.quantidadeDezenas ?? row.numerosApostados?.length).filter(Boolean).sort((x, y) => x - y);
+  assert.deepEqual(sizes, [6, 7, 10]);
 });
 
 test('salva a página inicial (sem erro interno) e ela aparece no site', async () => {

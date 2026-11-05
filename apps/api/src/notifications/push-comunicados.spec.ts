@@ -151,3 +151,44 @@ describe('Comunicados', () => {
     expect(await service.preview({ publico: 'todos' })).toEqual({ total: 5, comAvisoNoCelular: 2 });
   });
 });
+
+describe('PushService.sendTest', () => {
+  function setup(subs: any[]) {
+    const prisma: any = {
+      configuracaoSistema: { findMany: async () => [{ chave: 'vapid_public', valor: 'PUB' }, { chave: 'vapid_private', valor: 'PRIV' }], createMany: async () => ({ count: 0 }) },
+      pushInscricao: {
+        findMany: async () => subs,
+        update: async () => ({}),
+        deleteMany: async ({ where }: any) => { for (let i = subs.length - 1; i >= 0; i -= 1) if (subs[i].id === where.id) subs.splice(i, 1); return { count: 1 }; },
+        count: async () => subs.length,
+      },
+    };
+    return new PushService(prisma, fakeConfig({ MAIL_FROM: 'BL <contato@exemplo.com.br>' }));
+  }
+  const sub = (id: string, endpoint: string) => ({ id, endpoint, p256dh: 'k', auth: 'a', falhas: 0, usuarioId: 'u1' });
+
+  it('explica quando o aparelho ainda não está cadastrado', async () => {
+    const result = await setup([]).sendTest('u1');
+    expect(result.enviados).toBe(0);
+    expect(result.motivo).toMatch(/Ligar avisos/);
+  });
+
+  it('entrega o teste e conta os aparelhos', async () => {
+    const result = await setup([sub('a', 'https://push/ok')]).sendTest('u1');
+    expect(result).toMatchObject({ enviados: 1, aparelhos: 1, motivo: null });
+  });
+
+  it('limita a um teste a cada 10 segundos por pessoa', async () => {
+    const service = setup([sub('a', 'https://push/ok')]);
+    await service.sendTest('u1');
+    const second = await service.sendTest('u1');
+    expect(second.enviados).toBe(0);
+    expect(second.motivo).toMatch(/Espere/);
+  });
+
+  it('avisa quando o serviço do navegador recusa', async () => {
+    const result = await setup([sub('a', 'https://push/gone')]).sendTest('u1');
+    expect(result.enviados).toBe(0);
+    expect(result.motivo).toMatch(/recusado/);
+  });
+});

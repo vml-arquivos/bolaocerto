@@ -38,9 +38,15 @@ export class AuthService {
   async register(dto: RegisterDto, meta: { ip?: string; userAgent?: string | null } = {}): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
     const cpf = normalizeCpf(dto.cpf);
     if (!isValidCpf(cpf)) throw new ConflictException('CPF inválido.');
-    const dataNascimento = new Date(dto.dataNascimento);
-    if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
-    assertAdult(dataNascimento);
+    // Cadastro simples: sem data de nascimento, vale a declaração de que a pessoa tem 18 anos ou mais.
+    let dataNascimento: Date | null = null;
+    if (dto.dataNascimento) {
+      dataNascimento = new Date(dto.dataNascimento);
+      if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
+      assertAdult(dataNascimento);
+    } else if (dto.maiorDeIdade !== true) {
+      throw new ConflictException('Confirme que você tem 18 anos ou mais para criar a conta.');
+    }
     if (!isValidNewPassword(dto.senha)) throw new ConflictException(NEW_PASSWORD_MESSAGE);
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] } });
@@ -74,7 +80,7 @@ export class AuthService {
           nome: dto.nome.trim(),
           cpf,
           email,
-          telefone: dto.telefone?.trim() || undefined,
+          telefone: dto.telefone.replace(/\D/g, ''),
           dataNascimento,
           senhaHash: passwordHash,
           papel,

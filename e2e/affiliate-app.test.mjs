@@ -43,7 +43,7 @@ test('app do afiliado: entrada, manifesto, abas pela URL, aba Cotas e bloqueio d
 
     const buyer = await browser.newContext(); const buyerPage = await buyer.newPage();
     const buyerCpf = randomCpf(); const buyerEmail = `cliente.app.${stamp}@teste.local`;
-    await call(buyerPage, 'POST', '/auth/registrar', { nome: 'Cliente Silva Souza', cpf: buyerCpf, email: buyerEmail, dataNascimento: '1992-02-02', senha: 'Senha123' });
+    await call(buyerPage, 'POST', '/auth/registrar', { nome: 'Cliente Silva Souza', cpf: buyerCpf, email: buyerEmail, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' });
     const terms = await call(buyerPage, 'GET', '/config/mandato');
     await call(buyerPage, 'POST', '/cotas/reservar', { aceitoTermos: true, bolaoId: pool.id, quantidade: 2, titularCpf: buyerCpf, titularNome: 'Cliente Silva Souza', termoMandatoHash: terms.hash, codigoAfiliado: affiliate.codigoAfiliado });
 

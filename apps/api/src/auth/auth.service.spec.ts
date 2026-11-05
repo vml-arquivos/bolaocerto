@@ -29,12 +29,35 @@ describe('AuthService referral attribution', () => {
     return { service: new AuthService(prisma as any, jwt as any, config as any), prisma };
   }
 
-  const dto = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', senha: 'Senha2026', codigoAfiliado: 'BL-ABC' };
+  const dto = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', telefone: '11912345678', senha: 'Senha2026', codigoAfiliado: 'BL-ABC' };
 
   it('persiste o afiliado aprovado no cadastro', async () => {
     const { service, prisma } = makeService({ afiliado: { findUnique: jest.fn().mockResolvedValue({ id: 'affiliate-1', statusAprovacao: 'aprovado' }) } });
     await service.register(dto as any);
     expect(prisma.usuario.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ indicadoPorAfiliadoId: 'affiliate-1' }) }));
+  });
+
+  describe('cadastro simples (CPF, nome, telefone, e-mail e senha)', () => {
+    const simple = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', telefone: '(11) 91234-5678', senha: 'Senha2026' };
+
+    it('sem data de nascimento, aceita a declaração de maioridade e guarda só os números do telefone', async () => {
+      const { service, prisma } = makeService();
+      await service.register({ ...simple, maiorDeIdade: true } as any);
+      expect(prisma.usuario.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ cpf: '52998224725', telefone: '11912345678', dataNascimento: null }) }));
+    });
+
+    it('sem data de nascimento e sem a declaração, não cria a conta', async () => {
+      const { service, prisma } = makeService();
+      await expect(service.register(simple as any)).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.usuario.create).not.toHaveBeenCalled();
+    });
+
+    it('se a data de nascimento vier, continua exigindo maior de 18 anos', async () => {
+      const { service, prisma } = makeService();
+      const recent = new Date(Date.now() - 5 * 365 * 86400000).toISOString().slice(0, 10);
+      await expect(service.register({ ...simple, dataNascimento: recent } as any)).rejects.toThrow();
+      expect(prisma.usuario.create).not.toHaveBeenCalled();
+    });
   });
 
   it('cotista que chega pelo código do afiliado entra no grupo dele', async () => {

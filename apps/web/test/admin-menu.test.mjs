@@ -11,20 +11,26 @@ test('menu do painel tem as pessoas em um só grupo e sem rede de afiliados', ()
   assert.equal(new Set(keys).size, keys.length, 'item repetido no menu');
 });
 
-test('comissões ficam em Dinheiro e não existe mais o grupo Indicações', () => {
+test('financeiro e operação são itens únicos com abas, e comissões ficam no Financeiro', () => {
   assert.ok(!/label: 'Indicações'/.test(shell));
-  const money = shell.slice(shell.indexOf("label: 'Financeiro'"), shell.indexOf("label: 'Operação'"));
-  assert.ok(money.includes("'comissoes'") && money.includes("'repasses'"));
+  const nav = readFileSync(new URL('../lib/admin-nav.ts', import.meta.url), 'utf8');
+  const finance = nav.slice(nav.indexOf("key: 'financeiro'"), nav.indexOf("key: 'operacao'"));
+  for (const key of ['recebimentos', 'comissoes', 'repasses', 'notas-fiscais']) assert.ok(finance.includes(`'${key}'`), `${key} deve ficar no Financeiro`);
+  const ops = nav.slice(nav.indexOf("key: 'operacao'"));
+  for (const key of ['comprovantes', 'lotericas', 'comunicados']) assert.ok(ops.includes(`'${key}'`), `${key} deve ficar em Operação`);
+  const hubs = shell.slice(shell.indexOf('const hubItems'));
+  assert.ok(hubs.includes("'financeiro'") && hubs.includes("'operacao'"));
 });
 
-test('menu organizado: atalhos no topo, cinco grupos e usuários e acessos em Administração', () => {
+test('menu enxuto: atalhos no topo, três grupos e usuários e acessos em Administração', () => {
   const top = shell.slice(shell.indexOf('const topItems'), shell.indexOf('const groups'));
   assert.ok(top.includes("'visao-geral'") && top.includes("'relatorios'"));
-  const labels = [...shell.matchAll(/label: '([^']+)'/g)].map((match) => match[1]);
-  assert.deepEqual(labels, ['Jogos e vendas', 'Pessoas', 'Financeiro', 'Operação', 'Administração']);
-  const admin = shell.slice(shell.indexOf("label: 'Administração'"));
-  for (const key of ['usuarios', 'conexoes', 'auditoria', 'configuracoes']) assert.ok(admin.includes(`'${key}'`), `${key} deve ficar em Administração`);
-  const people = shell.slice(shell.indexOf("label: 'Pessoas'"), shell.indexOf("label: 'Financeiro'"));
+  const groupsSource = shell.slice(shell.indexOf('const groups'), shell.indexOf('const hubItems'));
+  const labels = [...groupsSource.matchAll(/label: '([^']+)'/g)].map((match) => match[1]);
+  assert.deepEqual(labels, ['Jogos e vendas', 'Pessoas', 'Administração']);
+  const admin = groupsSource.slice(groupsSource.indexOf("label: 'Administração'"));
+  for (const key of ['vitrine', 'usuarios', 'conexoes', 'auditoria', 'configuracoes']) assert.ok(admin.includes(`'${key}'`), `${key} deve ficar em Administração`);
+  const people = groupsSource.slice(groupsSource.indexOf("label: 'Pessoas'"), groupsSource.indexOf("label: 'Administração'"));
   assert.ok(!people.includes("'usuarios'"), 'usuários e acessos saiu de Pessoas');
 });
 

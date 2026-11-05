@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
 import { AdminModal } from './admin-attachments';
 import { useIsSuperAdmin } from './staff-gate';
-type User = { id: string; nome: string; email: string; cpf: string; telefone: string | null; dataNascimento: string; papel: string; statusKyc: string; desativadoEm: string | null; criadoEm: string; _count: { cotasCompradas: number; boloesCriados: number } };
+type User = { id: string; nome: string; email: string; cpf: string; telefone: string | null; dataNascimento: string | null; papel: string; statusKyc: string; desativadoEm: string | null; criadoEm: string; _count: { cotasCompradas: number; boloesCriados: number } };
 async function api(path: string, options?: RequestInit) {
   const response = await authenticatedFetch(path, { ...options, cache: 'no-store' });
   const result = await response.json().catch(() => ({}));
@@ -26,7 +26,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
     event.preventDefault(); if (!user || busy) return;
     setBusy(true); setMessage('');
     try {
-      await api(`/api/v1/admin/usuarios/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: user.nome, email: user.email, telefone: user.telefone ?? '', dataNascimento: user.dataNascimento.slice(0, 10) }) });
+      await api(`/api/v1/admin/usuarios/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: user.nome, email: user.email, telefone: user.telefone ?? '', ...(user.dataNascimento ? { dataNascimento: user.dataNascimento.slice(0, 10) } : {}) }) });
       await onDone(); onClose();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao salvar.'); } finally { setBusy(false); }
   }
@@ -61,7 +61,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
         <label className="admin-field"><span>Nome</span><input required minLength={2} maxLength={150} value={user.nome} onChange={e => setUser({ ...user, nome: e.target.value })}/></label>
         <label className="admin-field"><span>E-mail</span><input required type="email" maxLength={180} value={user.email} onChange={e => setUser({ ...user, email: e.target.value })}/></label>
         <label className="admin-field"><span>Telefone</span><input type="tel" maxLength={20} value={user.telefone ?? ''} onChange={e => setUser({ ...user, telefone: e.target.value })}/></label>
-        <label className="admin-field"><span>Nascimento</span><input required type="date" value={user.dataNascimento.slice(0, 10)} onChange={e => setUser({ ...user, dataNascimento: e.target.value })}/></label>
+        <label className="admin-field"><span>Nascimento (opcional)</span><input type="date" value={(user.dataNascimento ?? '').slice(0, 10)} onChange={e => setUser({ ...user, dataNascimento: e.target.value })}/></label>
         <p className="admin-help">CPF: {user.cpf}. A identificação fiscal e os dados das compras anteriores são preservados. Alterar o e-mail encerra as sessões e invalida links antigos de redefinição.</p>
         <button className="admin-button" disabled={busy}>{busy ? 'Processando…' : 'Salvar alterações'}</button>
       </form>

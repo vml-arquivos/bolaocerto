@@ -82,6 +82,22 @@ export class PushService {
     return { ativo: aparelhos > 0, aparelhos };
   }
 
+  private readonly lastTest = new Map<string, number>();
+
+  /**
+   * Aviso de teste do próprio usuário: confirma de ponta a ponta (chave, inscrição e entrega) e diz o que aconteceu.
+   * Uma vez a cada 10 segundos por pessoa.
+   */
+  async sendTest(userId: string) {
+    const now = Date.now();
+    if (now - (this.lastTest.get(userId) ?? 0) < 10_000) return { enviados: 0, aparelhos: 0, motivo: 'Espere alguns segundos para testar de novo.' };
+    this.lastTest.set(userId, now);
+    const aparelhos = await this.prisma.pushInscricao.count({ where: { usuarioId: userId } });
+    if (!aparelhos) return { enviados: 0, aparelhos: 0, motivo: 'Este aparelho ainda não está cadastrado. Toque em “Ligar avisos” primeiro.' };
+    const enviados = await this.sendToUser(userId, { titulo: 'Teste de aviso', mensagem: 'Se você está vendo isto, os avisos do BL funcionam neste aparelho.', link: '/minha-conta', tag: 'aviso.teste' });
+    return { enviados, aparelhos: enviados ? aparelhos : await this.prisma.pushInscricao.count({ where: { usuarioId: userId } }), motivo: enviados ? null : 'O envio foi recusado pelo serviço do navegador. Desligue e ligue os avisos de novo neste aparelho.' };
+  }
+
   /** Quantas pessoas já aceitaram receber avisos (painel). */
   async stats() {
     const [aparelhos, pessoas] = await Promise.all([

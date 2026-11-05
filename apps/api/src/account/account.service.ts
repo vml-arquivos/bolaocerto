@@ -8,6 +8,12 @@ import { PrismaService } from '../common/prisma.service';
 import { assertCanManage } from '../admin/superadmin';
 import { NotificationsService } from '../notifications/notifications.service';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from '../auth/password-policy';
+import { detectFileType } from '../attachments/file-type';
+import { maskCpfDisplay } from '../shares/receipt';
+import { UpdateProfileDto } from './account.dto';
+
+export const PHOTO_KEY_PREFIX = 'foto:';
+export const MAX_PHOTO_BYTES = 600 * 1024;
 
 const RESET_TTL_MINUTES = 60;
 const RESET_MAX_PER_HOUR = 3;
@@ -19,6 +25,54 @@ export class AccountService {
   private readonly logger = new Logger(AccountService.name);
 
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly mail: MailService, private readonly notifications: NotificationsService) {}
+
+  // ───────── Perfil e foto da própria conta ─────────
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.usuario.findUnique({ where: { id: userId }, select: { nome: true, cpf: true, email: true, telefone: true, papel: true, chavePixRecebimento: true, afiliado: { select: { chavePixRepasse: true } } } });
+    if (!user) throw new NotFoundException('Conta não encontrada.');
+    const photo = await this.prisma.configuracaoSistema.findUnique({ where: { chave: `${PHOTO_KEY_PREFIX}${userId}` }, select: { atualizadoEm: true } });
+    return { nome: user.nome, cpf: maskCpfDisplay(user.cpf), email: user.email, telefone: user.telefone, papel: user.papel, chavePix: user.afiliado?.chavePixRepasse ?? user.chavePixRecebimento ?? null, foto: photo ? { versao: photo.atualizadoEm.getTime() } : null };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const before = await this.prisma.usuario.findUnique({ where: { id: userId }, select: { nome: true, telefone: true, chavePixRecebimento: true, afiliado: { select: { id: true, chavePixRepasse: true } } } });
+    if (!before) throw new NotFoundException('Conta não encontrada.');
+    const nome = dto.nome?.trim();
+    if (dto.nome !== undefined && (!nome || nome.length < 2)) throw new BadRequestException('Informe o nome completo.');
+    const telefone = dto.telefone !== undefined ? dto.telefone.replace(/\D/g, '') : undefined;
+    const pix = dto.chavePix !== undefined ? (dto.chavePix.trim() || null) : undefined;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.usuario.update({ where: { id: userId }, data: { ...(nome ? { nome } : {}), ...(telefone !== undefined ? { telefone } : {}), ...(pix !== undefined ? { chavePixRecebimento: pix } : {}) } });
+      if (pix !== undefined && before.afiliado) await tx.afiliado.update({ where: { id: before.afiliado.id }, data: { chavePixRepasse: pix } });
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: userId, evento: 'usuario.perfil_editado', atorId: userId, payloadAntes: { nome: before.nome, telefone: before.telefone } as unknown as Prisma.InputJsonValue, payloadDepois: { nome: nome ?? before.nome, telefone: telefone ?? before.telefone, pixAlterado: pix !== undefined } as unknown as Prisma.InputJsonValue });
+    });
+    return this.getProfile(userId);
+  }
+
+  /** A foto fica na tabela de configurações (chave foto:<id>), como as imagens da página inicial: sem pasta e sem migração. */
+  async savePhoto(userId: string, file: { buffer: Buffer } | undefined) {
+    if (!file?.buffer?.length) throw new BadRequestException('Escolha uma imagem.');
+    if (file.buffer.length > MAX_PHOTO_BYTES) throw new BadRequestException('Imagem muito grande. Use uma foto de até 600 KB.');
+    const type = detectFileType(file.buffer);
+    if (!type || type.mime === 'application/pdf') throw new BadRequestException('Use uma imagem PNG, JPG ou WEBP.');
+    const chave = `${PHOTO_KEY_PREFIX}${userId}`;
+    const valor = `${type.mime};${file.buffer.toString('base64')}`;
+    const row = await this.prisma.configuracaoSistema.upsert({ where: { chave }, create: { chave, valor }, update: { valor } });
+    return { foto: { versao: row.atualizadoEm.getTime() } };
+  }
+
+  async readPhoto(userId: string): Promise<{ mime: string; data: Buffer }> {
+    const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: `${PHOTO_KEY_PREFIX}${userId}` } });
+    const sep = row?.valor.indexOf(';') ?? -1;
+    if (!row || sep < 0) throw new NotFoundException('Sem foto.');
+    return { mime: row.valor.slice(0, sep), data: Buffer.from(row.valor.slice(sep + 1), 'base64') };
+  }
+
+  async deletePhoto(userId: string) {
+    await this.prisma.configuracaoSistema.deleteMany({ where: { chave: `${PHOTO_KEY_PREFIX}${userId}` } });
+    return { foto: null };
+  }
 
   // ───────── Esqueci minha senha ─────────
 

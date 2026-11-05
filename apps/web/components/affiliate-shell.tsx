@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { ReactNode } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { InstallAppButton } from './pwa-register';
+import { ProfilePanel } from './profile-panel';
 
 /** Abas do aplicativo do afiliado. A aba atual fica na URL (?aba=), então o botão voltar e os atalhos do app funcionam. */
 export const AFFILIATE_TABS = [
@@ -49,6 +50,7 @@ export function AffiliateShell({ children }: { children: ReactNode }) {
 export function AffiliateMore({ pending, status }: { pending: string; status?: string }) {
   return <section className="affiliate-table-card aff-more">
     <div className="affiliate-card-heading"><div><span className="overline">Mais opções</span><h2>Seu aplicativo</h2><p>Cadastro: <span className={`affiliate-status ${status}`}>{String(status ?? '—').replaceAll('_', ' ')}</span></p></div></div>
+    <ProfilePanel pixLabel="Chave Pix para receber comissões" />
     <div className="aff-more-links">
       <Link href="/afiliado?aba=grupos"><strong>Grupos</strong><small>Pessoas, convites e páginas dos seus grupos.</small></Link>
       <Link href="/afiliado?aba=comissoes"><strong>Comissões</strong><small>Pendente: {pending}. Base, percentual e repasses.</small></Link>

@@ -123,7 +123,8 @@ export class PoolsService {
     const pool = await this.prisma.$transaction(async (tx) => {
       const created = await tx.bolao.create({
         data: {
-          comprovanteAntesVenda: !dto.vendaAntecipada,
+          // O registro da lotérica não é pré-requisito: o bolão pode abrir a venda antes e o comprovante é anexado depois, no próprio bolão.
+          comprovanteAntesVenda: false,
           vendaAntecipada: dto.vendaAntecipada === true,
           ...rules,
           concursoId: dto.concursoId,
@@ -187,7 +188,7 @@ export class PoolsService {
         ...(dto.taxaAdministracaoPct !== undefined ? { taxaAdministracaoPct: new Prisma.Decimal(dto.taxaAdministracaoPct) } : {}),
         ...(dto.premioMinimoLiberacao !== undefined ? { premioMinimoLiberacao: dto.premioMinimoLiberacao === null ? null : new Prisma.Decimal(dto.premioMinimoLiberacao), liberadoEm: null } : {}),
         ...rules,
-        ...(dto.vendaAntecipada !== undefined ? { vendaAntecipada: dto.vendaAntecipada, comprovanteAntesVenda: !dto.vendaAntecipada } : {}),
+        ...(dto.vendaAntecipada !== undefined ? { vendaAntecipada: dto.vendaAntecipada } : {}),
         editadoPor: user.id,
         editadoEm: new Date(),
       } });

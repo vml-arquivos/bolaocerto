@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
 import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from './password-policy';
 
 export class RegisterDto {
@@ -13,12 +13,20 @@ export class RegisterDto {
   @IsEmail()
   email!: string;
 
-  @IsOptional()
+  /** Celular com DDD (10 ou 11 números). Obrigatório: entra no contrato e nos avisos. */
   @IsString()
-  telefone?: string;
+  @Matches(/^\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}$/, { message: 'Informe o telefone com DDD, por exemplo (11) 91234-5678.' })
+  telefone!: string;
 
+  /** Opcional: o cadastro simples não pede a data de nascimento. Quando vem, precisa ser de maior de 18 anos. */
+  @IsOptional()
   @IsDateString()
-  dataNascimento!: string;
+  dataNascimento?: string;
+
+  /** Declaração de maioridade. Obrigatória quando a data de nascimento não é informada. */
+  @IsOptional()
+  @IsBoolean()
+  maiorDeIdade?: boolean;
 
   @IsString()
   @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE })

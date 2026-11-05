@@ -33,3 +33,11 @@ export class MonthlyLimitDto {
   @IsNumber({ maxDecimalPlaces: 2 }) @Min(10) @Max(1_000_000)
   valor!: number | null;
 }
+
+/** Dados que a própria pessoa pode mudar na conta. CPF e e-mail (que é o login) não mudam por aqui. */
+export class UpdateProfileDto {
+  @IsOptional() @IsString() @Length(2, 150) nome?: string;
+  @IsOptional() @IsString() @Matches(/^\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}$/, { message: 'Informe o telefone com DDD, por exemplo (11) 91234-5678.' }) telefone?: string;
+  /** Chave Pix para receber (comissões, no caso do afiliado). Vazio apaga. */
+  @IsOptional() @IsString() @MaxLength(140) chavePix?: string;
+}

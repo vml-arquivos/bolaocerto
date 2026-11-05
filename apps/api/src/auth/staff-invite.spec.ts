@@ -19,7 +19,7 @@ function setup(invite: unknown, createdPapel = 'operacao') {
   return { service: new AuthService(prisma, jwt as any, config as any, audit as any), prisma, audit };
 }
 
-const dto = { nome: 'Pessoa Equipe', cpf: '52998224725', email: 'equipe@example.com', dataNascimento: '1990-01-01', senha: 'Senha2026', codigoAfiliado: 'OP-ABC' };
+const dto = { nome: 'Pessoa Equipe', cpf: '52998224725', email: 'equipe@example.com', dataNascimento: '1990-01-01', telefone: '11912345678', senha: 'Senha2026', codigoAfiliado: 'OP-ABC' };
 const invite = (tipo: string, creator: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ id: 'inv1', tipo, afiliadoOrigemId: null, grupoId: null, emailDestino: null, comissaoPct: null, criadoPorUsuario: { id: 'adm1', papel: 'admin', email: 'outro@x.com', desativadoEm: null, ...creator }, ...extra });
 
 describe('cadastro pelo link da equipe', () => {

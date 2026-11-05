@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
-import { enablePush, readPushState, type PushState } from '../lib/push';
+import { enablePush, readPushState, resyncPush, type PushState } from '../lib/push';
 
 const DISMISS_KEY = 'bl-push-prompt-until';
 
@@ -22,6 +22,7 @@ export function PushPrompt({ audience = 'cliente' }: { audience?: 'cliente' | 'a
       if (!status?.ok) return; // visitante: não mostra
       const next = await readPushState();
       if (!off) setState(next);
+      if (next === 'on') void resyncPush();
     })();
     return () => { off = true; };
   }, []);

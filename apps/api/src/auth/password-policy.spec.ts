@@ -21,7 +21,7 @@ describe('new password policy (mínimo 6, com letra e número)', () => {
   });
 
   it('the registration DTO enforces the same rule', async () => {
-    const base = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01' };
+    const base = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', telefone: '11912345678' };
     const make = (senha: string) => Object.assign(new RegisterDto(), { ...base, senha });
     expect(await validate(make('abc123'))).toHaveLength(0);
     expect((await validate(make('123456'))).some(e => e.property === 'senha')).toBe(true);

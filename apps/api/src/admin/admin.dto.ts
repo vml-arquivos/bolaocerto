@@ -60,8 +60,9 @@ export class CreateManagedUserDto {
   @IsString()
   telefone?: string;
 
+  @IsOptional()
   @IsDateString()
-  dataNascimento!: string;
+  dataNascimento?: string;
 
   @IsString()
   @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE })

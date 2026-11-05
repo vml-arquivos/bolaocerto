@@ -30,6 +30,9 @@ export class PushController {
   @Get('status')
   status(@CurrentUser() user: AuthUser) { return this.push.status(user.id); }
 
+  @Post('teste')
+  test(@CurrentUser() user: AuthUser) { return this.push.sendTest(user.id); }
+
   @Post('inscrever')
   subscribe(@CurrentUser() user: AuthUser, @Body() dto: PushSubscribeDto, @Headers('user-agent') agent?: string) { return this.push.subscribe(user.id, dto, agent); }
 

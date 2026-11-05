@@ -14,7 +14,7 @@ test('o painel tem um arquivo por tela e o menu aponta para todas', () => {
     const component = read(`components/admin-views/${name}`);
     const exported = /export function (\w+View)\(/.exec(component)?.[1];
     assert.ok(exported, `${name} precisa exportar uma tela`);
-    assert.ok(dashboard.includes(`<${exported} ctx={ctx} />`), `${exported} não é usada no painel`);
+    assert.ok(dashboard.includes(`<${exported} ctx={ctx} />`) || dashboard.includes(`<${exported} />`), `${exported} não é usada no painel`);
   }
   // As telas não podem voltar a ser declaradas dentro do painel (isso as recria a cada atualização).
   assert.doesNotMatch(dashboard, /\n\s+function [A-Z]\w*View\(\)/);

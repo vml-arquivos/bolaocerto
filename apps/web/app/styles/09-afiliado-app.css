@@ -55,3 +55,15 @@
 .install-app-card small { display: block; margin-top: 4px; color: var(--text-muted); line-height: 1.5; }
 .install-app-card .install-action { margin: 0; }
 .install-app-card .install-action .button, .install-app-card .button { min-width: 0; width: 100%; text-align: center; }
+
+/* Meus dados: foto, nome, telefone e Pix */
+.profile-panel { display: grid; gap: 18px; margin: 12px 0 18px; }
+.profile-photo { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.profile-photo img, .profile-initials { width: 88px; height: 88px; border-radius: 50%; object-fit: cover; flex: none; }
+.profile-initials { display: grid; place-items: center; background: var(--brand-soft, #e8edff); color: var(--brand, #3157ee); font-weight: 800; font-size: 28px; }
+.profile-photo > div { display: grid; gap: 8px; justify-items: start; }
+.profile-form { display: grid; gap: 12px; max-width: 520px; }
+.profile-form label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.profile-form input { font-weight: 400; }
+.profile-fixed { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; padding: 10px 12px; border-radius: 12px; background: var(--surface-soft, rgba(127,127,127,.08)); }
+.profile-fixed small { grid-column: 1 / -1; }

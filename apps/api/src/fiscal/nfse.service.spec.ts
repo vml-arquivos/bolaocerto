@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, StatusNotaFiscal, StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
 import { CoraFiscalClient } from './nfse.client';
-import { NfseService, toReceiptAddress } from './nfse.service';
+import { NfseService, noteBase, toReceiptAddress } from './nfse.service';
 
 const admin = { id: 'admin-1', papel: 'admin' } as AuthUser;
 const FULL_USER = { id: 'u1', email: 'p@x.com', enderecoCep: '70000000', enderecoLogradouro: 'Rua A', enderecoNumero: '10', enderecoComplemento: null, enderecoBairro: 'Centro', enderecoCidade: 'Brasília', enderecoUf: 'DF' };
@@ -13,7 +13,7 @@ function config(values: Record<string, string>) {
 }
 
 function payment(overrides: Record<string, unknown> = {}, user: Record<string, unknown> = FULL_USER) {
-  return { id: 'pay-1', status: StatusPagamento.confirmado, pspProvedor: 'cora', pspTransactionId: 'inv_1', valorBruto: new Prisma.Decimal(100), notaFiscal: null, cota: { comprador: user }, ...overrides };
+  return { id: 'pay-1', status: StatusPagamento.confirmado, pspProvedor: 'cora', pspTransactionId: 'inv_1', valorBruto: new Prisma.Decimal(100), valorTaxaAdmin: new Prisma.Decimal(100), notaFiscal: null, cota: { comprador: user }, ...overrides };
 }
 
 function setup(options: { values?: Record<string, string>; payment?: unknown; fiscal?: Partial<CoraFiscalClient> } = {}) {
@@ -112,6 +112,33 @@ describe('NfseService — rotinas e operação manual', () => {
     const result = await service.autoEmit();
     expect(result).toEqual({ candidatos: 2, emitidas: 1, erros: 1 });
     expect(fiscal.emit).toHaveBeenCalledTimes(1);
+  });
+
+  describe('base da nota: só a taxa de administração', () => {
+    const mixed = () => payment({ valorBruto: new Prisma.Decimal(100), valorTaxaAdmin: new Prisma.Decimal(10) });
+
+    it('não pede a nota da Cora quando a cobrança inclui o custo dos jogos', async () => {
+      const { service, fiscal } = setup({ payment: mixed() });
+      await expect(service.emitForPayment('pay-1', admin)).rejects.toThrow(/taxa de administração \(R\$ 10\.00\)/);
+      expect(fiscal.emit).not.toHaveBeenCalled();
+    });
+
+    it('com NFSE_CORA_VALOR_TOTAL=true o contador aceitou a cobrança inteira e a emissão segue', async () => {
+      const { service, fiscal } = setup({ payment: mixed(), values: { NFSE_CORA_VALOR_TOTAL: 'true' } });
+      await service.emitForPayment('pay-1', admin);
+      expect(fiscal.emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('a nota manual guarda o valor do serviço (taxa), não o valor pago', async () => {
+      const { service, prisma } = setup({ payment: payment({ ...mixed(), pspProvedor: 'manual', pspTransactionId: null }) });
+      await service.registerManual('pay-1', { numero: '77' }, admin);
+      const data = (prisma.notaFiscal.upsert.mock.calls[0]![0] as { create: { valor: Prisma.Decimal } }).create;
+      expect(Number(data.valor)).toBe(10);
+    });
+
+    it('noteBase separa serviço e registro', () => {
+      expect(noteBase({ valorBruto: 100, valorTaxaAdmin: 9.09 })).toEqual({ bruto: 100, servico: 9.09, registro: 90.91 });
+    });
   });
 
   it('registra nota manual (balcão/app da Cora) como emitida e audita', async () => {

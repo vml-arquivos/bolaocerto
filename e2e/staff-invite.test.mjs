@@ -21,7 +21,7 @@ function randomCpf() {
   const digit = (list) => { const sum = list.reduce((total, value, index) => total + value * (list.length + 1 - index), 0); const rest = (sum * 10) % 11; return rest === 10 ? 0 : rest; };
   const first = digit(base); return [...base, first, digit([...base, first])].join('');
 }
-const person = (email) => ({ nome: 'Pessoa Equipe', cpf: randomCpf(), email, dataNascimento: '1991-05-05', senha: 'Senha123' });
+const person = (email) => ({ nome: 'Pessoa Equipe', cpf: randomCpf(), email, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' });
 
 test('link de operação: a pessoa se cadastra sozinha e entra como operação; o link vale uma vez', async () => {
   ok(await call('POST', '/auth/login', { email: EMAIL, senha: PASSWORD }), 'login admin');

@@ -402,6 +402,8 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       <div className="admin-kpi-grid">
         <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto ? 'configuração completa' : off ? 'defina NFSE_MODE no servidor' : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
         <Kpi label="Pagamentos sem nota" value={settings.pagamentosSemNota} hint="confirmados e ainda sem nota" tone="amber" />
+        <Kpi label="Serviço a faturar" value={brl(settings.valorServicoSemNota ?? 0)} hint="só a taxa de administração" tone="green" />
+        <Kpi label="Fora da nota (jogos)" value={brl(settings.valorRegistroSemNota ?? 0)} hint="custo do registro na CAIXA" tone="blue" />
         <Kpi label="Emitidas" value={count('emitida')} tone="green" />
         <Kpi label="Aguardando" value={count('aguardando') + count('aguardando_certificado')} hint="pagamento ou certificado A1" tone="blue" />
         <Kpi label="Com erro" value={count('erro')} hint="prefeitura recusou" tone="rose" />
@@ -426,9 +428,9 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
         </div>}
       </Panel>
 
-      <Panel title="Pagamentos confirmados sem nota" description="Emita pela Cora (precisa do endereço do participante) ou registre uma nota emitida fora do sistema.">
-        <Table minWidth={980}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Valor</th><th>Taxa adm.</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
-          <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.taxaAdmin)}</td>
+      <Panel title="Pagamentos confirmados sem nota" description="A nota é só da taxa de administração (coluna “Serviço”). Quando a cobrança inclui o custo dos jogos, emita pelo valor do serviço no app da Cora ou na prefeitura e registre aqui o número e o PDF.">
+        <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
+          <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
           <td><span className={chip(row.enderecoCompleto ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : 'faltando'}</span></td>
           <td><div className="admin-row-actions">
             {row.emitivelPelaCora && row.enderecoCompleto && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => 'Nota solicitada à Cora.')}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : 'Emitir pela Cora'}</button>}

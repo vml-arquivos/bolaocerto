@@ -102,7 +102,7 @@ model Usuario {
   cpf                   String        @unique @db.VarChar(11)
   email                 String        @unique @db.VarChar(180)
   telefone              String?       @db.VarChar(20)
-  dataNascimento        DateTime      @map("data_nascimento") @db.Date
+  dataNascimento        DateTime?     @map("data_nascimento") @db.Date
   senhaHash             String        @map("senha_hash")
   papel                 PapelUsuario  @default(cotista)
   statusKyc             StatusKyc     @default(nao_iniciado) @map("status_kyc")
@@ -314,7 +314,7 @@ model Grupo {
 }
 
 model Bolao {
-  comprovanteAntesVenda Boolean @default(true) @map("comprovante_antes_venda")
+  comprovanteAntesVenda Boolean @default(false) @map("comprovante_antes_venda")
   id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   concursoId            String              @map("concurso_id") @db.Uuid
   grupoId               String              @map("grupo_id") @db.Uuid

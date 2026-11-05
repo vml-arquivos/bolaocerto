@@ -51,7 +51,7 @@ export class AdminUsersService {
         const emailChanged = before.email !== email;
         const updated = await tx.usuario.update({ where: { id }, data: { nome, email, ...(dto.telefone !== undefined ? { telefone: dto.telefone.trim() || null } : {}), ...(birth ? { dataNascimento: birth } : {}), ...(emailChanged ? { tokenVersion: { increment: 1 } } : {}) }, select: view });
         if (emailChanged) await tx.tokenSenha.updateMany({ where: { usuarioId: id, usadoEm: null }, data: { usadoEm: new Date() } });
-        await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.cadastro_editado', atorId: actor.id, payloadAntes: { nome: before.nome, email: before.email, telefone: before.telefone, dataNascimento: before.dataNascimento.toISOString() }, payloadDepois: { nome, email, telefone: updated.telefone, dataNascimento: updated.dataNascimento.toISOString() } });
+        await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.cadastro_editado', atorId: actor.id, payloadAntes: { nome: before.nome, email: before.email, telefone: before.telefone, dataNascimento: before.dataNascimento?.toISOString() }, payloadDepois: { nome, email, telefone: updated.telefone, dataNascimento: updated.dataNascimento?.toISOString() } });
         return { ...updated, cpf: formatCpf(updated.cpf), sessoesEncerradas: emailChanged };
       });
     } catch (error) {

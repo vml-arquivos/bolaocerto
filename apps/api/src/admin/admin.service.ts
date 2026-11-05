@@ -194,7 +194,7 @@ export class AdminService {
       ...(query.modalidade ? { concurso: { modalidade: query.modalidade } } : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
     ]);
     const interested = new Map<string, number>();
@@ -208,6 +208,8 @@ export class AdminService {
         valorCota: pool.valorCota.toFixed(2),
         taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
         cotas: undefined,
+        _count: undefined,
+        registro: { arquivos: pool._count.anexos, registrado: Boolean(pool.registradoEm) || ['registrado', 'apurado'].includes(pool.status) },
         premioMinimoLiberacao: pool.premioMinimoLiberacao === null ? null : pool.premioMinimoLiberacao.toFixed(2),
         liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso.valorEstimadoPremio }),
         indicadores: {
@@ -334,9 +336,12 @@ export class AdminService {
     const cpf = normalizeCpf(dto.cpf);
     if (!isValidCpf(cpf)) throw new ConflictException('CPF inválido.');
     if (!isValidNewPassword(dto.senha)) throw new ConflictException(NEW_PASSWORD_MESSAGE);
-    const dataNascimento = new Date(dto.dataNascimento);
-    if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
-    assertAdult(dataNascimento);
+    let dataNascimento: Date | null = null;
+    if (dto.dataNascimento) {
+      dataNascimento = new Date(dto.dataNascimento);
+      if (Number.isNaN(dataNascimento.getTime())) throw new ConflictException('Data de nascimento inválida.');
+      assertAdult(dataNascimento);
+    }
     const email = dto.email.trim().toLowerCase();
     const papel = dto.papel ?? 'cotista';
     const parent = dto.parentAfiliadoId ? await this.prisma.afiliado.findFirst({ where: { id: dto.parentAfiliadoId, statusAprovacao: 'aprovado' } }) : null;

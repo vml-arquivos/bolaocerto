@@ -6,6 +6,7 @@ import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { ReceiptPanel } from './receipt-panel';
 import { PushToggle } from './push-toggle';
+import { ProfilePanel } from './profile-panel';
 import { NotificationsCard, PasswordCard, PrivacyCard, ReceiptsCard, ResponsiblePlayCard, TwoFactorCard } from './account-extras';
 import { concursoNo } from '../lib/contest';
 
@@ -123,6 +124,7 @@ export function AccountDashboard() {
       <article className="dashboard-card"><span className="overline">Prêmios</span><strong className="stat-value">{money(prizes)}</strong><small className="muted">em cotas premiadas</small></article>
       <article className="dashboard-card"><span className="overline">Verificação</span><strong className="stat-value stat-text">{user?.statusKyc?.replace('_', ' ')}</strong><small className="muted">situação cadastral</small></article>
       {address?.nfseAtiva && paidShares.length > 0 && <AddressCard address={address} onSaved={() => void load()} />}
+      <article className="dashboard-card wide"><h2>Meus dados</h2><ProfilePanel /></article>
       <NotificationsCard />
       <PushToggle />
       <article className="dashboard-card wide"><h2>Minhas cotas</h2>
