@@ -146,3 +146,30 @@ test('conciliação financeira fecha depois das vendas', async () => {
   assert.equal(result.data.pagamentosSemCota, 0);
   assert.equal(result.data.cotasPagasSemPagamento, 0);
 });
+
+test('preço livre: o cliente paga R$ 20 e o sistema separa R$ 0,60 de registro e R$ 19,40 de serviço (base da nota)', async () => {
+  const group = await call('GET', '/grupos/bl-oficial'); ok(group, 'grupo');
+  const contest = await call('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: 81000 + Math.floor(Math.random() * 900), dataSorteio: future(16) }); ok(contest, 'concurso');
+  const numbers = [2, 13, 25, 37, 48, 59];
+  const pool = await call('POST', '/admin/boloes', {
+    concursoId: contest.data.id, grupoId: group.data.id, numerosApostados: numbers, jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 60 }],
+    cotasIlimitadas: false, totalCotas: 100, valorCota: 20, taxaAdministracaoPct: 97, modeloOperacional: 'mandato', precoLivre: true, precificacaoAutomatica: false, custoRegistroCentavos: 6000, totalCotadoCentavos: 200000,
+  });
+  ok(pool, 'criar bolão de preço livre');
+  // Sem o registro da lotérica: a venda abre e o comprovante entra depois, dentro do bolão.
+  ok(await call('POST', `/admin/boloes/${pool.data.id}/publicar`), 'publicar sem comprovante');
+  state.poolId = pool.data.id;
+  const share = await reserve();
+  const payment = await call('POST', `/cotas/${share.id}/pagamento`, { metodo: 'pix' }, buyer); ok(payment, 'criar Pix');
+  assert.equal(Number(payment.data.valorBruto), 20);
+  const fake = await control('GET', '/__state');
+  const invoice = fake.invoices.find((item) => item.id === payment.data.pspTransactionId);
+  assert.equal(invoice.total_amount, 2000);
+  await control('POST', `/__pay/${invoice.id}`);
+  const notes = await call('GET', '/admin/notas-fiscais'); ok(notes, 'notas fiscais');
+  const row = notes.data.semNota.find((item) => item.pagamentoId === payment.data.id);
+  assert.ok(row, 'o pagamento confirmado precisa aparecer para emitir a nota');
+  assert.equal(row.valor, 20);
+  assert.equal(row.valorServico, 19.4, 'a nota é só da taxa de serviço');
+  assert.equal(row.valorRegistro, 0.6, 'o registro da CAIXA fica fora da nota');
+});

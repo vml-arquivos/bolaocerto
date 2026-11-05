@@ -71,10 +71,23 @@ export class CreatePoolDto {
   @IsPositive()
   valorCota!: number;
 
+  /** Percentual da taxa. No modelo antigo vai até 35 (sobre o custo); no preço livre é a taxa dentro da cota (até 100). */
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  @Max(35)
+  @Max(100)
   taxaAdministracaoPct!: number;
+
+  /** Preço livre (só administrador): o valor da cota é o informado; o custo do registro na CAIXA é apenas referência e a sobra é a taxa de serviço. */
+  @IsOptional()
+  @IsBoolean()
+  precoLivre?: boolean;
+
+  /** Preço livre sem a tabela da CAIXA: custo total do registro, em centavos. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000_000)
+  custoRegistroCentavos?: number;
 
   @IsEnum(['mandato', 'loterica_parceira'])
   modeloOperacional!: 'mandato' | 'loterica_parceira';

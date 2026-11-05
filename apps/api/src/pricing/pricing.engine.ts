@@ -49,6 +49,21 @@ export function splitPool(costCents: number, shares: number, feeBps: number) {
     ticketBudgetCents: ticketPerShare * shares, roundingReserveCents: ticketPerShare * shares - costCents,
     adminTotalCents: feePerShare * shares, totalCents: total };
 }
+/**
+ * Preço livre: o custo do registro na CAIXA é só uma referência e o valor da cota é definido por quem cria o bolão.
+ * Por cota: a parte do registro (arredondada para cima, com a sobra explicitada) e o resto é a taxa de serviço.
+ */
+export function splitPoolByQuota(costCents: number, shares: number, quotaCents: number) {
+  if (![costCents, shares, quotaCents].every(Number.isSafeInteger) || costCents < 0 || shares <= 0 || quotaCents <= 0) throw new Error('Custo do registro, cotas ou valor da cota inválidos.');
+  const ticketPerShare = Math.ceil(costCents / shares);
+  if (quotaCents < ticketPerShare) throw new Error(`O valor da cota (R$ ${(quotaCents / 100).toFixed(2)}) não cobre a parte do registro de cada cota (R$ ${(ticketPerShare / 100).toFixed(2)}).`);
+  const feePerShare = quotaCents - ticketPerShare;
+  const total = quotaCents * shares;
+  if (!Number.isSafeInteger(total) || total > 9_999_999_999) throw new Error('Valor excede o limite financeiro.');
+  return { costCents, shares, ticketPerShare, feePerShare, quotaCents,
+    ticketBudgetCents: ticketPerShare * shares, roundingReserveCents: ticketPerShare * shares - costCents,
+    adminTotalCents: feePerShare * shares, totalCents: total };
+}
 export function officialPriceRows(): PriceRule[] {
   const rows: PriceRule[] = [];
   const add = (modalidade: string, chave: string, valorCentavos: number, page = modalidade) => rows.push({ modalidade, chave, valorCentavos, fonte: `https://loterias.caixa.gov.br/Paginas/${page}.aspx` });

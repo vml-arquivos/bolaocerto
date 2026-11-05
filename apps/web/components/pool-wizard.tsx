@@ -6,6 +6,7 @@ import { concursoNo } from '../lib/contest';
 import { authenticatedFetch as authFetch } from '../lib/client-api';
 import { modalityNames } from '../lib/domain';
 import { formatBRL as money } from '../lib/format';
+import { planPricing, toCents, type PriceMode } from '../lib/pool-pricing';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type RecordValue = Record<string, any>;
@@ -54,6 +55,7 @@ function toLocalInput(value: unknown) {
 export function PoolWizard({ contests, groupId, groups = [], role = 'admin', editPool, onCancelEdit, onSuccess, onContestCreated, initialContestId }: PoolWizardProps) {
   const initialContest = initialContestId ? contests.find((contest) => contest.id === initialContestId) : undefined;
   const editing = Boolean(editPool?.id);
+  const freeMode = role === 'admin' && !editing;
   const [modality, setModality] = useState<string>(String(initialContest?.modalidade ?? 'megasena'));
   const [contestId, setContestId] = useState<string>(String(initialContest?.id ?? ''));
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? '');
@@ -70,6 +72,10 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [automatic, setAutomatic] = useState(true);
+  // Preço livre (administrador): a tabela da CAIXA só dá o custo do registro; a cota e a taxa são definidas aqui.
+  const [priceMode, setPriceMode] = useState<PriceMode>('cota');
+  const [priceValue, setPriceValue] = useState('20');
+  const [manualCost, setManualCost] = useState('');
   const [quote, setQuote] = useState<RecordValue | null>(null);
   const [quoteError, setQuoteError] = useState('');
   // Gerador de jogos
@@ -165,6 +171,17 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   // Quantidades de números que a CAIXA vende para esta modalidade (tabela de preços).
   const sizeOptions = useMemo(() => Object.keys(priceTable).filter((key) => key.startsWith(`${modality}:`)).map((key) => key.slice(modality.length + 1)).filter((chave) => /^\d+$/.test(chave)).map(Number).sort((a, b) => a - b), [priceTable, modality]);
   // Custo e cota calculados aqui mesmo, com os jogos escritos e a tabela da CAIXA (a cotação do servidor confirma na hora de salvar).
+  // Custo do registro dos jogos escritos (só a tabela da CAIXA, sem taxa nem cota).
+  const registroLocal = useMemo(() => {
+    if (!canPrice || games.length === 0) return null;
+    let cost = 0;
+    for (const game of games) {
+      const price = priceTable[`${modality}:${game.numeros.length}`];
+      if (price === undefined) return null;
+      cost += price;
+    }
+    return cost > 0 ? cost : null;
+  }, [canPrice, games, priceTable, modality]);
   const localQuote = useMemo(() => {
     if (!canPrice || games.length === 0) return null;
     let cost = 0;
@@ -181,7 +198,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     return { cost, shares, ticketPerShare, feePerShare, quotaCents: ticketPerShare + feePerShare, totalCents: (ticketPerShare + feePerShare) * shares };
   }, [canPrice, games, priceTable, modality, totalCotas, taxa]);
   useEffect(() => {
-    if (!automatic || editing || !localQuote) return;
+    if (!automatic || editing || freeMode || !localQuote) return;
     setValorCota((localQuote.quotaCents / 100).toFixed(2));
     setCusto((localQuote.cost / 100).toFixed(2));
   }, [automatic, editing, localQuote?.quotaCents, localQuote?.cost]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -203,11 +220,11 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const response = await authFetch('/api/v1/admin/boloes/cotacao', { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ concursoId: contestId, grupoId: selectedGroupId, numerosApostados: uniqueNumbers, jogos: games, totalCotas: Number(totalCotas), valorCota: 1, taxaAdministracaoPct: Number(taxa), modeloOperacional: 'mandato' }) });
+        const response = await authFetch('/api/v1/admin/boloes/cotacao', { method: 'POST', signal: controller.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ concursoId: contestId, grupoId: selectedGroupId, numerosApostados: uniqueNumbers, jogos: games, totalCotas: Number(totalCotas), valorCota: 1, taxaAdministracaoPct: freeMode ? 0 : Number(taxa), modeloOperacional: 'mandato' }) });
         const data = await response.json();
         if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message);
         if (!Number.isFinite(data.quotaCents) || !Number.isFinite(data.costCents)) throw new Error('Cotação inválida.');
-        if (!controller.signal.aborted) { setQuote(data); setValorCota((data.quotaCents / 100).toFixed(2)); setCusto((data.costCents / 100).toFixed(2)); }
+        if (!controller.signal.aborted) { setQuote(data); if (!freeMode) { setValorCota((data.quotaCents / 100).toFixed(2)); setCusto((data.costCents / 100).toFixed(2)); } }
       } catch (error) { if (!controller.signal.aborted) setQuoteError(error instanceof Error ? error.message : 'Falha na cotação.'); }
     }, 350);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -251,7 +268,15 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       if (response.ok && game) setNumbers(game.numbers.map((n) => String(n).padStart(2, '0')).join(' '));
     } finally { setSuggesting(false); }
   }
-  const finiteRevenue = unlimited ? null : Number(totalCotas || 0) * Number(valorCota || 0);
+  // Preço livre: custo do registro (tabela da CAIXA confirmada pelo servidor, ou o valor digitado) e o plano de preço resultante.
+  const registroCents: number | null = freeMode ? (automatic ? (Number.isFinite(quote?.costCents) ? quote!.costCents : registroLocal) : toCents(manualCost)) : null;
+  const plan = freeMode && !unlimited && registroCents !== null ? planPricing({ costCents: registroCents, shares: Math.trunc(Number(totalCotas)), mode: priceMode, value: priceValue }) : null;
+  function changePriceMode(next: PriceMode) {
+    // Mantém os números: ao trocar a forma de definir, o campo já mostra o valor equivalente.
+    if (plan?.ok) setPriceValue(next === 'cota' ? (plan.quotaCents / 100).toFixed(2) : next === 'pct' ? String(plan.feePct) : next === 'taxa_cota' ? (plan.feePerShare / 100).toFixed(2) : (plan.feeTotalCents / 100).toFixed(2));
+    setPriceMode(next);
+  }
+  const finiteRevenue = unlimited ? null : freeMode ? (plan?.ok ? plan.totalCents / 100 : null) : Number(totalCotas || 0) * Number(valorCota || 0);
 
   useEffect(() => {
     if (!contestId && availableContests[0]) setContestId(availableContests[0].id);
@@ -265,6 +290,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setValorCota('20');
     setTaxa('10');
     setCusto('0');
+    setPriceMode('cota'); setPriceValue('20'); setManualCost('');
     setDescription('');
     setConditional(false);
     setTrigger('100000000');
@@ -283,7 +309,11 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setMessage(`Informe pelo menos ${limits.min} números válidos para ${modalityNames[modality] ?? modality}.`);
       return;
     }
-    if (Number(valorCota) <= 0 || Number(taxa) < 0 || Number(taxa) > 35) {
+    if (freeMode) {
+      if (unlimited) { setMessage('Novos bolões precisam de um total finito de cotas.'); return; }
+      if (registroCents === null) { setMessage(automatic ? 'Aguarde o cálculo do custo do registro ou desligue a tabela da CAIXA e informe o valor.' : 'Informe o custo total do registro na CAIXA.'); return; }
+      if (!plan || !plan.ok) { setMessage(plan && !plan.ok ? plan.error : 'Revise o valor da cota e a taxa de serviço.'); return; }
+    } else if (Number(valorCota) <= 0 || Number(taxa) < 0 || Number(taxa) > 35) {
       setMessage('Revise o valor da cota e a taxa administrativa.');
       return;
     }
@@ -314,11 +344,12 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         ...salesRules,
         ...(editing ? {} : { concursoId: selectedContest.id, grupoId: selectedGroupId }),
         numerosApostados: uniqueNumbers,
-        jogos: games.map((g, i) => ({ ...g, quantidadeDezenas: g.numeros.length, custo: Number(quote?.jogos[i]?.custo ?? editPool?.jogos?.[i]?.custo ?? custo ?? 0) })),
-        ...(!editing ? { precificacaoAutomatica: automatic, totalCotadoCentavos: quote?.totalCents } : {}),
+        jogos: games.map((g, i) => ({ ...g, quantidadeDezenas: g.numeros.length, custo: Number(quote?.jogos[i]?.custo ?? editPool?.jogos?.[i]?.custo ?? (freeMode && !automatic && plan?.ok ? plan.costCents / 100 : custo) ?? 0) })),
+        ...(!editing ? { precificacaoAutomatica: automatic, totalCotadoCentavos: freeMode && plan?.ok ? plan.totalCents : quote?.totalCents } : {}),
+        ...(freeMode && plan?.ok ? { precoLivre: true, ...(automatic ? {} : { custoRegistroCentavos: plan.costCents }) } : {}),
         ...(unlimited ? { cotasIlimitadas: true, totalCotas: undefined } : { cotasIlimitadas: false, totalCotas: Number(totalCotas) }),
-        valorCota: Number(valorCota),
-        taxaAdministracaoPct: Number(taxa),
+        valorCota: freeMode && plan?.ok ? plan.quotaCents / 100 : Number(valorCota),
+        taxaAdministracaoPct: freeMode && plan?.ok ? plan.feePct : Number(taxa),
         ...(conditional ? { premioMinimoLiberacao: Number(trigger) } : editing && editPool?.liberacao?.condicional ? { premioMinimoLiberacao: null } : {}),
         ...(description.trim() ? { descricao: description.trim() } : {}),
         ...(editing ? {} : { modeloOperacional: 'mandato' }),
@@ -378,24 +409,46 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         <div className="generator-cost" aria-live="polite">
           {previewTotal === null ? <span>Valor do registro na CAIXA: confira a tabela de preços.</span> : <span>Registro na CAIXA: <strong>{money(unitCents! / 100)}</strong> por jogo de {sizeNumber} números · <strong>{gameCountNumber} {gameCountNumber === 1 ? 'jogo' : 'jogos'} = {money(previewTotal / 100)}</strong></span>}
         </div>
-        {localQuote && <div className="generator-cost" aria-live="polite"><span>Custo dos {games.length} {games.length === 1 ? 'jogo' : 'jogos'}: <strong>{money(localQuote.cost / 100)}</strong> · com {localQuote.shares} {localQuote.shares === 1 ? 'cota' : 'cotas'} e taxa de {taxa || 0}%: <strong>{money(localQuote.quotaCents / 100)} por cota</strong> (já preenchido abaixo)</span></div>}
+        {freeMode && registroLocal !== null && Number(totalCotas) > 0 && <div className="generator-cost" aria-live="polite"><span>Registro dos {games.length} {games.length === 1 ? 'jogo' : 'jogos'}: <strong>{money(registroLocal / 100)}</strong> · por cota ({Math.trunc(Number(totalCotas))} {Math.trunc(Number(totalCotas)) === 1 ? 'cota' : 'cotas'}): <strong>{money(Math.ceil(registroLocal / Math.trunc(Number(totalCotas))) / 100)}</strong> · defina o valor da cota logo abaixo</span></div>}
+        {!freeMode && localQuote && <div className="generator-cost" aria-live="polite"><span>Custo dos {games.length} {games.length === 1 ? 'jogo' : 'jogos'}: <strong>{money(localQuote.cost / 100)}</strong> · com {localQuote.shares} {localQuote.shares === 1 ? 'cota' : 'cotas'} e taxa de {taxa || 0}%: <strong>{money(localQuote.quotaCents / 100)} por cota</strong> (já preenchido abaixo)</span></div>}
         {genError && <p role="alert" className="form-error">{genError}</p>}
         {generated && <div className="generator-result"><span>{generated.quantidade} {generated.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {generated.dezenas} números cada · <strong>total na CAIXA {money(generated.custoTotal)}</strong></span><small>{generated.aviso}</small></div>}
       </div>}
       {role === 'admin' && !editing && canPrice && <BankPicker modalidade={modality} onUse={(lines, mode) => setNumbers((current) => (mode === 'append' && current.trim() ? `${current.trim()}\n${lines.join('\n')}` : lines.join('\n')))} />}
       <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
     </div>
-    {!editing && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>Calcular pela tabela Caixa</strong><small>Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.</small></span></label>}
+    {!editing && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>{freeMode ? 'Calcular o custo do registro pela tabela da CAIXA' : 'Calcular pela tabela Caixa'}</strong><small>{freeMode ? 'A tabela só mostra quanto custa registrar os jogos na CAIXA. O valor da cota e a taxa de serviço você define livremente, logo abaixo.' : 'Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.'}</small></span></label>}
     {automatic && !canPrice && <p role="alert">Matriz disponível na API. Venda automática desta modalidade aguarda suporte à apuração completa.</p>}
     {quoteError && <p role="alert">{quoteError}</p>}
     {quote && quote.jogos?.length > 0 && <div className="simple-form-summary" aria-label="Custo de cada jogo"><span>Jogos <strong>{quote.jogos.length}</strong></span><span>Custo por jogo <strong>{[...new Set(quote.jogos.map((g: RecordValue) => money(g.custo)))].join(' / ')}</strong></span><span>Registro na CAIXA <strong>{money(quote.costCents / 100)}</strong></span></div>}
-    {quote && <div className="simple-form-summary" aria-live="polite"><span>Bilhetes <strong>{money(quote.costCents / 100)}</strong></span><span>Administração <strong>{money(quote.adminTotalCents / 100)}</strong></span><span>Reserva de arredondamento <strong>{money(quote.roundingReserveCents / 100)}</strong></span><span>Por cota: bilhete {money(quote.ticketPerShare / 100)} + taxa {money(quote.feePerShare / 100)}</span></div>}
-    <div className="admin-form-grid admin-form-grid-four">
+    {quote && !freeMode && <div className="simple-form-summary" aria-live="polite"><span>Bilhetes <strong>{money(quote.costCents / 100)}</strong></span><span>Administração <strong>{money(quote.adminTotalCents / 100)}</strong></span><span>Reserva de arredondamento <strong>{money(quote.roundingReserveCents / 100)}</strong></span><span>Por cota: bilhete {money(quote.ticketPerShare / 100)} + taxa {money(quote.feePerShare / 100)}</span></div>}
+        {freeMode ? <fieldset className="price-free" aria-label="Preço da cota e taxa de serviço">
+      <legend>Preço da cota e taxa de serviço</legend>
+      <p className="admin-muted">Você escolhe o valor da cota. O custo do registro na CAIXA é só uma referência: o que passa dele em cada cota é a taxa de serviço (a base da nota fiscal).</p>
+      {!automatic && <label className="admin-field"><span>Custo total do registro na CAIXA (R$)</span><input type="text" inputMode="decimal" value={manualCost} onChange={(event) => setManualCost(event.target.value)} placeholder="Ex.: 60,00" /><small>Quanto a lotérica cobra para registrar todos os jogos deste bolão.</small></label>}
+      <div className="admin-form-grid admin-form-grid-three">
+        <label className="admin-field"><span>Total de cotas</span><input type="number" min="1" step="1" inputMode="numeric" value={totalCotas} onChange={(event) => setTotalCotas(event.target.value)} /></label>
+        <label className="admin-field"><span>Definir o preço por</span><select value={priceMode} onChange={(event) => changePriceMode(event.target.value as PriceMode)}><option value="cota">Valor da cota (R$)</option><option value="pct">Taxa de serviço em % da cota</option><option value="taxa_cota">Taxa de serviço em R$ por cota</option><option value="taxa_total">Taxa de serviço em R$ do bolão todo</option></select></label>
+        <label className="admin-field"><span>{priceMode === 'cota' ? 'Valor da cota (R$)' : priceMode === 'pct' ? 'Taxa de serviço (% da cota)' : priceMode === 'taxa_cota' ? 'Taxa por cota (R$)' : 'Taxa total do bolão (R$)'}</span><input type="text" inputMode="decimal" value={priceValue} onChange={(event) => setPriceValue(event.target.value)} placeholder={priceMode === 'pct' ? 'Ex.: 25' : 'Ex.: 20,00'} /></label>
+      </div>
+      {plan && !plan.ok && <p role="alert" className="form-error">{plan.error}</p>}
+      {registroCents === null && <p className="admin-muted">{automatic ? 'O custo do registro aparece quando houver jogos válidos.' : 'Informe o custo total do registro para ver a conta.'}</p>}
+      {plan?.ok && <div className="price-free-result" aria-live="polite">
+        <div><span>Registro na CAIXA (total)</span><strong>{money(plan.costCents / 100)}</strong></div>
+        <div><span>Registro por cota</span><strong>{money(plan.ticketPerShare / 100)}</strong></div>
+        <div className="is-main"><span>Valor da cota</span><strong>{money(plan.quotaCents / 100)}</strong></div>
+        <div className="is-main"><span>Taxa de serviço por cota</span><strong>{money(plan.feePerShare / 100)} <small>({String(plan.feePct).replace('.', ',')}% da cota)</small></strong></div>
+        <div><span>Taxa de serviço total</span><strong>{money(plan.feeTotalCents / 100)}</strong></div>
+        <div><span>Total se vender todas as cotas</span><strong>{money(plan.totalCents / 100)}</strong></div>
+        {plan.reserveCents > 0 && <div><span>Sobra de arredondamento do registro</span><strong>{money(plan.reserveCents / 100)}</strong></div>}
+      </div>}
+      {plan?.ok && plan.feePct > 35 && <p className="admin-callout admin-callout-warning">A taxa de serviço está em {String(plan.feePct).replace('.', ',')}% da cota, acima de 35% da cota, que é o limite dos afiliados e do modelo antigo. Como administrador você pode seguir. Só confira se o valor está de acordo com o que foi combinado com os participantes.</p>}
+    </fieldset> : <div className="admin-form-grid admin-form-grid-four">
       <label className="admin-field"><span>Valor da cota (R$)</span><input readOnly={automatic} type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>
       <label className="admin-field"><span>Taxa administrativa (%)</span><input type="number" min="0" max="35" step="0.01" value={taxa} onChange={(event) => setTaxa(event.target.value)} /></label>
       <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" max={groupCapacity ?? undefined} value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: o bolão pode ter no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convite alguém para o grupo antes de criar o bolão.'}</small>}</label>
       <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
-    </div>
+    </div>}
     {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. Opção legada, indisponível para novos lotes.</small></span></label>}
     <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
     {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
@@ -413,6 +466,6 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
     <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? (selectedContest.nomeEspecial ? `${selectedContest.nomeEspecial}${selectedContest.numeroConcurso > 0 ? ` #${selectedContest.numeroConcurso}` : ' (número a definir)'}` : `#${selectedContest.numeroConcurso}`) : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
     {role === 'admin' && <LotteryPriceAdmin />}
-    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && automatic && !quote) || false}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
+    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && automatic && !quote) || (freeMode && !plan?.ok)}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
   </form>;
 }

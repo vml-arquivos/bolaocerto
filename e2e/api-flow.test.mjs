@@ -116,6 +116,38 @@ test('vários bolões no mesmo concurso: jogos de 7 e de 10 números', async () 
   assert.deepEqual(sizes, [6, 7, 10]);
 });
 
+test('preço livre: cota de R$ 20 com registro de R$ 60 em 100 cotas, taxa de serviço calculada', async () => {
+  const numbers = [5, 10, 20, 30, 40, 50];
+  const manual = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: numbers,
+    jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 60 }],
+    cotasIlimitadas: false, totalCotas: 100, valorCota: 20, taxaAdministracaoPct: 97, modeloOperacional: 'mandato',
+    precoLivre: true, precificacaoAutomatica: false, custoRegistroCentavos: 6000, totalCotadoCentavos: 200000,
+  });
+  ok(manual, 'criar bolão com preço livre');
+  assert.equal(manual.data.precificacao.modo, 'livre');
+  assert.equal(manual.data.precificacao.ticketPerShare, 60);
+  assert.equal(manual.data.precificacao.feePerShare, 1940);
+  const jogos = Array.from({ length: 10 }, (_, i) => ({ ordem: i + 1, numeros: [1 + i, 12, 23, 34, 45, 56], quantidadeDezenas: 6 }));
+  const auto = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: jogos[0].numeros, jogos,
+    cotasIlimitadas: false, totalCotas: 100, valorCota: 20, taxaAdministracaoPct: 97, modeloOperacional: 'mandato',
+    precoLivre: true, precificacaoAutomatica: true, totalCotadoCentavos: 200000,
+  });
+  ok(auto, 'criar bolão com preço livre pela tabela da CAIXA');
+  assert.equal(auto.data.precificacao.costCents, 6000, '10 jogos de 6 números = R$ 60,00 de registro');
+  const tooLow = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: numbers, jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 60 }],
+    cotasIlimitadas: false, totalCotas: 100, valorCota: 0.5, taxaAdministracaoPct: 0, modeloOperacional: 'mandato', precoLivre: true, precificacaoAutomatica: false, custoRegistroCentavos: 6000,
+  });
+  assert.equal(tooLow.status, 409, 'cota menor que o registro por cota é recusada');
+  const list = await call('GET', '/admin/boloes');
+  const rows = (Array.isArray(list.data) ? list.data : list.data.items);
+  const row = rows.find((item) => item.id === manual.data.id);
+  assert.equal(Number(row.indicadores.taxaPrevista), 1940);
+  assert.equal(Number(row.indicadores.receitaPrevista), 2000);
+});
+
 test('salva a página inicial (sem erro interno) e ela aparece no site', async () => {
   const current = await call('GET', '/admin/home');
   ok(current, 'ler página inicial');
