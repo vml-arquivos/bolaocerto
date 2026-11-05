@@ -389,18 +389,20 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   async function checkAvailability() {
     setBusy('diag');
     try { setDiagnostic(await api('/api/v1/admin/nfse/diagnostico')); }
-    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Falha ao consultar a Cora.'); }
+    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Falha ao consultar o emissor.'); }
     finally { setBusy(''); }
   }
 
   const count = (status: string) => (settings?.porStatus ?? []).find((row: Rec) => row.status === status)?.notas ?? 0;
   const off = settings?.modo === 'off';
+  const focus = settings?.provedor === 'focus';
+  const emissor = focus ? 'Focus NFe' : 'Cora';
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Notas fiscais</h1><p>Emissão e acompanhamento da NFS-e pela Cora, com registro manual para vendas de balcão.</p></div></div>
+    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Notas fiscais</h1><p>{focus ? 'NFS-e emitida pela Focus NFe só sobre a taxa de administração, com registro manual para casos especiais.' : 'Emissão e acompanhamento da NFS-e pela Cora, com registro manual para vendas de balcão.'}</p></div></div>
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
     {!loading && settings && <>
       <div className="admin-kpi-grid">
-        <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto ? 'configuração completa' : off ? 'defina NFSE_MODE no servidor' : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
+        <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto ? 'configuração completa' : off ? 'defina NFSE_MODE no servidor' : focus ? `faltam ${(settings.faltando ?? []).join(', ') || 'dados do emissor'}` : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
         <Kpi label="Pagamentos sem nota" value={settings.pagamentosSemNota} hint="confirmados e ainda sem nota" tone="amber" />
         <Kpi label="Serviço a faturar" value={brl(settings.valorServicoSemNota ?? 0)} hint="só a taxa de administração" tone="green" />
         <Kpi label="Fora da nota (jogos)" value={brl(settings.valorRegistroSemNota ?? 0)} hint="custo do registro na CAIXA" tone="blue" />
@@ -410,31 +412,39 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       </div>
       <div className="admin-callout"><strong>Atenção fiscal</strong><p>{settings.aviso}</p></div>
       <Panel title="Emissor e conexão" description="Parâmetros vêm das variáveis do servidor; nenhum segredo é editável aqui." action={<div className="admin-row-actions">
-        {superAdmin && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : 'Verificar na Cora'}</button>}
-        {superAdmin && <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>}
+        {superAdmin && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : focus ? 'Conferir configuração' : 'Verificar na Cora'}</button>}
+        {superAdmin && !focus && <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>}
         <button className="admin-button admin-button-ghost" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
       </div>}>
         <div className="admin-summary-list">
-          <div><span>Ambiente da Cora</span><strong>{settings.ambiente === 'production' ? 'Produção' : 'Homologação'}</strong></div>
-          <div><span>Alíquota do ISS</span><strong>{settings.aliquotaIssPct ? `${settings.aliquotaIssPct}%` : 'Não definida (NFSE_ISS_PCT)'}</strong></div>
-          <div><span>Código de serviço</span><strong>{settings.codigoServico ?? 'Não definido (NFSE_SERVICE_CODE)'}</strong></div>
-          <div><span>CNAE</span><strong>{settings.cnae ?? '—'}</strong></div>
-          <div><span>Inscrição municipal cadastrada no servidor</span><strong>{settings.emissorConfigurado ? 'Sim' : 'Não (NFSE_MUNICIPAL_REGISTER)'}</strong></div>
+          <div><span>Emissor</span><strong>{emissor}</strong></div>
+          <div><span>Ambiente</span><strong>{['production', 'producao'].includes(settings.ambiente) ? 'Produção' : 'Teste (homologação)'}</strong></div>
+          {focus
+            ? <div><span>Configuração do servidor</span><strong>{(settings.faltando ?? []).length ? `Falta: ${settings.faltando.join(', ')}` : 'Completa'}</strong></div>
+            : <>
+              <div><span>Alíquota do ISS</span><strong>{settings.aliquotaIssPct ? `${settings.aliquotaIssPct}%` : 'Não definida (NFSE_ISS_PCT)'}</strong></div>
+              <div><span>Código de serviço</span><strong>{settings.codigoServico ?? 'Não definido (NFSE_SERVICE_CODE)'}</strong></div>
+              <div><span>CNAE</span><strong>{settings.cnae ?? '—'}</strong></div>
+              <div><span>Inscrição municipal cadastrada no servidor</span><strong>{settings.emissorConfigurado ? 'Sim' : 'Não (NFSE_MUNICIPAL_REGISTER)'}</strong></div>
+            </>}
         </div>
-        {diagnostic && <div className="admin-summary-list" style={{ marginTop: 12 }}>
+        {diagnostic && focus && <div className="admin-summary-list" style={{ marginTop: 12 }}>
+          <div><span>Pronto para emitir</span><strong>{diagnostic.disponivel ? 'Sim' : `Não. Falta: ${(diagnostic.faltando ?? []).join(', ')}`}</strong></div>
+        </div>}
+        {diagnostic && !focus && <div className="admin-summary-list" style={{ marginTop: 12 }}>
           <div><span>Cidade/empresa habilitadas na Cora</span><strong>{diagnostic.disponivel ? 'Sim' : 'Não'}</strong></div>
           <div><span>CNAE principal</span><strong>{diagnostic.cnaes?.main ? `${diagnostic.cnaes.main.code} — ${diagnostic.cnaes.main.description}` : '—'}</strong></div>
           <div><span>Códigos de serviço</span><strong>{(diagnostic.codigosServico ?? []).slice(0, 8).map((item: Rec) => `${item.code} (${item.description})`).join(' · ') || '—'}</strong></div>
         </div>}
       </Panel>
 
-      <Panel title="Pagamentos confirmados sem nota" description="A nota é só da taxa de administração (coluna “Serviço”). Quando a cobrança inclui o custo dos jogos, emita pelo valor do serviço no app da Cora ou na prefeitura e registre aqui o número e o PDF.">
+      <Panel title="Pagamentos confirmados sem nota" description={focus ? 'A nota é só da taxa de administração (coluna “Serviço”). O custo dos jogos fica fora. No modo automático a nota sai sozinha quando o pagamento é confirmado.' : 'A nota é só da taxa de administração (coluna “Serviço”). Quando a cobrança inclui o custo dos jogos, emita pelo valor do serviço no app da Cora ou na prefeitura e registre aqui o número e o PDF.'}>
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
           <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
-          <td><span className={chip(row.enderecoCompleto ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : 'faltando'}</span></td>
+          <td><span className={chip(row.enderecoCompleto || focus ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus ? 'opcional' : 'faltando'}</span></td>
           <td><div className="admin-row-actions">
-            {row.emitivelPelaCora && row.enderecoCompleto && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => 'Nota solicitada à Cora.')}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : 'Emitir pela Cora'}</button>}
-            {row.emitivelPelaCora && !row.enderecoCompleto && <button className="admin-button admin-button-small" disabled={off} onClick={() => setForm({ kind: 'emitir', id: row.pagamentoId })}>Informar endereço e emitir</button>}
+            {row.emitivelPelaCora && (row.enderecoCompleto || focus) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir pela ${emissor}`}</button>}
+            {row.emitivelPelaCora && !row.enderecoCompleto && !focus && <button className="admin-button admin-button-small" disabled={off} onClick={() => setForm({ kind: 'emitir', id: row.pagamentoId })}>Informar endereço e emitir</button>}
             <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'manual', id: row.pagamentoId })}>Registrar nota manual</button>
           </div>
           {form && form.id === row.pagamentoId && (form.kind === 'emitir' || form.kind === 'manual') && <NoteForm kind={form.kind} busy={busy.endsWith(row.pagamentoId)} onCancel={() => setForm(null)}
@@ -449,8 +459,8 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
           <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{note.erro}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
           <td>{note.pdfUrl ? <a className="text-link" href={note.pdfUrl} target="_blank" rel="noreferrer">PDF</a> : '—'}{note.xmlUrl ? <> · <a className="text-link" href={note.xmlUrl} target="_blank" rel="noreferrer">XML</a></> : null}</td>
           <td><div className="admin-row-actions">
-            {note.origem === 'cora' && note.status !== 'cancelada' && <button className="admin-button admin-button-small" disabled={Boolean(busy)} onClick={() => void run(`sync-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, {}, () => 'Nota atualizada.')}>Atualizar</button>}
-            {note.status === 'erro' && note.origem === 'cora' && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${note.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${note.pagamentoId}/emitir`, {}, () => 'Nova tentativa enviada à Cora.')}>Tentar de novo</button>}
+            {note.origem !== 'manual' && note.status !== 'cancelada' && <button className="admin-button admin-button-small" disabled={Boolean(busy)} onClick={() => void run(`sync-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, {}, () => 'Nota atualizada.')}>Atualizar</button>}
+            {note.status === 'erro' && note.origem !== 'manual' && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${note.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${note.pagamentoId}/emitir`, {}, () => `Nova tentativa enviada à ${emissor}.`)}>Tentar de novo</button>}
             {note.status !== 'cancelada' && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'cancelar', id: note.id })}>Cancelar</button>}
           </div>
           {form && form.kind === 'cancelar' && form.id === note.id && <NoteForm kind="cancelar" busy={busy === `cancel-${note.id}`} onCancel={() => setForm(null)} onSubmit={(values) => void run(`cancel-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/cancelar`, values, () => 'Nota cancelada.')} />}
