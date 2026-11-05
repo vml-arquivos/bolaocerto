@@ -22,7 +22,7 @@ export type AdminCtx = {
   period: string; setPeriod: (value: string) => void;
   busy: boolean;
   superAdmin: boolean;
-  contestScope: 'aberto' | 'historico'; setContestScope: (value: 'aberto' | 'historico') => void;
+  contestScope: 'aberto' | 'festas' | 'historico'; setContestScope: (value: 'aberto' | 'festas' | 'historico') => void;
   page: number; setPage: (value: number | ((current: number) => number)) => void;
   showPoolForm: boolean; setShowPoolForm: (value: boolean | ((current: boolean) => boolean)) => void;
   editingPool: RecordValue | null; setEditingPool: (value: RecordValue | null) => void;

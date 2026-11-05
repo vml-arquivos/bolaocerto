@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { AuthUser } from '../auth/auth.utils';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -11,8 +11,8 @@ export class LotteriesController {
   constructor(private readonly lotteries: LotteriesService) {}
 
   @Get('concursos')
-  list(@Query('modalidade') modalidade?: string, @Query('status') status?: string) {
-    return this.lotteries.list(modalidade, status);
+  list(@Query('modalidade') modalidade?: string, @Query('status') status?: string, @Query('tipo') tipo?: string) {
+    return this.lotteries.list(modalidade, status, tipo);
   }
 
   @Get('concursos/:id')
@@ -46,6 +46,13 @@ export class LotteriesController {
     return this.lotteries.createManual(dto);
   }
 
+  @Get('admin/concursos/situacao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  situation() {
+    return this.lotteries.situationByModality();
+  }
+
   @Get('admin/concursos/festas')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
@@ -67,5 +74,13 @@ export class LotteriesController {
   @Roles('admin')
   updateFestival(@Param('id') id: string, @Body() dto: UpdateFestaContestDto, @CurrentUser() user: AuthUser) {
     return this.lotteries.updateFestival(id, dto, user.id);
+  }
+
+  /** Remove uma data de festa sem bolão. */
+  @Delete('admin/concursos/:id/festa')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  deleteFestival(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.lotteries.deleteFestival(id, user.id);
   }
 }

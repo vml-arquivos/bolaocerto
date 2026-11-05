@@ -139,7 +139,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   }, [editPool, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const limits = modalityLimits[modality] ?? modalityLimits.megasena!;
-  const availableContests = useMemo(() => contests.filter((contest) => contest.modalidade === modality && ['aberto', 'aberta'].includes(String(contest.status).toLowerCase())), [contests, modality]);
+  // Concurso de festa não entra na lista de abertos: só aparece se já foi escolhido ou criado agora (botão "nova data comemorativa").
+  const availableContests = useMemo(() => contests.filter((contest) => contest.modalidade === modality && ['aberto', 'aberta'].includes(String(contest.status).toLowerCase()) && (!contest.especial || contest.id === contestId)), [contests, modality, contestId]);
   const selectedContest = contests.find((contest) => contest.id === contestId) ?? (editPool?.concursoId === contestId ? editPool.concurso : null);
   const games = useMemo(() => numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number) })), [numbers]);
   const uniqueNumbers = games[0]?.numeros ?? [];

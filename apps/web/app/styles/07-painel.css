@@ -108,3 +108,10 @@
 .staff-invite-list li > div:first-child { display: grid; gap: 2px; min-width: 0; }
 .staff-invite-list small { color: var(--text-secondary); overflow-wrap: anywhere; }
 .staff-invite-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Concursos: situação de cada modalidade (aberto ou o motivo de não ter concurso aberto). */
+.contest-status-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin: 0 0 16px; }
+.contest-status-strip > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border-strong, #2a3a66); border-radius: 12px; border-left-width: 4px; font-size: 12.5px; line-height: 1.4; }
+.contest-status-strip > div.is-open { border-left-color: var(--success, #1fa971); }
+.contest-status-strip > div.is-closed { border-left-color: var(--warning, #e0a100); }
+.contest-status-strip span { color: var(--text-muted, #8da2cf); }

@@ -42,12 +42,15 @@ export class LotteriesService {
    * Lista pública. Sem filtro (ou status=aberto) devolve só os concursos realmente abertos (prazo no futuro), do mais próximo
    * para o mais distante. Com outro status devolve o histórico, do mais recente para o mais antigo.
    */
-  async list(modalidade?: string, status?: string) {
+  async list(modalidade?: string, status?: string, tipo?: string) {
     const allowed = modalidade ? this.assertModalidade(modalidade) : undefined;
     const openOnly = !status || status === 'aberto';
+    // Concursos de festa (Mega da Virada etc.) só aparecem quando pedidos (tipo=festa ou tipo=todos): a lista normal traz só os da CAIXA.
+    const kind: Prisma.ConcursoWhereInput = tipo === 'festa' ? { especial: { not: null } } : tipo === 'todos' ? {} : openOnly ? { especial: null } : {};
     const contests = await this.prisma.concurso.findMany({
       where: {
         ...(allowed ? { modalidade: allowed } : {}),
+        ...kind,
         ...(openOnly ? { status: 'aberto', cutoffAt: { gt: new Date() } } : { status }),
       },
       orderBy: [{ dataSorteio: openOnly ? 'asc' : 'desc' }, { modalidade: 'asc' }],
@@ -229,6 +232,29 @@ export class LotteriesService {
     } catch (error) {
       throw new ServiceUnavailableException(error instanceof Error ? error.message : `Não foi possível sincronizar ${modalidade}.`);
     }
+  }
+
+  /**
+   * Situação de cada modalidade: o concurso mais recente que o sistema conhece (sem contar festas) e se ainda está aberto.
+   * Serve para explicar no painel por que uma modalidade está sem concurso aberto (ex.: dia de sorteio, depois do corte).
+   */
+  async situationByModality() {
+    const now = Date.now();
+    return Promise.all([...MODALIDADES_LOTERIA].map(async (modalidade) => {
+      const latest = await this.prisma.concurso.findFirst({ where: { modalidade, especial: null }, orderBy: { numeroConcurso: 'desc' }, select: { numeroConcurso: true, status: true, dataSorteio: true, cutoffAt: true, sincronizadoEm: true } });
+      const open = Boolean(latest && latest.status === 'aberto' && latest.cutoffAt.getTime() > now);
+      return { modalidade, ultimo: latest ? { numero: latest.numeroConcurso, status: latest.status, dataSorteio: latest.dataSorteio, cutoffAt: latest.cutoffAt, sincronizadoEm: latest.sincronizadoEm } : null, aberto: open };
+    }));
+  }
+
+  /** Remove um concurso de festa que ainda não tem bolão (ex.: data criada por engano). */
+  async deleteFestival(id: string, actorId?: string) {
+    const contest = await this.prisma.concurso.findUnique({ where: { id }, include: { _count: { select: { boloes: true } } } });
+    if (!contest || !contest.especial) throw new NotFoundException('Concurso de festa não encontrado.');
+    if (contest._count.boloes > 0) throw new ConflictException('Este concurso de festa já tem bolão. Cancele o bolão antes de remover a data.');
+    await this.prisma.concurso.delete({ where: { id } });
+    await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: id, evento: 'concurso.festa_removida', atorId: actorId, payloadAntes: { modalidade: contest.modalidade, nomeEspecial: contest.nomeEspecial, dataSorteio: contest.dataSorteio } });
+    return { removido: true };
   }
 
   /** Cadastro manual de concurso (contingência quando a API da CAIXA está indisponível). */

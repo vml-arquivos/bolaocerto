@@ -80,3 +80,17 @@ export function FestivalNumberEditor({ contest, onDone, notify }: { contest: any
     <div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={busy}>{busy ? '…' : 'Salvar'}</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Cancelar</button></div>
   </form>;
 }
+
+/** Remove uma data de festa que ainda não tem bolão (ex.: data criada por engano). */
+export function FestivalRemoveButton({ contest, onDone, notify }: { contest: any; onDone: () => Promise<void> | void; notify: Notify }) {
+  const [busy, setBusy] = useState(false);
+  async function remove() {
+    const name = `${contest.nomeEspecial ?? 'Concurso de festa'} (${new Date(contest.dataSorteio).toLocaleDateString('pt-BR')})`;
+    if (!window.confirm(`Remover ${name}? Isso só é possível se não houver bolão nesta data.`)) return;
+    setBusy(true);
+    try { await call(`/api/v1/admin/concursos/${contest.id}/festa`, { method: 'DELETE' }); notify('success', 'Data de festa removida.'); await onDone(); }
+    catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível remover.'); }
+    finally { setBusy(false); }
+  }
+  return <button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void remove()}>{busy ? 'Removendo…' : 'Remover'}</button>;
+}

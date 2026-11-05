@@ -155,7 +155,8 @@ export class AdminService {
   }
 
   /**
-   * status=aberto: só concursos realmente abertos (prazo no futuro), do mais próximo ao mais distante.
+   * status=aberto: só concursos da CAIXA realmente abertos (prazo no futuro), do mais próximo ao mais distante, sem os de festa.
+   * status=festas: só os concursos de festa (Mega da Virada etc.) ainda abertos.
    * status=historico: tudo que já fechou/apurou ou passou do prazo, do mais recente ao mais antigo.
    * Demais valores (ou vazio): filtro exato de status, do mais recente ao mais antigo.
    */
@@ -164,7 +165,8 @@ export class AdminService {
     const dateRange = this.dateRange({ de: query.de, ate: query.ate });
     const now = new Date();
     const scope: Prisma.ConcursoWhereInput =
-      query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now } }
+      query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now }, especial: null }
+      : query.status === 'festas' ? { status: 'aberto', cutoffAt: { gt: now }, especial: { not: null } }
       : query.status === 'historico' ? { OR: [{ status: { not: 'aberto' } }, { cutoffAt: { lte: now } }] }
       : query.status ? { status: query.status } : {};
     const where: Prisma.ConcursoWhereInput = {
@@ -172,7 +174,7 @@ export class AdminService {
       ...(query.modalidade ? { modalidade: query.modalidade } : {}),
       ...(Object.keys(dateRange).length ? { dataSorteio: dateRange } : {}),
     };
-    const order: Prisma.SortOrder = query.status === 'aberto' ? 'asc' : 'desc';
+    const order: Prisma.SortOrder = query.status === 'aberto' || query.status === 'festas' ? 'asc' : 'desc';
     const [items, total] = await Promise.all([
       this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: [{ dataSorteio: order }, { modalidade: 'asc' }], skip, take }),
       this.prisma.concurso.count({ where }),

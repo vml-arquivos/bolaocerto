@@ -53,7 +53,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   const [period, setPeriod] = useState('30d');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [contestScope, setContestScope] = useState<'aberto' | 'historico'>('aberto');
+  const [contestScope, setContestScope] = useState<'aberto' | 'festas' | 'historico'>('aberto');
   const [page, setPage] = useState(1);
   const [selectedCommissions, setSelectedCommissions] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -93,8 +93,9 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
         if (!groupId) { const group = await fetch('/api/v1/grupos/bl-oficial').then((response) => response.ok ? response.json() : null).catch(() => null); setGroupId(group?.id ?? null); }
       }
       if (view === 'visao-geral' || view === 'boloes') {
-        const [contestPayload, group] = await Promise.all([fetchAdmin('/api/v1/admin/concursos?page=1&pageSize=100&status=aberto'), fetch('/api/v1/grupos/bl-oficial').then((response) => response.ok ? response.json() : null)]);
-        setContests(contestPayload.items ?? []);
+        // O assistente de bolão recebe os concursos da CAIXA e os de festa; os de festa só aparecem no seletor quando você os escolhe ou cria.
+        const [contestPayload, festaPayload, group] = await Promise.all([fetchAdmin('/api/v1/admin/concursos?page=1&pageSize=100&status=aberto'), fetchAdmin('/api/v1/admin/concursos?page=1&pageSize=100&status=festas'), fetch('/api/v1/grupos/bl-oficial').then((response) => response.ok ? response.json() : null)]);
+        setContests([...(contestPayload.items ?? []), ...(festaPayload.items ?? [])]);
         setGroupId(group?.id ?? null);
       }
       if (['afiliados', 'convites', 'grupos'].includes(view)) {
