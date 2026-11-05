@@ -64,6 +64,22 @@ export function splitPoolByQuota(costCents: number, shares: number, quotaCents: 
     ticketBudgetCents: ticketPerShare * shares, roundingReserveCents: ticketPerShare * shares - costCents,
     adminTotalCents: feePerShare * shares, totalCents: total };
 }
+/**
+ * Preço livre com taxa definida: o administrador informa o valor da cota e a taxa de serviço por cota (em R$, já convertida de % se for o caso).
+ * O que não é taxa fica no bolão (ticketPerShare) e precisa cobrir ao menos a parte do registro de cada cota.
+ */
+export function splitPoolByFee(costCents: number, shares: number, quotaCents: number, feePerShare: number) {
+  if (![costCents, shares, quotaCents, feePerShare].every(Number.isSafeInteger) || costCents < 0 || shares <= 0 || quotaCents <= 0 || feePerShare < 0) throw new Error('Custo do registro, cotas, valor da cota ou taxa inválidos.');
+  if (feePerShare > quotaCents) throw new Error(`A taxa de serviço (R$ ${(feePerShare / 100).toFixed(2)}) não pode ser maior que o valor da cota (R$ ${(quotaCents / 100).toFixed(2)}).`);
+  const registroPerShare = Math.ceil(costCents / shares);
+  const ticketPerShare = quotaCents - feePerShare;
+  if (ticketPerShare < registroPerShare) throw new Error(`Depois da taxa, sobram R$ ${(ticketPerShare / 100).toFixed(2)} por cota e o registro de cada cota custa R$ ${(registroPerShare / 100).toFixed(2)}. Diminua a taxa ou aumente a cota.`);
+  const total = quotaCents * shares;
+  if (!Number.isSafeInteger(total) || total > 9_999_999_999) throw new Error('Valor excede o limite financeiro.');
+  return { costCents, shares, ticketPerShare, feePerShare, quotaCents,
+    ticketBudgetCents: ticketPerShare * shares, roundingReserveCents: ticketPerShare * shares - costCents,
+    adminTotalCents: feePerShare * shares, totalCents: total };
+}
 export function officialPriceRows(): PriceRule[] {
   const rows: PriceRule[] = [];
   const add = (modalidade: string, chave: string, valorCentavos: number, page = modalidade) => rows.push({ modalidade, chave, valorCentavos, fonte: `https://loterias.caixa.gov.br/Paginas/${page}.aspx` });

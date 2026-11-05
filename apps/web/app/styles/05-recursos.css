@@ -170,11 +170,26 @@
 .admin-button-danger:hover:not(:disabled) { background: var(--danger, #c0392b); color: #fff; }
 
 /* Preço livre do bolão: valor da cota e taxa de serviço definidos pelo administrador */
-.price-free { border: 1px solid var(--line, rgba(128,128,128,.28)); border-radius: 14px; padding: 14px; display: grid; gap: 12px; margin: 0; min-width: 0; }
+.price-free { border: 1px solid var(--border, rgba(128,128,128,.28)); border-radius: 14px; padding: 16px; display: grid; gap: 14px; margin: 0; min-width: 0; }
 .price-free legend { padding: 0 6px; font-weight: 700; }
-.price-free-result { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
-.price-free-result > div { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border); min-width: 0; }
+.price-free .admin-field { margin-bottom: 0; align-content: start; }
+.price-free input:not([type=radio]), .price-free select { height: 44px; box-sizing: border-box; }
+.price-free-mode { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.price-free-mode label { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; min-width: 0; }
+.price-free-mode label.is-on { border-color: var(--primary-solid, #0b4fff); box-shadow: 0 0 0 1px var(--primary-solid, #0b4fff) inset; }
+.price-free-mode input { margin-top: 3px; }
+.price-free-mode strong { display: block; color: var(--text-primary); font-size: .92rem; }
+.price-free-mode small { display: block; color: var(--text-secondary); font-size: .78rem; margin-top: 2px; }
+.price-free-fields { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, 1.5fr); gap: 12px; align-items: start; }
+.price-free-fee { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 8px; }
+.price-free-fee select, .price-free-fee input { min-width: 0; }
+.price-free-result { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.price-free-result > div { display: grid; gap: 2px; align-content: start; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--border); min-width: 0; }
 .price-free-result span { color: var(--text-secondary); font-size: .8rem; }
-.price-free-result strong { color: var(--text-primary); font-size: 1.05rem; overflow-wrap: anywhere; }
-.price-free-result strong small { font-weight: 500; color: var(--text-secondary); font-size: .78rem; }
+.price-free-result strong { color: var(--text-primary); font-size: 1.1rem; overflow-wrap: anywhere; }
+.price-free-result strong small, .price-free-result > div > small { font-weight: 500; color: var(--text-secondary); font-size: .76rem; }
 .price-free-result .is-main { border-color: var(--primary-solid, #0b4fff); }
+.price-free-detail { margin: 0; color: var(--text-secondary); font-size: .82rem; line-height: 1.5; }
+.price-free-detail strong { color: var(--text-primary); }
+@media (max-width: 860px) { .price-free-fields { grid-template-columns: 1fr 1fr; } .price-free-fields > :last-child { grid-column: 1 / -1; } .price-free-result { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .price-free-mode, .price-free-fields { grid-template-columns: 1fr; } }

@@ -82,6 +82,13 @@ export class CreatePoolDto {
   @IsBoolean()
   precoLivre?: boolean;
 
+  /** Preço livre com taxa definida pelo administrador: taxa de serviço por cota, em centavos. Sem ela, a taxa é o que sobra da cota depois do registro. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000_000)
+  taxaPorCotaCentavos?: number;
+
   /** Preço livre sem a tabela da CAIXA: custo total do registro, em centavos. */
   @IsOptional()
   @IsInt()

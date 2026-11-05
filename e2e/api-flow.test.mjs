@@ -141,6 +141,20 @@ test('preço livre: cota de R$ 20 com registro de R$ 60 em 100 cotas, taxa de se
     cotasIlimitadas: false, totalCotas: 100, valorCota: 0.5, taxaAdministracaoPct: 0, modeloOperacional: 'mandato', precoLivre: true, precificacaoAutomatica: false, custoRegistroCentavos: 6000,
   });
   assert.equal(tooLow.status, 409, 'cota menor que o registro por cota é recusada');
+  const withFee = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: numbers, jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 60 }],
+    cotasIlimitadas: false, totalCotas: 100, valorCota: 20, taxaAdministracaoPct: 10, modeloOperacional: 'mandato',
+    precoLivre: true, taxaPorCotaCentavos: 200, precificacaoAutomatica: false, custoRegistroCentavos: 6000, totalCotadoCentavos: 200000,
+  });
+  ok(withFee, 'criar bolão com a taxa definida (R$ 2 por cota)');
+  assert.equal(withFee.data.precificacao.feePerShare, 200);
+  assert.equal(withFee.data.precificacao.ticketPerShare, 1800);
+  const feeTooHigh = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: numbers, jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 60 }],
+    cotasIlimitadas: false, totalCotas: 100, valorCota: 20, taxaAdministracaoPct: 99, modeloOperacional: 'mandato',
+    precoLivre: true, taxaPorCotaCentavos: 1990, precificacaoAutomatica: false, custoRegistroCentavos: 6000,
+  });
+  assert.equal(feeTooHigh.status, 409, 'taxa que não deixa o registro de cada cota é recusada');
   const list = await call('GET', '/admin/boloes');
   const rows = (Array.isArray(list.data) ? list.data : list.data.items);
   const row = rows.find((item) => item.id === manual.data.id);

@@ -1,6 +1,6 @@
 import { hasSaleProof } from '../attachments/proof';
 import { approvedDocument } from '../legal/documents';
-import { splitPoolByQuota } from '../pricing/pricing.engine';
+import { splitPoolByFee, splitPoolByQuota } from '../pricing/pricing.engine';
 import { PricingService } from '../pricing/pricing.service';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
@@ -134,7 +134,7 @@ export class PoolsService {
         costCents = dto.custoRegistroCentavos ?? Math.round(typed.reduce((sum, game) => sum + (game.custo ?? 0), 0) * 100);
       }
       let split: ReturnType<typeof splitPoolByQuota>;
-      try { split = splitPoolByQuota(costCents, dto.totalCotas, Math.round(dto.valorCota * 100)); } catch (error) { throw new ConflictException(error instanceof Error ? error.message : 'Preço inválido.'); }
+      try { const quotaCents = Math.round(dto.valorCota * 100); split = dto.taxaPorCotaCentavos !== undefined ? splitPoolByFee(costCents, dto.totalCotas, quotaCents, dto.taxaPorCotaCentavos) : splitPoolByQuota(costCents, dto.totalCotas, quotaCents); } catch (error) { throw new ConflictException(error instanceof Error ? error.message : 'Preço inválido.'); }
       if (dto.totalCotadoCentavos !== undefined && dto.totalCotadoCentavos !== split.totalCents) throw new ConflictException('O preço mudou. Confira os valores e salve de novo.');
       freePricing = { modo: 'livre', modalidade: contest.modalidade, ...(freeGames ? { jogos: freeGames as unknown as Array<Record<string, unknown>> } : {}), ...split };
       if (freeGames && !['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(contest.modalidade)) throw new ConflictException('Matriz disponível para consulta; habilitação desta modalidade depende da apuração dos prognósticos adicionais.');

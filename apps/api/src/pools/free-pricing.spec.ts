@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { LEGAL_VERSION } from '../legal/documents';
-import { splitPoolByQuota } from '../pricing/pricing.engine';
+import { splitPoolByFee, splitPoolByQuota } from '../pricing/pricing.engine';
 import { computeShareAmounts } from '../payments/payments.service';
 import { PoolsService } from './pools.service';
 
@@ -63,7 +63,37 @@ function setup() {
 const sixGames = (n: number) => Array.from({ length: n }, (_, i) => ({ ordem: i + 1, numeros: [1 + i, 11, 22, 33, 44, 55] }));
 const base = (extra: Record<string, unknown> = {}) => ({ concursoId: 'c1', grupoId: 'g1', numerosApostados: [1, 11, 22, 33, 44, 55], jogos: sixGames(10), totalCotas: 100, valorCota: 20, taxaAdministracaoPct: 97, modeloOperacional: 'mandato', precoLivre: true, precificacaoAutomatica: true, ...extra }) as any;
 
+describe('splitPoolByFee (taxa definida)', () => {
+  it('cota de R$ 20, taxa de 10% (R$ 2): R$ 18 ficam no bolão e o total é R$ 2.000', () => {
+    const split = splitPoolByFee(6000, 100, 2000, 200);
+    expect(split).toMatchObject({ ticketPerShare: 1800, feePerShare: 200, adminTotalCents: 20000, totalCents: 200000, ticketBudgetCents: 180000, roundingReserveCents: 174000 });
+  });
+  it('recusa taxa que deixa menos que o registro por cota, ou maior que a cota', () => {
+    expect(() => splitPoolByFee(6000, 100, 2000, 1950)).toThrow(/Diminua a taxa/);
+    expect(() => splitPoolByFee(6000, 100, 2000, 2100)).toThrow(/não pode ser maior/);
+    expect(splitPoolByFee(6000, 100, 2000, 1940).ticketPerShare).toBe(60);
+  });
+  it('a soma do que fica no bolão com a taxa fecha com o total', () => {
+    for (const [cost, shares, quota, fee] of [[6000, 100, 2000, 200], [12345, 7, 5000, 1250], [0, 10, 500, 100]] as Array<[number, number, number, number]>) {
+      const split = splitPoolByFee(cost, shares, quota, fee);
+      expect(split.ticketBudgetCents + split.adminTotalCents).toBe(split.totalCents);
+    }
+  });
+});
+
 describe('PoolsService.create com preço livre', () => {
+  it('administrador define a taxa: cota de R$ 20 e taxa de R$ 2 por cota', async () => {
+    const { service, created } = setup();
+    await service.create(base({ taxaPorCotaCentavos: 200 }), admin);
+    expect(created[0].precificacao).toMatchObject({ modo: 'livre', costCents: 6000, ticketPerShare: 1800, feePerShare: 200, totalCents: 200000 });
+    expect(created[0].taxaAdministracaoPct.toString()).toBe('10');
+  });
+
+  it('recusa taxa que não deixa o registro de cada cota', async () => {
+    const { service } = setup();
+    await expect(service.create(base({ taxaPorCotaCentavos: 1999 }), admin)).rejects.toThrow(ConflictException);
+  });
+
   it('administrador: cota de R$ 20 com registro de R$ 60 em 100 cotas, sem travar no teto da taxa', async () => {
     const { service, created } = setup();
     await service.create(base(), admin);
