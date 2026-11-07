@@ -37,6 +37,11 @@ export class CreatePoolDto {
   @IsBoolean()
   precificacaoAutomatica?: boolean;
 
+  /** Bolão de data festiva: abre a venda agora e os números dos jogos são informados depois. Só administrador, com preço livre. */
+  @IsOptional()
+  @IsBoolean()
+  numerosADefinir?: boolean;
+
   @IsUUID()
   concursoId!: string;
 
@@ -238,4 +243,14 @@ export class GenerateGamesDto {
   /** Números a evitar, separados por vírgula. */
   @IsOptional() @IsString() @MaxLength(200) @Matches(/^[0-9, ]*$/)
   excluir?: string;
+}
+
+/** Números definidos depois da abertura da venda (bolão de data festiva). */
+export class DefinePoolNumbersDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => PoolGameDto)
+  jogos!: PoolGameDto[];
 }

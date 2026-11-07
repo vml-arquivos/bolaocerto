@@ -74,32 +74,41 @@ async function resolveDays(db: UpcomingDb, modalidade: string, configured: numbe
  * Garante que toda modalidade tenha um concurso aberto. Só cria quando não existe nenhum aberto (com prazo no futuro)
  * e quando a data prevista ainda dá tempo de vender. Nunca mexe em concurso existente. Devolve o que foi criado.
  */
-export async function ensureUpcomingContests(db: UpcomingDb, calculateCutoff: (drawDate: Date, localTime: string) => Date, now: Date = new Date()): Promise<UpcomingCreated[]> {
+export async function ensureUpcomingContests(db: UpcomingDb, calculateCutoff: (drawDate: Date, localTime: string) => Date, now: Date = new Date(), horizon: number = 1): Promise<UpcomingCreated[]> {
   const created: UpcomingCreated[] = [];
+  const wanted = Math.min(Math.max(Math.trunc(horizon) || 1, 1), 6);
   const configs = await db.configLoteria.findMany();
   for (const config of configs) {
     const modalidade = config.modalidade;
-    const open = await db.concurso.findFirst({ where: { modalidade, especial: null, status: 'aberto', cutoffAt: { gt: now } } });
-    if (open) continue;
+    const opens = await db.concurso.findMany({ where: { modalidade, especial: null, status: 'aberto', cutoffAt: { gt: now } } });
+    let missing = wanted - opens.length;
+    if (missing <= 0) continue;
     const latest = await db.concurso.findFirst({ where: { modalidade, especial: null, numeroConcurso: { gt: 0 } }, orderBy: { numeroConcurso: 'desc' } });
     if (!latest) continue;
     const days = await resolveDays(db, modalidade, config.diasSemanaSorteio, now);
-    const day = nextScheduledDay(brazilDayKey(latest.dataSorteio), days);
-    if (!day) continue;
-    const drawDate = new Date(`${day}T${HORA_SORTEIO}:00-03:00`);
-    const cutoffAt = calculateCutoff(drawDate, config.horarioCorteLocal);
-    if (cutoffAt.getTime() <= now.getTime()) continue;
-    const numeroConcurso = latest.numeroConcurso + 1;
-    const exists = await db.concurso.findFirst({ where: { modalidade, numeroConcurso } });
-    if (exists) continue;
-    try {
-      await db.concurso.create({ data: { modalidade, numeroConcurso, dataSorteio: drawDate, cutoffAt, valorEstimadoPremio: null, acumulado: false, status: 'aberto', fonteSincronizacao: FONTE_PROJETADA } });
-    } catch (error) {
-      // Outra execução criou o mesmo concurso ao mesmo tempo (chave única): está tudo certo.
-      if ((error as { code?: string }).code === 'P2002') continue;
-      throw error;
+    let cursor = brazilDayKey(latest.dataSorteio);
+    let numeroConcurso = latest.numeroConcurso;
+    for (let step = 0; step < 12 && missing > 0; step += 1) {
+      const day = nextScheduledDay(cursor, days);
+      if (!day) break;
+      cursor = day;
+      numeroConcurso += 1;
+      const drawDate = new Date(`${day}T${HORA_SORTEIO}:00-03:00`);
+      const cutoffAt = calculateCutoff(drawDate, config.horarioCorteLocal);
+      // Data que já não dá tempo de vender: não inventa concurso a partir de um histórico defasado.
+      if (cutoffAt.getTime() <= now.getTime()) break;
+      const exists = await db.concurso.findFirst({ where: { modalidade, numeroConcurso } });
+      if (exists) break;
+      try {
+        await db.concurso.create({ data: { modalidade, numeroConcurso, dataSorteio: drawDate, cutoffAt, valorEstimadoPremio: null, acumulado: false, status: 'aberto', fonteSincronizacao: FONTE_PROJETADA } });
+      } catch (error) {
+        // Outra execução criou o mesmo concurso ao mesmo tempo (chave única): está tudo certo.
+        if ((error as { code?: string }).code === 'P2002') break;
+        throw error;
+      }
+      created.push({ modalidade, numeroConcurso, dataSorteio: drawDate, cutoffAt });
+      missing -= 1;
     }
-    created.push({ modalidade, numeroConcurso, dataSorteio: drawDate, cutoffAt });
   }
   return created;
 }

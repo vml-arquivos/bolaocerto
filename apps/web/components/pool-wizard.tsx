@@ -99,6 +99,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [festaBusy, setFestaBusy] = useState(false);
   const [festaPresets, setFestaPresets] = useState<Array<{ chave: string; nome: string; modalidade: string; proximoSorteio?: { data: string; hora: string; confirmado: boolean; fonte: string } | null }>>([]);
   const [presale, setPresale] = useState(false);
+  const [numbersLater, setNumbersLater] = useState(false);
   const [saleStart, setSaleStart] = useState('');
   const [saleEnd, setSaleEnd] = useState('');
   const [maxPerPerson, setMaxPerPerson] = useState('');
@@ -119,7 +120,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setDescription('');
       setConditional(false);
       setTrigger('100000000');
-      setPresale(false); setSaleStart(''); setSaleEnd(''); setMaxPerPerson(''); setSaleText(''); setNewDate(false);
+      setPresale(false); setNumbersLater(false); setSaleStart(''); setSaleEnd(''); setMaxPerPerson(''); setSaleText(''); setNewDate(false);
       return;
     }
     const existingModality = String(editPool.concurso?.modalidade ?? editPool.modalidade ?? 'megasena');
@@ -271,7 +272,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     } finally { setSuggesting(false); }
   }
   // Preço livre: custo do registro (tabela da CAIXA confirmada pelo servidor, ou o valor digitado) e o plano de preço resultante.
-  const registroCents: number | null = freeMode ? (automatic ? (Number.isFinite(quote?.costCents) ? quote!.costCents : registroLocal) : toCents(manualCost)) : null;
+  const registroCents: number | null = freeMode ? (automatic && !numbersLater ? (Number.isFinite(quote?.costCents) ? quote!.costCents : registroLocal) : toCents(manualCost)) : null;
   const priceIncomplete = (quotaMode === 'digitar' && !quotaValue.trim()) || (feeMode !== 'sobra' && !feeValue.trim());
   const plan = freeMode && !unlimited && registroCents !== null ? planPricing({ costCents: registroCents, shares: Math.trunc(Number(totalCotas)), quotaMode, quotaValue, feeMode, feeValue }) : null;
   const finiteRevenue = unlimited ? null : freeMode ? (plan?.ok ? plan.totalCents / 100 : null) : Number(totalCotas || 0) * Number(valorCota || 0);
@@ -281,6 +282,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   }, [availableContests, contestId]);
 
   function resetAfterSave() {
+    setNumbersLater(false); setAutomatic(true);
     setContestId('');
     setNumbers('');
     setTotalCotas('10');
@@ -303,7 +305,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setMessage('Selecione um concurso aberto e um grupo válido.');
       return;
     }
-    if (games.some(g => g.numeros.length < limits.min)) {
+    if (!numbersLater && games.some(g => g.numeros.length < limits.min)) {
       setMessage(`Informe pelo menos ${limits.min} números válidos para ${modalityNames[modality] ?? modality}.`);
       return;
     }
@@ -325,8 +327,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       return;
     }
 
-    if (!automatic && games.length > 1 && !editing) { setMessage('Para criar vários jogos com custos distintos, utilize a cotação automática.'); return; }
-    if (!editing && automatic && (!quote || !canPrice || unlimited)) { setMessage('Aguarde uma cotação válida.'); return; }
+    if (numbersLater && !freeMode) { setMessage('Números a definir só no modo de valor livre.'); return; }
+    if (!automatic && !numbersLater && games.length > 1 && !editing) { setMessage('Para criar vários jogos com custos distintos, utilize a cotação automática.'); return; }
+    if (!editing && automatic && !numbersLater && (!quote || !canPrice || unlimited)) { setMessage('Aguarde uma cotação válida.'); return; }
     setSaving(true);
     try {
       const salesRules = {
@@ -341,10 +344,10 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       const body = editing && editPool?.precificacao ? { ...salesRules, ...(description.trim() ? { descricao: description.trim() } : {}) } : {
         ...salesRules,
         ...(editing ? {} : { concursoId: selectedContest.id, grupoId: selectedGroupId }),
-        numerosApostados: uniqueNumbers,
-        jogos: games.map((g, i) => ({ ...g, quantidadeDezenas: g.numeros.length, custo: Number(quote?.jogos[i]?.custo ?? editPool?.jogos?.[i]?.custo ?? (freeMode && !automatic && plan?.ok ? plan.costCents / 100 : custo) ?? 0) })),
-        ...(!editing ? { precificacaoAutomatica: automatic, totalCotadoCentavos: freeMode && plan?.ok ? plan.totalCents : quote?.totalCents } : {}),
-        ...(freeMode && plan?.ok ? { precoLivre: true, taxaPorCotaCentavos: plan.feePerShare, ...(automatic ? {} : { custoRegistroCentavos: plan.costCents }) } : {}),
+        numerosApostados: numbersLater ? [] : uniqueNumbers,
+        jogos: numbersLater ? [] : games.map((g, i) => ({ ...g, quantidadeDezenas: g.numeros.length, custo: Number(quote?.jogos[i]?.custo ?? editPool?.jogos?.[i]?.custo ?? (freeMode && !automatic && plan?.ok ? plan.costCents / 100 : custo) ?? 0) })),
+        ...(!editing ? { precificacaoAutomatica: automatic && !numbersLater, totalCotadoCentavos: freeMode && plan?.ok ? plan.totalCents : quote?.totalCents } : {}),
+        ...(freeMode && plan?.ok ? { precoLivre: true, taxaPorCotaCentavos: plan.feePerShare, ...(automatic && !numbersLater ? {} : { custoRegistroCentavos: plan.costCents }), ...(numbersLater ? { numerosADefinir: true } : {}) } : {}),
         ...(unlimited ? { cotasIlimitadas: true, totalCotas: undefined } : { cotasIlimitadas: false, totalCotas: Number(totalCotas) }),
         valorCota: freeMode && plan?.ok ? plan.quotaCents / 100 : Number(valorCota),
         taxaAdministracaoPct: freeMode && plan?.ok ? plan.feePct : Number(taxa),
@@ -357,9 +360,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       const response = await authFetch(path, { method: editing ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(Array.isArray(payload.message) ? payload.message.join(' ') : payload.message || (editing ? 'Não foi possível editar o bolão.' : 'Não foi possível criar o bolão.'));
-      setMessage(editing ? 'Bolão atualizado com sucesso.' : 'Bolão criado como rascunho.');
+      setMessage(editing ? 'Bolão atualizado com sucesso.' : numbersLater ? 'Bolão criado como rascunho, sem números. Publique para abrir a venda e defina os jogos depois, em Mais › Definir números.' : 'Bolão criado como rascunho.');
       // Guarda os jogos no banco de números (e conta o uso). Se falhar, o bolão já foi criado e nada se perde.
-      if (!editing && role === 'admin' && canPrice) void authFetch('/api/v1/admin/numeros/usar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: modality, jogos: games.map((game) => ({ numeros: game.numeros })), ...(payload?.id ? { bolaoId: payload.id } : {}) }) }).catch(() => undefined);
+      if (!editing && !numbersLater && role === 'admin' && canPrice) void authFetch('/api/v1/admin/numeros/usar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: modality, jogos: games.map((game) => ({ numeros: game.numeros })), ...(payload?.id ? { bolaoId: payload.id } : {}) }) }).catch(() => undefined);
       await onSuccess(editing ? undefined : payload);
       if (!editing) resetAfterSave();
     } catch (error) {
@@ -391,7 +394,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
           <button type="button" className="admin-button admin-button-primary" disabled={festaBusy} onClick={() => void createDateContest()}>{festaBusy ? 'Criando…' : `Criar concurso de ${modalityNames[modality] ?? modality}`}</button>
         </div>}
       </div>}
-      {canPrice && !editing && <div className="admin-field admin-field-wide game-generator" aria-label="Gerador de jogos">
+      {freeMode && <label className="admin-toggle-row admin-field-wide"><input type="checkbox" checked={numbersLater} onChange={(event) => { setNumbersLater(event.target.checked); if (event.target.checked) { setAutomatic(false); setPresale(true); } else setAutomatic(true); }} /><span><strong>Números ainda não definidos (definir depois)</strong><small>Para datas comemorativas como a Mega da Virada: você abre a venda das cotas agora e informa os jogos antes do fechamento. Informe só o custo estimado do registro; a pré-venda é ligada para você.</small></span></label>}
+      {canPrice && !editing && !numbersLater && <div className="admin-field admin-field-wide game-generator" aria-label="Gerador de jogos">
         <strong>Gerar jogos automaticamente</strong>
         <small className="admin-muted">Usa o histórico de sorteios da CAIXA para montar jogos variados. Não prevê resultado: todo jogo tem a mesma chance.</small>
         <div className="admin-form-grid admin-form-grid-four">
@@ -411,10 +415,10 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         {genError && <p role="alert" className="form-error">{genError}</p>}
         {generated && <div className="generator-result"><span>{generated.quantidade} {generated.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {generated.dezenas} números cada · <strong>total na CAIXA {money(generated.custoTotal)}</strong></span><small>{generated.aviso}</small></div>}
       </div>}
-      {role === 'admin' && !editing && canPrice && <BankPicker modalidade={modality} onUse={(lines, mode) => setNumbers((current) => (mode === 'append' && current.trim() ? `${current.trim()}\n${lines.join('\n')}` : lines.join('\n')))} />}
-      <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>
+      {role === 'admin' && !editing && canPrice && !numbersLater && <BankPicker modalidade={modality} onUse={(lines, mode) => setNumbers((current) => (mode === 'append' && current.trim() ? `${current.trim()}\n${lines.join('\n')}` : lines.join('\n')))} />}
+      {!numbersLater && <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>}
     </div>
-    {!editing && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>{freeMode ? 'Calcular o custo do registro pela tabela da CAIXA' : 'Calcular pela tabela Caixa'}</strong><small>{freeMode ? 'A tabela só mostra quanto custa registrar os jogos na CAIXA. O valor da cota e a taxa você define livremente, abaixo.' : 'Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.'}</small></span></label>}
+    {!editing && !numbersLater && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>{freeMode ? 'Calcular o custo do registro pela tabela da CAIXA' : 'Calcular pela tabela Caixa'}</strong><small>{freeMode ? 'A tabela só mostra quanto custa registrar os jogos na CAIXA. O valor da cota e a taxa você define livremente, abaixo.' : 'Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.'}</small></span></label>}
     {automatic && !canPrice && <p role="alert">Matriz disponível na API. Venda automática desta modalidade aguarda suporte à apuração completa.</p>}
     {quoteError && <p role="alert">{quoteError}</p>}
     {quote && !freeMode && quote.jogos?.length > 0 && <div className="simple-form-summary" aria-label="Custo de cada jogo"><span>Jogos <strong>{quote.jogos.length}</strong></span><span>Custo por jogo <strong>{[...new Set(quote.jogos.map((g: RecordValue) => money(g.custo)))].join(' / ')}</strong></span><span>Registro na CAIXA <strong>{money(quote.costCents / 100)}</strong></span></div>}

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -42,5 +42,16 @@ export class PaymentsAdminController {
   @Post('cotas/:id/cancelar')
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelShareDto, @CurrentUser() admin: AuthUser) {
     return this.payments.cancelShare(id, dto, admin);
+  }
+
+  /** Apaga o registro de compra que falhou, venceu ou foi cancelada (não era venda). */
+  @Post('cotas/limpar-falhas')
+  purgeFailed(@Query('bolaoId') poolId: string | undefined, @CurrentUser() admin: AuthUser) {
+    return this.payments.purgeFailedShares(admin, poolId && /^[0-9a-f-]{36}$/i.test(poolId) ? poolId : undefined);
+  }
+
+  @Delete('cotas/:id')
+  removeFailed(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: AuthUser) {
+    return this.payments.deleteFailedShare(id, admin);
   }
 }

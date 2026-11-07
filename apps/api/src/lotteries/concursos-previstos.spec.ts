@@ -57,6 +57,19 @@ describe('concurso previsto para toda loteria', () => {
     expect(projected.cutoffAt.toISOString()).toBe('2026-11-05T22:00:00.000Z'); // quinta 19:00
   });
 
+  it('com horizonte 3 mantém os três próximos sorteios, em sequência e só com datas futuras', async () => {
+    const { db, rows } = fakeDb([row('megasena', 3000, '2026-11-03')], [config('megasena', { diasSemanaSorteio: [2, 4, 6] })]);
+    const created = await ensureUpcomingContests(db, calculateBrazilCutoff, now, 3);
+    expect(created.map((item) => item.numeroConcurso)).toEqual([3001, 3002, 3003]);
+    expect(rows.filter((r) => r.fonteSincronizacao === 'projetado').map((r) => r.dataSorteio.toISOString().slice(0, 10))).toEqual(['2026-11-05', '2026-11-07', '2026-11-10']);
+  });
+
+  it('com um sorteio aberto e horizonte 3 completa só o que falta', async () => {
+    const { db } = fakeDb([row('megasena', 3000, '2026-11-03'), row('megasena', 3001, '2026-11-05', { status: 'aberto', cutoffAt: new Date('2026-11-05T19:00:00-03:00') })], [config('megasena', { diasSemanaSorteio: [2, 4, 6] })]);
+    const created = await ensureUpcomingContests(db, calculateBrazilCutoff, now, 3);
+    expect(created.map((item) => item.numeroConcurso)).toEqual([3002, 3003]);
+  });
+
   it('não cria nada quando já existe concurso aberto com prazo no futuro', async () => {
     const open = row('megasena', 3001, '2026-11-05', { status: 'aberto' });
     const { db, create } = fakeDb([row('megasena', 3000, '2026-11-04'), open], [config('megasena', { diasSemanaSorteio: [2, 4, 6] })]);

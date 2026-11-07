@@ -31,7 +31,7 @@ test('app do cliente: carrossel, todos os números, compra sem repetir dados e c
 
     await api('POST', '/auth/login', { email: EMAIL, senha: PASSWORD });
     const group = await api('GET', '/grupos/bl-oficial');
-    const contest = await api('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: 61000 + Math.floor(Math.random() * 9000), dataSorteio: future(20) });
+    const contest = await api('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: 61000 + Math.floor(Math.random() * 9000), dataSorteio: future(2) });
     const games = [[1, 12, 23, 34, 45, 56], [2, 13, 24, 35, 46, 57], [3, 14, 25, 36, 47, 58]];
     const pool = await api('POST', '/admin/boloes', { concursoId: contest.id, grupoId: group.id, numerosApostados: games[0], jogos: games.map((numeros, i) => ({ ordem: i + 1, numeros, quantidadeDezenas: 6, custo: 6 })), cotasIlimitadas: false, totalCotas: 10, valorCota: 20, taxaAdministracaoPct: 10, modeloOperacional: 'mandato' });
     await api('POST', `/admin/boloes/${pool.id}/publicar`);

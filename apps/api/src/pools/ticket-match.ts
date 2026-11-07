@@ -14,6 +14,7 @@ export function assertTicketMatchesPool(
   informed: number[][] | undefined,
   modality?: string | null,
 ): void {
+  if (!games.length) throw new BadRequestException('Os números deste bolão ainda não foram definidos. Defina os jogos antes de registrar.');
   if (!informed?.length) throw new BadRequestException('Digite os números que estão no comprovante para conferir com o bolão antes de registrar.');
   const ordered = ORDERED.has(String(modality ?? ''));
   const clean = informed.map((game) => game.map(Number));

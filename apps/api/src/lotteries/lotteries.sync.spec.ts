@@ -16,7 +16,7 @@ function build(env: Record<string, string> = {}) {
   };
   const prisma = {
     configLoteria: { findUnique: jest.fn(async () => ({ horarioCorteLocal: '19:00' })) },
-    concurso: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    concurso: { updateMany: jest.fn(async () => ({ count: 0 })), findUnique: jest.fn(async () => null), update: jest.fn(async () => ({})), create: jest.fn(async (_args: { data: Record<string, unknown> }) => ({})) },
     $transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
   };
   const config = { get: (key: string, def?: string) => env[key] ?? def } as unknown as ConfigService;
@@ -31,6 +31,25 @@ function mockFetch(handler: (url: string) => { status?: number; body?: string })
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+describe('LotteriesService.sync: concursos à frente', () => {
+  it('grava o concurso seguinte quando a CAIXA já o publica, com a data oficial', async () => {
+    mockFetch((url) => (url.endsWith('/megasena/102') ? { body: JSON.stringify({ numero: 102, dataApuracao: '27/12/2030', listaDezenas: [] }) } : { body: payload(100) }));
+    const { service, prisma } = build();
+    await service.sync('megasena');
+    expect(prisma.concurso.create).toHaveBeenCalledTimes(1);
+    expect(prisma.concurso.create.mock.calls[0]![0].data).toMatchObject({ modalidade: 'megasena', numeroConcurso: 102, status: 'aberto', fonteSincronizacao: 'caixa' });
+  });
+  it('ignora número que a CAIXA ainda não tem, já apurado ou que já é oficial', async () => {
+    mockFetch((url) => (url.endsWith('/megasena/102') ? { status: 404, body: '{}' } : { body: payload(100) }));
+    const { service, prisma } = build();
+    await service.sync('megasena');
+    expect(prisma.concurso.create).not.toHaveBeenCalled();
+    mockFetch((url) => (url.endsWith('/megasena/102') ? { body: JSON.stringify({ numero: 102, dataApuracao: '27/12/2030', listaDezenas: ['01'] }) } : { body: payload(100) }));
+    await service.sync('megasena');
+    expect(prisma.concurso.create).not.toHaveBeenCalled();
+  });
+});
 
 describe('LotteriesService.sync (CAIXA)', () => {
   it('sincroniza todas as modalidades e grava a fonte', async () => {

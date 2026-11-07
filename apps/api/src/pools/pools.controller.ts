@@ -1,12 +1,17 @@
 import { PricingService } from '../pricing/pricing.service';
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsString, Length } from 'class-validator';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { IsString, IsUUID, Length } from 'class-validator';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { CreatePoolDto, GenerateGamesDto, UpdatePoolDto } from './pools.dto';
+import { CreatePoolDto, DefinePoolNumbersDto, GenerateGamesDto, UpdatePoolDto } from './pools.dto';
 import { PoolsService } from './pools.service';
+
+class MoveContestDto {
+  @IsUUID()
+  concursoId!: string;
+}
 
 class RejectPoolDto {
   @IsString() @Length(3, 300)
@@ -163,8 +168,29 @@ export class PoolsController {
   @Delete('admin/boloes/:id/sem-movimentacao')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  removeUnused(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.pools.removeUnused(id, user);
+  removeUnused(@Param('id') id: string, @Query('forcar') force: string | undefined, @CurrentUser() user: AuthUser) {
+    return this.pools.removeUnused(id, user, force === 'true' || force === '1');
+  }
+
+  @Post('admin/boloes/:id/numeros')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  defineNumbers(@Param('id') id: string, @Body() dto: DefinePoolNumbersDto, @CurrentUser() user: AuthUser) {
+    return this.pools.defineNumbers(id, dto, user);
+  }
+
+  @Post('admin/boloes/:id/trocar-concurso')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  moveToContest(@Param('id') id: string, @Body() dto: MoveContestDto, @CurrentUser() user: AuthUser) {
+    return this.pools.moveToContest(id, dto.concursoId, user);
+  }
+
+  @Get('admin/boloes/:id/exclusao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  previewRemoval(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.previewRemoval(id, user);
   }
 
   @Delete('admin/boloes/:id')

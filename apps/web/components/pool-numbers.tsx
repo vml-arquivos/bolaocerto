@@ -27,7 +27,10 @@ export function PoolNumbers({ games, name }: { games: Game[]; name: string }) {
     return () => { document.body.style.overflow = ''; };
   }, [open]);
 
-  if (!games.length) return null;
+  if (!games.length) return <section className="pool-numbers pool-numbers-pending" aria-labelledby="numeros-titulo">
+    <div className="pool-numbers-head"><h2 id="numeros-titulo">Números do bolão</h2><span>A definir</span></div>
+    <p className="muted">Os jogos ainda não foram escolhidos. Eles serão publicados aqui antes do fechamento das apostas, e quem já comprou cota recebe um aviso.</p>
+  </section>;
   return <section className="pool-numbers" aria-labelledby="numeros-titulo">
     <div className="pool-numbers-head">
       <h2 id="numeros-titulo">Números do bolão</h2>

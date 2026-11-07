@@ -194,7 +194,7 @@ export class AdminService {
       ...(query.modalidade ? { concurso: { modalidade: query.modalidade } } : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
     ]);
     const interested = new Map<string, number>();
@@ -215,7 +215,7 @@ export class AdminService {
         indicadores: {
           interessados: interested.get(pool.id) ?? 0,
           jogos: pool.jogos.length || (pool.numerosApostados.length ? 1 : 0),
-          reservadas: pool.cotas.filter((share) => share.status === StatusCota.reservada).reduce((sum, share) => sum + share.quantidade, 0),
+          reservadas: pool.cotas.filter((share) => share.status === StatusCota.reservada && (!share.expiraReservaEm || share.expiraReservaEm > new Date())).reduce((sum, share) => sum + share.quantidade, 0),
           pagas: pool.cotas.filter((share) => ([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status)).reduce((sum, share) => sum + share.quantidade, 0),
           cotasIlimitadas: pool.cotasIlimitadas,
           disponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0),

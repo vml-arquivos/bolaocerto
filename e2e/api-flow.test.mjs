@@ -162,6 +162,56 @@ test('preço livre: cota de R$ 20 com registro de R$ 60 em 100 cotas, taxa de se
   assert.equal(Number(row.indicadores.receitaPrevista), 2000);
 });
 
+test('bolão de data festiva: abre a venda sem números e define os jogos depois', async () => {
+  const noNumbers = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: [],
+    cotasIlimitadas: false, totalCotas: 50, valorCota: 20, taxaAdministracaoPct: 10, modeloOperacional: 'mandato',
+    precoLivre: true, numerosADefinir: true, taxaPorCotaCentavos: 200, custoRegistroCentavos: 6000, vendaAntecipada: true,
+  });
+  ok(noNumbers, 'criar bolão com números a definir');
+  assert.equal(noNumbers.data.numerosDefinidos, false);
+  assert.equal(noNumbers.data.quantidadeJogos, 0);
+  const published = await call('POST', `/admin/boloes/${noNumbers.data.id}/publicar`);
+  ok(published, 'publicar sem números');
+  const invalid = await call('POST', `/admin/boloes/${noNumbers.data.id}/numeros`, { jogos: [{ ordem: 1, numeros: [1, 2, 3, 4, 5, 61] }] });
+  assert.equal(invalid.status, 409, 'número fora da regra da Mega-Sena é recusado');
+  const defined = await call('POST', `/admin/boloes/${noNumbers.data.id}/numeros`, { jogos: [{ ordem: 1, numeros: [3, 14, 25, 36, 47, 58] }] });
+  ok(defined, 'definir os números');
+  assert.equal(defined.data.numerosDefinidos, true);
+  assert.deepEqual(defined.data.jogos[0].numeros, [3, 14, 25, 36, 47, 58]);
+  const again = await call('POST', `/admin/boloes/${noNumbers.data.id}/numeros`, { jogos: [{ ordem: 1, numeros: [1, 2, 3, 4, 5, 6] }] });
+  assert.equal(again.status, 409, 'os números não mudam depois de definidos');
+  state.festivePoolId = noNumbers.data.id;
+});
+
+test('admin exclui bolão sem venda e troca o concurso de outro', async () => {
+  const numbers = [7, 17, 27, 37, 47, 57];
+  const draft = await call('POST', '/admin/boloes', {
+    concursoId: state.contestId, grupoId: state.groupId, numerosApostados: numbers, jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 6 }],
+    cotasIlimitadas: false, totalCotas: 10, valorCota: 20, taxaAdministracaoPct: 10, modeloOperacional: 'mandato',
+  });
+  ok(draft, 'criar bolão de teste');
+  const nextNumber = 90000 + Math.floor(Math.random() * 9000);
+  const other = await call('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: nextNumber, dataSorteio: future(20) });
+  ok(other, 'criar outro concurso');
+  const moved = await call('POST', `/admin/boloes/${draft.data.id}/trocar-concurso`, { concursoId: other.data.id });
+  ok(moved, 'trocar concurso');
+  assert.equal(moved.data.concursoId, other.data.id);
+  const wrong = await call('POST', `/admin/boloes/${draft.data.id}/trocar-concurso`, { concursoId: other.data.id });
+  assert.equal(wrong.status, 409, 'já está nesse concurso');
+  const preview = await call('GET', `/admin/boloes/${draft.data.id}/exclusao`);
+  ok(preview, 'prévia da exclusão');
+  assert.equal(preview.data.podeExcluir, true);
+  const removed = await call('DELETE', `/admin/boloes/${draft.data.id}/sem-movimentacao`);
+  ok(removed, 'excluir bolão sem movimentação');
+  assert.equal(removed.data.excluido, true);
+  const gone = await call('GET', `/admin/boloes/${draft.data.id}/exclusao`);
+  assert.equal(gone.status, 404);
+  const fails = await call('POST', '/admin/cotas/limpar-falhas');
+  ok(fails, 'limpar compras que falharam');
+  assert.equal(typeof fails.data.excluidas, 'number');
+});
+
 test('salva a página inicial (sem erro interno) e ela aparece no site', async () => {
   const current = await call('GET', '/admin/home');
   ok(current, 'ler página inicial');

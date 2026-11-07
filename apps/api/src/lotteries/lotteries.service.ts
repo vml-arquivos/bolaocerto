@@ -101,6 +101,7 @@ export class LotteriesService {
         await this.persistContestPayload(current, config.horarioCorteLocal, payload, source);
         fontes.add(source);
         sincronizados += 1;
+        if (payload.numeroConcursoProximo) await this.lookahead(current, config.horarioCorteLocal, payload.numeroConcursoProximo).catch(() => 0);
       } catch (error) {
         falhas.push({ modalidade: current, erro: error instanceof Error ? error.message : 'falha desconhecida' });
       }
@@ -108,7 +109,7 @@ export class LotteriesService {
 
     await this.closeExpired();
     // Modalidade sem concurso aberto (a CAIXA ainda não publicou o seguinte, ou está fora do ar) recebe o concurso previsto.
-    try { await ensureUpcomingContests(this.prisma as never, calculateBrazilCutoff); } catch { /* melhor esforço */ }
+    try { await ensureUpcomingContests(this.prisma as never, calculateBrazilCutoff, new Date(), this.upcomingHorizon()); } catch { /* melhor esforço */ }
 
     // Uma modalidade com problema não derruba as demais; só falha por inteiro se nada foi sincronizado.
     if (sincronizados === 0 && falhas.length > 0) {
@@ -116,6 +117,41 @@ export class LotteriesService {
       throw new ServiceUnavailableException(`Não foi possível sincronizar: ${first.erro}${falhas.length > 1 ? ` (+${falhas.length - 1} modalidade(s) com falha)` : ''}. Use "Testar conexão com a CAIXA" para ver o diagnóstico.`);
     }
     return { sincronizados, fontes: [...fontes], falhas };
+  }
+
+  /** Quantos sorteios futuros (por modalidade) o sistema mantém prontos para criar bolão. */
+  private upcomingHorizon(): number {
+    const value = Number(this.config.get<string>('CONCURSOS_PREVISTOS_A_FRENTE') ?? 3);
+    return Number.isFinite(value) ? Math.min(Math.max(Math.trunc(value), 1), 6) : 3;
+  }
+
+  /**
+   * Depois do "próximo concurso" que a CAIXA informa, pergunta pelos números seguintes. Se a CAIXA já tiver o concurso
+   * (número e data no futuro, sem resultado), ele entra na lista com a data oficial. Nunca altera concurso que já exista
+   * e não seja previsto, e qualquer falha é ignorada: o calendário previsto cobre o que faltar.
+   */
+  private async lookahead(modalidade: ModalidadeLoteria, horarioCorteLocal: string, nextNumber: number): Promise<number> {
+    const extra = Math.min(Math.max(Math.trunc(Number(this.config.get<string>('CAIXA_CONCURSOS_A_FRENTE') ?? 2)) || 0, 0), 4);
+    const sources = this.caixaSources();
+    const timeoutMs = resolveCaixaTimeout(this.config.get<string>('CAIXA_API_TIMEOUT_MS'));
+    let added = 0;
+    for (let step = 1; step <= extra; step += 1) {
+      const numero = nextNumber + step;
+      try {
+        const { payload, source } = await fetchCaixaContest(modalidade, sources, { timeoutMs, retries: 0, contestNumber: numero, userAgent: this.config.get<string>('CAIXA_USER_AGENT'), health: this.health });
+        const data = normalizeCaixaContestPayload(payload);
+        const drawDate = parseCaixaDate(data.dataApuracao);
+        const drawn = (data.dezenasSorteadasOrdemSorteio ?? data.listaDezenas ?? []).length > 0;
+        if (data.numero !== numero || !drawDate || drawn || drawDate.getTime() <= Date.now()) break;
+        const existing = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: numero } } });
+        if (existing && existing.fonteSincronizacao !== FONTE_PROJETADA) continue;
+        const cutoffAt = calculateBrazilCutoff(drawDate, horarioCorteLocal);
+        if (existing) await this.prisma.concurso.update({ where: { id: existing.id }, data: { dataSorteio: drawDate, cutoffAt, fonteSincronizacao: source, sincronizadoEm: new Date() } });
+        else await this.prisma.concurso.create({ data: { modalidade, numeroConcurso: numero, dataSorteio: drawDate, cutoffAt, valorEstimadoPremio: null, acumulado: false, status: cutoffAt.getTime() > Date.now() ? 'aberto' : 'fechado', fonteSincronizacao: source } });
+        added += 1;
+      } catch { break; }
+    }
+    return added;
   }
 
   /** Testa a conexão com cada modalidade sem gravar nada. Usado pelo painel do admin. */

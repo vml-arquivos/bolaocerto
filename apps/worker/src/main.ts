@@ -149,7 +149,7 @@ async function syncOnce(): Promise<void> {
   await closeExpiredContests();
   // Modalidade sem concurso aberto (CAIXA ainda sem o seguinte, ou fora do ar) recebe o concurso previsto.
   try {
-    const created = await ensureUpcomingContests(prisma as never, calculateBrazilCutoff);
+    const created = await ensureUpcomingContests(prisma as never, calculateBrazilCutoff, new Date(), Number(process.env.CONCURSOS_PREVISTOS_A_FRENTE ?? 3));
     for (const item of created) console.log(JSON.stringify({ event: 'concursos.previstos_criados', modalidade: item.modalidade, numero: item.numeroConcurso, dataSorteio: item.dataSorteio.toISOString() }));
   } catch (error) {
     console.error(JSON.stringify({ event: 'concursos.previsao_falhou', error: error instanceof Error ? error.message : String(error) }));

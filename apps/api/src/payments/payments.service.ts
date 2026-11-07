@@ -441,6 +441,47 @@ export class PaymentsService {
     return { cotaId: shareId, pago: dto.pago };
   }
 
+  /**
+   * Compra que não foi concluída (cancelada, expirada ou com cobrança que falhou) não é venda.
+   * O administrador pode apagar esse registro. Nunca apaga cota paga, estornada, com nota emitida,
+   * comissão paga ou cobrança recente que ainda pode ser paga.
+   */
+  async deleteFailedShare(shareId: string, admin: AuthUser) {
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.cota.findUnique({ where: { id: shareId }, select: { bolaoId: true } });
+      if (!found) throw new NotFoundException('Cota não encontrada.');
+      await this.lockBolao(tx, found.bolaoId);
+      const share = await tx.cota.findUnique({ where: { id: shareId }, include: { pagamento: { include: { notaFiscal: true } }, comissao: true, _count: { select: { anexos: true } } } });
+      if (!share) throw new NotFoundException('Cota não encontrada.');
+      const expiredReservation = share.status === StatusCota.reservada && share.expiraReservaEm !== null && share.expiraReservaEm <= new Date();
+      if (share.status !== StatusCota.cancelada && !expiredReservation) throw new ConflictException('Só é possível excluir compra cancelada, vencida ou que falhou. Cancele a reserva antes, se ela ainda estiver valendo.');
+      const payment = share.pagamento;
+      if (payment && ([StatusPagamento.confirmado, StatusPagamento.estornado] as StatusPagamento[]).includes(payment.status)) throw new ConflictException('Há pagamento confirmado ou estornado: o histórico financeiro fica guardado.');
+      if (payment?.status === StatusPagamento.pendente && Date.now() - payment.criadoEm.getTime() < 2 * 3600_000) throw new ConflictException('A cobrança é recente e ainda pode ser paga. Tente de novo em algumas horas.');
+      if (payment?.notaFiscal && ['emitida', 'cancelada'].includes(payment.notaFiscal.status)) throw new ConflictException('Há nota fiscal emitida: o histórico fiscal fica guardado.');
+      if (share.comissao?.status === StatusComissao.paga) throw new ConflictException('A comissão desta cota já foi paga.');
+      if (share._count.anexos) throw new ConflictException('Há arquivos anexados a esta cota. Remova os anexos antes.');
+      if (expiredReservation) await tx.bolao.update({ where: { id: share.bolaoId }, data: { cotasVendidas: { decrement: share.quantidade } } });
+      if (payment) await tx.notaFiscal.deleteMany({ where: { pagamentoId: payment.id } });
+      await tx.comissao.deleteMany({ where: { cotaId: share.id } });
+      await tx.mandato.deleteMany({ where: { cotaId: share.id } });
+      await tx.pagamento.deleteMany({ where: { cotaId: share.id } });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.registro_excluido', atorId: admin.id, payloadAntes: { status: share.status, quantidade: share.quantidade, pagamento: payment?.status ?? null, bolaoId: share.bolaoId } as unknown as Prisma.InputJsonValue });
+      await tx.cota.delete({ where: { id: share.id } });
+      return { id: share.id, excluida: true };
+    });
+  }
+
+  /** Limpa de uma vez as compras que não se concluíram (opcionalmente só de um bolão). */
+  async purgeFailedShares(admin: AuthUser, poolId?: string) {
+    const candidates = await this.prisma.cota.findMany({ where: { ...(poolId ? { bolaoId: poolId } : {}), OR: [{ status: StatusCota.cancelada }, { status: StatusCota.reservada, expiraReservaEm: { lte: new Date() } }] }, select: { id: true }, take: 500 });
+    let deleted = 0; let kept = 0;
+    for (const candidate of candidates) {
+      try { await this.deleteFailedShare(candidate.id, admin); deleted += 1; } catch { kept += 1; }
+    }
+    return { excluidas: deleted, mantidas: kept };
+  }
+
   async cancelShare(shareId: string, dto: CancelShareDto, admin: AuthUser) {
     const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { pagamento: true } });
     if (!share) throw new NotFoundException('Cota não encontrada.');
