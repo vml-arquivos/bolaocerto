@@ -65,3 +65,8 @@
 .kpi-grid > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); min-width: 0; }
 .kpi-grid small { color: var(--text-muted); font-size: .72rem; }
 .kpi-grid strong { font-size: 1.05rem; color: var(--text-primary); overflow-wrap: anywhere; }
+
+/* Bolão cujos jogos ainda não foram definidos (ex.: Mega da Virada) */
+.detail-numbers-later { margin: 16px 0; padding: 14px 16px; border: 1px dashed var(--line, #cfd6e6); border-radius: 12px; background: var(--surface-soft, #f6f8fd); }
+.detail-numbers-later p { margin: 6px 0 0; color: var(--muted, #5b6479); }
+.planned-games .generator-cost { margin-top: 8px; }

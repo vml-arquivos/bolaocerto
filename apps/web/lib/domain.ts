@@ -23,7 +23,7 @@ export type PublicPool = {
   regrasVenda?: PoolSalesRules;
   jogos?: Array<{ id: string; ordem: number; numeros: number[] }>;
   transparencia?: PoolTransparency | null;
-  precificacao?: { ticketPerShare?: number; feePerShare?: number; quotaCents?: number } | null;
+  precificacao?: { ticketPerShare?: number; feePerShare?: number; quotaCents?: number; dezenasPrevistas?: number; jogosPrevistos?: number } | null;
   grupo?: { nome: string; slug: string; descricao: string | null };
 };
 

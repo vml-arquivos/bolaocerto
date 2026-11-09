@@ -59,3 +59,53 @@ test('registro, taxa e o que fica no bolão sempre fecham com o total arrecadado
     assert.equal(p.surplusCents, p.ticketPerShare * p.shares - p.costCents);
   }
 });
+
+const mega9 = { costCents: 50400, shares: 10 };
+const modo = (o) => planPricing({ ...mega9, quotaMode: 'total', quotaValue: '', feeMode: 'acrescimo', feeValue: '10', ...o });
+
+test('novo modo: % sobre o total do registro e depois ÷ cotas (R$ 504 + 10% em 10 cotas = R$ 55,44)', () => {
+  const p = modo({});
+  assert.ok(p.ok);
+  assert.equal(p.quotaCents, 5544);
+  assert.equal(p.totalCents, 55440);
+  assert.equal(p.registroPerShare, 5040);
+  assert.equal(p.feePerShare, 504);
+  assert.equal(p.modoPreco, 'total');
+  assert.equal(p.precoPct, 10);
+  assert.equal(modo({ shares: 7 }).quotaCents, Math.ceil(55440 / 7));
+});
+
+test('novo modo também aceita um valor em reais somado ao total do registro', () => {
+  const p = modo({ feeMode: 'total', feeValue: '60' });
+  assert.ok(p.ok);
+  assert.equal(p.quotaCents, 5640);
+  assert.equal(p.modoPreco, undefined);
+  assert.equal(modo({ feeMode: 'pct', feeValue: '10' }).ok, false);
+  assert.equal(modo({ feeValue: '101' }).ok, false);
+  assert.equal(modo({ costCents: 0 }).ok, false);
+});
+
+test('modo existente: registro ÷ cotas e a % em cima de cada cota (R$ 50,40 + 10% = R$ 55,44)', () => {
+  const p = modo({ quotaMode: 'registro' });
+  assert.ok(p.ok);
+  assert.equal(p.quotaCents, 5544);
+  assert.equal(p.modoPreco, 'por_cota');
+  assert.equal(modo({ quotaMode: 'registro', shares: 7 }).quotaCents, 7200 + 720);
+});
+
+test('modo manual: valor da cota digitado', () => {
+  const p = modo({ quotaMode: 'digitar', quotaValue: '60', feeMode: 'sobra', feeValue: '' });
+  assert.ok(p.ok);
+  assert.equal(p.quotaCents, 6000);
+  assert.equal(p.modoPreco, 'manual');
+  assert.equal(modo({ quotaMode: 'digitar', quotaValue: '60' }).ok, false);
+});
+
+test('em todos os modos o total arrecadado cobre o registro e a soma fecha', () => {
+  for (const o of [{}, { quotaMode: 'registro' }, { shares: 13, feeValue: '12,5' }, { shares: 3, costCents: 999 }]) {
+    const p = modo(o);
+    assert.ok(p.ok);
+    assert.ok(p.totalCents >= p.costCents);
+    assert.equal(p.ticketPerShare * p.shares + p.feeTotalCents, p.totalCents);
+  }
+});

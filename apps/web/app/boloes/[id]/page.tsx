@@ -59,7 +59,9 @@ export default async function PoolPage({ params }: { params: Promise<{ id: strin
 {pool.concurso?.valorEstimadoPremio && <div className="detail-prize-banner"><span>Prêmio estimado</span><strong>{money(pool.concurso?.valorEstimadoPremio)}</strong>{pool.concurso?.acumulado && <small>Acumulado para o próximo concurso</small>}</div>}
 <div className="detail-quick"><div><small>Valor por cota</small><strong>{money(pool.valorCota)}</strong></div><div><small>Cotas livres</small><strong>{unlimited ? 'Ilimitadas' : `${pool.cotasDisponiveis} de ${pool.totalCotas}`}</strong></div></div>
 {!unlimited && <div className={`detail-progress progress-block ${progressState}`}><div className="progress" aria-label={`${progress}% das cotas preenchidas`}><i style={{ width: `${progress}%` }} /></div></div>}
-<PoolNumbers games={games.map((game) => ({ ordem: game.ordem, numeros: game.numeros }))} name={pool.grupo?.nome ?? 'Bolão BL'} />
+{games.length === 0
+  ? <div className="detail-numbers-later" role="note"><strong>Os números deste bolão ainda não foram definidos</strong><p>{pool.precificacao?.jogosPrevistos ? `Serão ${pool.precificacao.jogosPrevistos} ${pool.precificacao.jogosPrevistos === 1 ? 'jogo' : 'jogos'}${pool.precificacao.dezenasPrevistas ? ` de ${pool.precificacao.dezenasPrevistas} números` : ''}. ` : ''}Os jogos são informados aqui antes do fechamento das apostas, e quem comprou cota é avisado. O comprovante do registro é enviado depois.</p></div>
+  : <PoolNumbers games={games.map((game) => ({ ordem: game.ordem, numeros: game.numeros }))} name={pool.grupo?.nome ?? 'Bolão BL'} />}
 {!['loteca', 'supersete'].includes(pool.concurso?.modalidade ?? '') && pool.concurso?.modalidade && <p className="muted"><Link className="text-link" href={`/estatisticas/${pool.concurso.modalidade}`}>Ver estatísticas de {modalityNames[pool.concurso.modalidade] ?? 'esta modalidade'}</Link></p>}
 {pool.transparencia && <details className="pool-follow" open={settled}><summary>Acompanhar este bolão</summary><PoolTransparency pool={pool} /></details>}
 {!withinSaleWindow(pool, now) && <PoolHistory pools={[pool]} />}
