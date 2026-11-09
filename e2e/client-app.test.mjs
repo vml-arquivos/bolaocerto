@@ -39,7 +39,7 @@ test('app do cliente: carrossel, todos os números, compra sem repetir dados e c
 
     // Cliente novo entra e vê os bolões em carrossel.
     const cpf = randomCpf();
-    await api('POST', '/auth/registrar', { nome: 'Ana Carolina Teste', cpf, email: `app.${Date.now()}@teste.local`, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' });
+    await api('POST', '/auth/registrar', { nome: 'Ana Carolina Teste', cpf, email: `app.${Date.now()}@teste.local`, telefone: '11912345678', maiorDeIdade: true, aceiteTermos: true, aceitePrivacidade: true, senha: 'Senha123', confirmarSenha: 'Senha123' });
     await page.goto(`${BASE}/aplicativo`, { waitUntil: 'load', timeout: 90000 });
     await page.waitForSelector('.carousel-track .slide', { timeout: 30000 });
     assert.ok(await page.locator('.carousel-track .slide').count() >= 1, 'há bolões no carrossel');

@@ -162,6 +162,30 @@ test('preço livre: cota de R$ 20 com registro de R$ 60 em 100 cotas, taxa de se
   assert.equal(Number(row.indicadores.receitaPrevista), 2000);
 });
 
+test('cadastro exige repetir a senha e aceitar termos, LGPD e 18 anos; o aceite fica registrado', async () => {
+  const cpfDigits = () => { const n = Array.from({ length: 9 }, () => Math.floor(Math.random() * 9)); const d = (len) => { const sum = n.slice(0, len).reduce((a, v, i) => a + v * (len + 1 - i), 0); const r = (sum * 10) % 11; return r === 10 ? 0 : r; }; n.push(d(9)); n.push(d(10)); return n.join(''); };
+  const base = () => ({ nome: 'Pessoa Termos', cpf: cpfDigits(), email: `termos.${Date.now()}.${Math.floor(Math.random() * 1e6)}@teste.local`, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123', confirmarSenha: 'Senha123', aceiteTermos: true, aceitePrivacidade: true });
+  const jar = { cookie: '' };
+  assert.equal((await call('POST', '/auth/registrar', { ...base(), aceiteTermos: false }, {}, jar)).status, 400, 'sem aceitar os termos');
+  assert.equal((await call('POST', '/auth/registrar', { ...base(), aceitePrivacidade: undefined }, {}, jar)).status, 400, 'sem aceitar a LGPD');
+  const mismatch = await call('POST', '/auth/registrar', { ...base(), confirmarSenha: 'Outra1234' }, {}, jar);
+  assert.equal(mismatch.status, 409); assert.match(JSON.stringify(mismatch.data), /senhas não são iguais/);
+  const noAdult = await call('POST', '/auth/registrar', { ...base(), maiorDeIdade: false }, {}, jar);
+  assert.equal(noAdult.status, 409, 'sem declarar 18 anos');
+  ok(await call('POST', '/auth/registrar', base(), {}, jar), 'cadastro completo');
+  const pending = await call('GET', '/conta/aceites-pendentes', null, {}, jar);
+  ok(pending, 'pendências'); assert.deepEqual(pending.data.pendentes, []);
+  const mine = await call('GET', '/conta/contratos', null, {}, jar);
+  ok(mine, 'contratos'); assert.deepEqual(mine.data.afiliacao.map((row) => row.tipo).sort(), ['privacidade', 'termos']);
+  // Conta antiga (o administrador de teste nunca aceitou): fica pendente até aceitar.
+  const before = await call('GET', '/conta/aceites-pendentes');
+  ok(before, 'pendências do admin'); assert.equal(before.data.pendentes.length, 2);
+  assert.equal((await call('POST', '/conta/aceites', { termos: true, privacidade: true, maiorDeIdade: false })).status, 400);
+  ok(await call('POST', '/conta/aceites', { termos: true, privacidade: true, maiorDeIdade: true }), 'aceitar');
+  assert.deepEqual((await call('GET', '/conta/aceites-pendentes')).data.pendentes, []);
+  const doc = await call('GET', '/config/contratos/termos'); ok(doc, 'documento termos'); assert.equal(doc.data.tipo, 'termos');
+});
+
 test('bolão de data festiva: abre a venda sem números e define os jogos depois', async () => {
   const noNumbers = await call('POST', '/admin/boloes', {
     concursoId: state.contestId, grupoId: state.groupId, numerosApostados: [],

@@ -44,7 +44,7 @@ test('compra pelo site: checkout com QR Code, confirmação automática e volta 
 
     // Comprador cria a conta e abre o bolão.
     const cpf = randomCpf();
-    await api('POST', '/auth/registrar', { nome: 'Comprador Checkout', cpf, email: `checkout.${Date.now()}@teste.local`, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' });
+    await api('POST', '/auth/registrar', { nome: 'Comprador Checkout', cpf, email: `checkout.${Date.now()}@teste.local`, telefone: '11912345678', maiorDeIdade: true, aceiteTermos: true, aceitePrivacidade: true, senha: 'Senha123', confirmarSenha: 'Senha123' });
     const poolPage = `/boloes/${pool.id}`;
     await page.goto(BASE + poolPage, { waitUntil: 'load', timeout: 90000 });
     await page.waitForSelector('.purchase-card form');

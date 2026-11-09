@@ -8,10 +8,17 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { approvedDocument, legalDocument } from './documents';
+import { pendingAccountDocuments, recordAccountAcceptances } from './account-acceptance';
 export class AcceptLegalDto {
   @IsString() @Length(64, 64) hash!: string;
   @Equals(true) aceito!: boolean;
 }
+export class AcceptAccountDto {
+  @Equals(true, { message: 'Aceite os Termos de Uso.' }) termos!: boolean;
+  @Equals(true, { message: 'Aceite a Política de Privacidade (LGPD).' }) privacidade!: boolean;
+  @Equals(true, { message: 'Confirme que você tem 18 anos ou mais.' }) maiorDeIdade!: boolean;
+}
+
 @Controller()
 export class LegalController {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
@@ -35,6 +42,24 @@ export class LegalController {
       return { aceitoEm: accepted.aceitoEm, hash: accepted.hash };
     });
   }
+  /** Termos de uso e LGPD vigentes que a pessoa ainda não aceitou (cadastros antigos ou texto novo). */
+  @Get('conta/aceites-pendentes')
+  @UseGuards(JwtAuthGuard)
+  async pending(@CurrentUser() user: AuthUser) {
+    const pending = await pendingAccountDocuments(this.prisma, user.id);
+    return { pendentes: pending.map((doc) => ({ tipo: doc.tipo, versao: doc.versao, hash: doc.hash })) };
+  }
+
+  @Post('conta/aceites')
+  @UseGuards(JwtAuthGuard)
+  async acceptAccount(@CurrentUser() user: AuthUser, @Body() _dto: AcceptAccountDto, @Req() req: Request) {
+    return this.prisma.$transaction(async (tx) => {
+      await recordAccountAcceptances(tx, user.id, { ip: req.ip ?? req.socket.remoteAddress ?? 'unknown', userAgent: req.get('user-agent') });
+      await this.audit.record(tx, { entidade: 'usuario', entidadeId: user.id, evento: 'conta.termos_aceitos', atorId: user.id, payloadDepois: { maiorDeIdade: true } });
+      return { pendentes: [] };
+    });
+  }
+
   @Get('conta/contratos') @UseGuards(JwtAuthGuard)
   async mine(@CurrentUser() user: AuthUser) {
     const [participacoes, afiliacao] = await Promise.all([

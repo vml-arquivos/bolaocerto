@@ -13,7 +13,8 @@ export function PoolExtraInfo({ unitPrice, ticket, fee, feePct, operation }: { u
         <li><strong>Acompanhamento</strong> do status, do resultado e da premiação em <Link href="/minha-conta">Minhas cotas</Link>.</li>
       </ul>
       <nav aria-label="Documentos" className="pool-extra-links">
-        <Link href="/termos">Contrato de participação</Link>
+        <Link href="/contrato-participacao">Contrato de participação</Link>
+        <Link href="/termos">Termos de uso</Link>
         <Link href="/privacidade">Privacidade</Link>
         <Link href="/jogo-responsavel">Jogo responsável</Link>
       </nav>

@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
+import { Equals, IsBoolean, IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
 import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from './password-policy';
 
 export class RegisterDto {
@@ -32,6 +32,19 @@ export class RegisterDto {
   @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE })
   @Matches(NEW_PASSWORD_PATTERN, { message: NEW_PASSWORD_MESSAGE })
   senha!: string;
+
+  /** Repetir a senha evita erro de digitação no cadastro. */
+  @IsString()
+  @Length(1, 128, { message: 'Repita a senha.' })
+  confirmarSenha!: string;
+
+  /** Aceite dos Termos de Uso. */
+  @Equals(true, { message: 'Aceite os Termos de Uso para criar a conta.' })
+  aceiteTermos!: boolean;
+
+  /** Ciência da Política de Privacidade (LGPD). */
+  @Equals(true, { message: 'Aceite a Política de Privacidade (LGPD) para criar a conta.' })
+  aceitePrivacidade!: boolean;
 
   @IsOptional()
   @IsString()

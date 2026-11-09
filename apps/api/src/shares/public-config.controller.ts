@@ -9,7 +9,7 @@ export class PublicConfigController {
   }
   @Get('contratos/:tipo')
   document(@Param('tipo') kind: string) {
-    if (!['participacao', 'privacidade', 'afiliado'].includes(kind)) throw new NotFoundException('Documento não encontrado.');
+    if (!['participacao', 'privacidade', 'afiliado', 'termos'].includes(kind)) throw new NotFoundException('Documento não encontrado.');
     return legalDocument(kind as LegalKind);
   }
 }

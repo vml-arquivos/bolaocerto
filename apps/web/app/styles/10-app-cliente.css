@@ -160,3 +160,13 @@
   .detail-prize-banner strong { font-size: 1.7rem; }
   .share-pool-button { min-height: 36px; font-size: .82rem; padding: 0 12px; }
 }
+
+/* Cadastro: aceites obrigatórios */
+.register-accepts { border: 0; padding: 0; margin: 4px 0 8px; min-width: 0; }
+
+/* Aceite de termos para contas já existentes */
+.legal-gate { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: rgba(4, 8, 24, 0.72); }
+.legal-gate-card { width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow: auto; padding: 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4); }
+.legal-gate-card h2 { margin: 0 0 6px; font-size: 20px; }
+.legal-gate-card > p { margin: 0 0 14px; color: var(--muted, inherit); }
+.legal-gate-card .button { width: 100%; margin-top: 6px; }

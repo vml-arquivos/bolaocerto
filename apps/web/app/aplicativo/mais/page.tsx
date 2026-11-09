@@ -4,10 +4,12 @@ import { SiteHeader } from '../../../components/site-header';
 import { InstallAppButton } from '../../../components/pwa-register';
 export const metadata = { title: 'Mais' };
 const links: Array<[string, string, string]> = [
-  ['/minha-conta?aba=conta', 'Minha conta', 'Dados, avisos, limite de gastos e senha'],
+  ['/minha-conta?aba=conta', 'Minha conta', 'Dados, avisos e limite de gastos'],
+  ['/minha-conta?aba=conta&abrir=senha', 'Alterar senha', 'Troque a senha de acesso'],
   ['/minha-conta/contratos', 'Contratos e aceites', 'Os contratos que você aceitou'],
   ['/resultados', 'Resultados', 'Concursos e histórico'],
-  ['/termos', 'Contrato de participação', 'Leia antes de comprar'],
+  ['/termos', 'Termos de uso', 'Regras de uso da plataforma'],
+  ['/contrato-participacao', 'Contrato de participação', 'Leia antes de comprar'],
   ['/privacidade', 'Privacidade', 'Como cuidamos dos seus dados'],
   ['/jogo-responsavel', 'Jogo responsável', 'Limites e ajuda'],
   ['/instalar', 'Instalar no celular', 'Android e iPhone'],

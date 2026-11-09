@@ -174,7 +174,7 @@ export function AccountDashboard() {
       <Row title="Avisos no celular" icon="bell"><PushToggle /></Row>
       <Row title="Limite de gastos" icon="gauge"><ResponsiblePlayCard /></Row>
       <Row title="Comprovantes" icon="receipt"><ReceiptsCard /></Row>
-      <Row title="Alterar senha" icon="lock"><PasswordCard /></Row>
+      <Row title="Alterar senha" icon="lock" open={params.get('abrir') === 'senha'}><PasswordCard /></Row>
       {isStaff && <Row title="Verificação em duas etapas" icon="shield"><TwoFactorCard role={user?.papel} /></Row>}
       <Link className="app-row-link" href="/minha-conta/contratos"><Icon name="doc" /><span>Contratos e aceites</span><span aria-hidden="true">›</span></Link>
       <Row title="Privacidade e dados" icon="shield"><PrivacyCard /></Row>

@@ -16,13 +16,19 @@ describe('new password policy (mínimo 6, com letra e número)', () => {
     expect(isValidNewPassword(password)).toBe(false);
   });
 
+  it('o cadastro exige repetir a senha e aceitar termos e LGPD', async () => {
+    const dto = Object.assign(new RegisterDto(), { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', telefone: '11912345678', senha: 'abc123' });
+    const props = (await validate(dto)).map((e) => e.property);
+    expect(props).toEqual(expect.arrayContaining(['confirmarSenha', 'aceiteTermos', 'aceitePrivacidade']));
+  });
+
   it('rejects absurdly long values (hash abuse guard)', () => {
     expect(isValidNewPassword('a1' + 'x'.repeat(200))).toBe(false);
   });
 
   it('the registration DTO enforces the same rule', async () => {
     const base = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', dataNascimento: '1990-01-01', telefone: '11912345678' };
-    const make = (senha: string) => Object.assign(new RegisterDto(), { ...base, senha });
+    const make = (senha: string) => Object.assign(new RegisterDto(), { ...base, senha, confirmarSenha: senha, aceiteTermos: true, aceitePrivacidade: true });
     expect(await validate(make('abc123'))).toHaveLength(0);
     expect((await validate(make('123456'))).some(e => e.property === 'senha')).toBe(true);
     expect((await validate(make('abcdef'))).some(e => e.property === 'senha')).toBe(true);

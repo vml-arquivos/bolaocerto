@@ -16,6 +16,15 @@ function randomCpf() {
   const first = digit(base); return [...base, first, digit([...base, first])].join('');
 }
 
+// Conta antiga (criada pelo administrador) vê a janela de aceite de termos no primeiro acesso: aceita pela tela.
+async function acceptLegalGate(page) {
+  const gate = page.locator('.legal-gate');
+  try { await gate.waitFor({ state: 'visible', timeout: 8000 }); } catch { return; }
+  for (const name of ['termos', 'privacidade', 'maiorDeIdade']) await gate.locator(`input[name="${name}"]`).check();
+  await gate.locator('button.button-primary').click();
+  await gate.waitFor({ state: 'hidden', timeout: 15000 });
+}
+
 test('app do afiliado: entrada, manifesto, abas pela URL, aba Cotas e bloqueio de cliente', async () => {
   const browser = await chromium.launch();
   try {
@@ -43,7 +52,7 @@ test('app do afiliado: entrada, manifesto, abas pela URL, aba Cotas e bloqueio d
 
     const buyer = await browser.newContext(); const buyerPage = await buyer.newPage();
     const buyerCpf = randomCpf(); const buyerEmail = `cliente.app.${stamp}@teste.local`;
-    await call(buyerPage, 'POST', '/auth/registrar', { nome: 'Cliente Silva Souza', cpf: buyerCpf, email: buyerEmail, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' });
+    await call(buyerPage, 'POST', '/auth/registrar', { nome: 'Cliente Silva Souza', cpf: buyerCpf, email: buyerEmail, telefone: '11912345678', maiorDeIdade: true, aceiteTermos: true, aceitePrivacidade: true, senha: 'Senha123', confirmarSenha: 'Senha123' });
     const terms = await call(buyerPage, 'GET', '/config/mandato');
     await call(buyerPage, 'POST', '/cotas/reservar', { aceitoTermos: true, bolaoId: pool.id, quantidade: 2, titularCpf: buyerCpf, titularNome: 'Cliente Silva Souza', termoMandatoHash: terms.hash, codigoAfiliado: affiliate.codigoAfiliado });
 
@@ -67,6 +76,7 @@ test('app do afiliado: entrada, manifesto, abas pela URL, aba Cotas e bloqueio d
     await page.fill('#email', affiliateEmail); await page.fill('#senha', 'Senha123');
     await page.click('form button.button-primary');
     await page.waitForURL((url) => url.pathname === '/afiliado', { timeout: 30000 });
+    await acceptLegalGate(page);
     await page.waitForSelector('.aff-bottomnav', { timeout: 30000 });
     assert.equal(await page.getAttribute('link[rel=manifest]', 'href'), '/afiliado/manifest.webmanifest');
     assert.ok(!(await page.isVisible('.client-app-nav')), 'a barra do app do cliente não aparece no app do afiliado');

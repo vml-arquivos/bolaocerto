@@ -102,6 +102,15 @@ test('painel: banco de números guarda um jogo digitado', async () => {
   await context.close();
 });
 
+// Conta antiga (criada pelo administrador) vê a janela de aceite de termos no primeiro acesso: aceita pela tela.
+async function acceptLegalGate(page) {
+  const gate = page.locator('.legal-gate');
+  try { await gate.waitFor({ state: 'visible', timeout: 8000 }); } catch { return; }
+  for (const name of ['termos', 'privacidade', 'maiorDeIdade']) await gate.locator(`input[name="${name}"]`).check();
+  await gate.locator('button.button-primary').click();
+  await gate.waitFor({ state: 'hidden', timeout: 15000 });
+}
+
 test('afiliado: entra pelo site e abre todas as abas do painel dele', async () => {
   const { context, page, problems } = await open({ width: 1280, height: 800 });
   // O administrador cadastra o afiliado (pela mesma sessão do navegador).
@@ -122,6 +131,7 @@ test('afiliado: entra pelo site e abre todas as abas do painel dele', async () =
   await page.fill('#senha', 'Senha123');
   await Promise.all([page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 60000 }), page.click('button.button-primary')]);
   await page.goto(BASE + '/afiliado', { waitUntil: 'load', timeout: 90000 });
+  await acceptLegalGate(page);
   await page.waitForSelector('.aff-tabs', { timeout: 60000 });
   await page.waitForSelector('.affiliate-kpis', { timeout: 60000 });
   for (const name of ['Início', 'Cotas', 'Vendas', 'Bolões', 'Grupos', 'Comissões']) {

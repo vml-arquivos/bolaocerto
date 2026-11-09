@@ -48,7 +48,7 @@ test('prepara: administrador, afiliado, bolão publicado e comprador', async () 
   ok(await call('POST', `/admin/boloes/${state.poolId}/publicar`), 'publicar');
 
   state.cpf = randomCpf();
-  ok(await call('POST', '/auth/registrar', { nome: 'Comprador Teste', cpf: state.cpf, email: `comprador.${stamp}@teste.local`, telefone: '11912345678', maiorDeIdade: true, senha: 'Senha123' }, buyer), 'cadastrar comprador');
+  ok(await call('POST', '/auth/registrar', { nome: 'Comprador Teste', cpf: state.cpf, email: `comprador.${stamp}@teste.local`, telefone: '11912345678', maiorDeIdade: true, aceiteTermos: true, aceitePrivacidade: true, senha: 'Senha123', confirmarSenha: 'Senha123' }, buyer), 'cadastrar comprador');
   if (!buyer.cookie) ok(await call('POST', '/auth/login', { email: `comprador.${stamp}@teste.local`, senha: 'Senha123' }, buyer), 'login comprador');
 });
 

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import { legalDocument } from '../legal/documents';
+import { recordAccountAcceptances } from '../legal/account-acceptance';
 import * as argon2 from 'argon2';
 import { AuditService } from '../common/audit.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
@@ -48,6 +49,7 @@ export class AuthService {
       throw new ConflictException('Confirme que você tem 18 anos ou mais para criar a conta.');
     }
     if (!isValidNewPassword(dto.senha)) throw new ConflictException(NEW_PASSWORD_MESSAGE);
+    if (dto.confirmarSenha !== dto.senha) throw new ConflictException('As senhas não são iguais. Digite a mesma senha nos dois campos.');
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
@@ -88,6 +90,7 @@ export class AuthService {
         },
         select: { id: true, email: true, papel: true },
       });
+      await recordAccountAcceptances(tx, created.id, meta);
       if (invite?.tipo === 'afiliado') {
         // Convite feito por um administrador já vale como aprovação, com a comissão que ele definiu.
         const approvedByAdmin = invite.criadoPorUsuario?.papel === 'admin';

@@ -77,3 +77,5 @@
   .draw-strip { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .home-slide { transition: none; } .draw-chip, .draw-chip:hover { transition: none; transform: none; } }
+.faq-list .faq-answer { padding-bottom: 14px; }
+.faq-list .faq-answer p { margin: 0 0 10px; }

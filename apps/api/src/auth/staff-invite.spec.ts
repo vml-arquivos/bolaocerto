@@ -10,7 +10,7 @@ function setup(invite: unknown, createdPapel = 'operacao') {
     usuario: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'u1', email: 'equipe@example.com', papel: createdPapel }) },
     afiliado: { findUnique: jest.fn().mockResolvedValue(null) },
     convite: { findFirst: jest.fn().mockResolvedValue(invite), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
-    grupo: { findFirst: jest.fn() }, grupoMembro: { upsert: jest.fn() }, notificacao: { create: jest.fn() },
+    grupo: { findFirst: jest.fn() }, grupoMembro: { upsert: jest.fn() }, notificacao: { create: jest.fn() }, aceiteLegal: { upsert: jest.fn() },
   };
   prisma.$transaction = jest.fn(async (callback: (tx: any) => unknown) => callback(prisma));
   const audit = { record: jest.fn() };
@@ -19,7 +19,7 @@ function setup(invite: unknown, createdPapel = 'operacao') {
   return { service: new AuthService(prisma, jwt as any, config as any, audit as any), prisma, audit };
 }
 
-const dto = { nome: 'Pessoa Equipe', cpf: '52998224725', email: 'equipe@example.com', dataNascimento: '1990-01-01', telefone: '11912345678', senha: 'Senha2026', codigoAfiliado: 'OP-ABC' };
+const dto = { nome: 'Pessoa Equipe', cpf: '52998224725', email: 'equipe@example.com', dataNascimento: '1990-01-01', telefone: '11912345678', senha: 'Senha2026', confirmarSenha: 'Senha2026', aceiteTermos: true, aceitePrivacidade: true, codigoAfiliado: 'OP-ABC' };
 const invite = (tipo: string, creator: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ id: 'inv1', tipo, afiliadoOrigemId: null, grupoId: null, emailDestino: null, comissaoPct: null, criadoPorUsuario: { id: 'adm1', papel: 'admin', email: 'outro@x.com', desativadoEm: null, ...creator }, ...extra });
 
 describe('cadastro pelo link da equipe', () => {
