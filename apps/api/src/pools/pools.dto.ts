@@ -101,6 +101,36 @@ export class CreatePoolDto {
   @Max(1_000_000_000)
   custoRegistroCentavos?: number;
 
+  /**
+   * Como o valor da cota foi montado. 'total' = % sobre o valor TOTAL do registro, dividido pelas cotas;
+   * 'por_cota' = registro ÷ cotas e a % em cima de cada cota; 'manual' = valor da cota digitado.
+   * O servidor refaz a conta e recusa se o valor enviado não bater.
+   */
+  @IsOptional()
+  @IsIn(['total', 'por_cota', 'manual'])
+  modoPreco?: 'total' | 'por_cota' | 'manual';
+
+  /** Porcentagem usada nos modos 'total' e 'por_cota' (0 a 100). */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  precoPct?: number;
+
+  /** Bolão sem números ainda: quantidade de números de cada jogo. O custo do registro vem da tabela da CAIXA. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  dezenasPrevistas?: number;
+
+  /** Bolão sem números ainda: quantos jogos serão registrados (de 1 a 100). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  jogosPrevistos?: number;
+
   @IsEnum(['mandato', 'loterica_parceira'])
   modeloOperacional!: 'mandato' | 'loterica_parceira';
 

@@ -378,6 +378,31 @@ function randomCpf() {
   return [...base, first, second].join('');
 }
 
+test('modos de preço: Mega de 9 números sem jogos custa R$ 504 e a cota sai de 10% sobre o total', async () => {
+  const base = { concursoId: state.contestId, grupoId: state.groupId, numerosApostados: [], cotasIlimitadas: false, totalCotas: 10, modeloOperacional: 'mandato', precoLivre: true, numerosADefinir: true, vendaAntecipada: true, dezenasPrevistas: 9, jogosPrevistos: 1 };
+  const total = await call('POST', '/admin/boloes', { ...base, valorCota: 55.44, taxaAdministracaoPct: 10, taxaPorCotaCentavos: 504, modoPreco: 'total', precoPct: 10, totalCotadoCentavos: 55440 });
+  ok(total, 'criar bolão sem números pelo modo total');
+  assert.equal(total.data.precificacao.costCents, 50400, 'registro da Mega com 9 números pela tabela');
+  assert.equal(total.data.precificacao.quotaCents, 5544);
+  assert.equal(total.data.precificacao.modoPreco, 'total');
+  assert.equal(total.data.precificacao.dezenasPrevistas, 9);
+  assert.equal(total.data.valorCota, '55.44');
+  assert.equal(total.data.numerosDefinidos, false);
+  const wrong = await call('POST', '/admin/boloes', { ...base, valorCota: 56, taxaAdministracaoPct: 10, taxaPorCotaCentavos: 560, modoPreco: 'total', precoPct: 10 });
+  assert.equal(wrong.status, 409, 'valor que não bate com o modo é recusado pelo servidor');
+  const perQuota = await call('POST', '/admin/boloes', { ...base, valorCota: 55.44, taxaAdministracaoPct: 10, taxaPorCotaCentavos: 504, modoPreco: 'por_cota', precoPct: 10 });
+  ok(perQuota, 'criar pelo modo registro ÷ cotas + % em cada cota');
+  assert.equal(perQuota.data.precificacao.ticketPerShare, 5040);
+  const bad = await call('POST', '/admin/boloes', { ...base, dezenasPrevistas: 5, valorCota: 20, taxaAdministracaoPct: 10, taxaPorCotaCentavos: 200 });
+  assert.ok([400, 409].includes(bad.status), 'Mega não vende jogo de 5 números');
+  const nine = await call('POST', `/admin/boloes/${total.data.id}/publicar`);
+  ok(nine, 'publicar');
+  const defined = await call('POST', `/admin/boloes/${total.data.id}/numeros`, { jogos: [{ ordem: 1, numeros: [1, 5, 9, 14, 22, 31, 40, 47, 58] }] });
+  ok(defined, 'definir os 9 números');
+  assert.equal(defined.data.jogos[0].custo, '504.00');
+  assert.equal(defined.data.aviso, null);
+});
+
 test('afiliado: cadastro pelo admin, aprovação, painel e comissões', async () => {
   const stamp = Date.now();
   const email = `afiliado.${stamp}@teste.local`;

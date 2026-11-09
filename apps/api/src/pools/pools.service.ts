@@ -3,7 +3,7 @@ import { StorageService } from '../attachments/storage.service';
 import { assessPoolDeletion } from './pool-deletion';
 import { approvedDocument } from '../legal/documents';
 import { notifyModalityWatchers } from '../alerts/modality-alerts';
-import { splitPoolByFee, splitPoolByQuota } from '../pricing/pricing.engine';
+import { perQuotaPctQuota, splitPool, splitPoolByFee, splitPoolByQuota, splitPoolByTotalPct, totalPctQuota } from '../pricing/pricing.engine';
 import { PricingService } from '../pricing/pricing.service';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
@@ -108,11 +108,16 @@ export class PoolsService {
     if (contest.cutoffAt <= new Date()) throw new ConflictException('O concurso já passou do cutoff.');
     const free = dto.precoLivre === true;
     const pendingNumbers = dto.numerosADefinir === true;
+    // Modos de preço (total, por cota, manual) para quem não usa o valor livre do administrador, como o afiliado.
+    const modal = !free && dto.modoPreco !== undefined;
+    const planned = dto.dezenasPrevistas !== undefined && dto.jogosPrevistos !== undefined;
+    if ((dto.dezenasPrevistas === undefined) !== (dto.jogosPrevistos === undefined)) throw new ConflictException('Informe a quantidade de números e a quantidade de jogos.');
+    if (planned && !pendingNumbers) throw new ConflictException('A quantidade de números e de jogos só vale para bolão com números a definir.');
     if (pendingNumbers) {
-      if (user.papel !== 'admin') throw new ForbiddenException('Somente o administrador cria bolão com números a definir.');
-      if (!free) throw new ConflictException('Bolão com números a definir usa o valor livre da cota: informe o custo estimado do registro, o valor da cota e a taxa.');
+      if (free && user.papel !== 'admin') throw new ForbiddenException('Somente o administrador cria bolão com números a definir.');
+      if (!free && !modal) throw new ConflictException('Bolão com números a definir usa o valor livre da cota: informe o custo estimado do registro, o valor da cota e a taxa.');
       if (dto.precificacaoAutomatica) throw new ConflictException('Sem os números não dá para calcular o custo automático. Informe o custo estimado do registro.');
-      if (!dto.custoRegistroCentavos || dto.custoRegistroCentavos <= 0) throw new ConflictException('Informe o custo estimado do registro dos jogos.');
+      if (!planned && (!free || !dto.custoRegistroCentavos || dto.custoRegistroCentavos <= 0)) throw new ConflictException(free ? 'Informe o custo estimado do registro dos jogos.' : 'Informe a quantidade de números e de jogos para calcular o custo estimado do registro.');
       if (dto.jogos?.length || dto.numerosApostados?.length) throw new ConflictException('Bolão com números a definir não leva jogos agora. Defina os números depois, no próprio bolão.');
     }
     if (free && user.papel !== 'admin') throw new ForbiddenException('O valor livre da cota é definido pelo administrador.');
@@ -128,29 +133,65 @@ export class PoolsService {
     if (!group) throw new NotFoundException(affiliate ? 'Grupo não encontrado na sua área de afiliado.' : 'Grupo não encontrado.');
     if (affiliate && dto.totalCotas !== undefined) await this.assertWithinGroupCapacity(group.id, dto.totalCotas, contest.config.minCotasBolao);
 
-    const quote = dto.precificacaoAutomatica && !free ? await this.quote(dto) : null;
+    const quote = dto.precificacaoAutomatica && !free && !modal ? await this.quote(dto) : null;
     if (quote && dto.totalCotadoCentavos !== undefined && dto.totalCotadoCentavos !== quote.totalCents) throw new ConflictException('O preço mudou. Refaça a cotação antes de salvar.');
+    // Bolão sem números: o custo do registro sai da tabela da CAIXA pela quantidade de números e de jogos.
+    const plannedCost = pendingNumbers && planned ? await this.planCost(contest.modalidade, dto.dezenasPrevistas!, dto.jogosPrevistos!) : null;
     // Preço livre: custo do registro (tabela da CAIXA ou valor informado) é só referência; a cota é a do administrador e a sobra é a taxa de serviço.
     let costWarning: string | null = null;
-    let freePricing: ReturnType<typeof splitPoolByQuota> & { modo: 'livre'; modalidade: string; jogos?: Array<Record<string, unknown>> } | null = null;
+    type CustomPricing = ReturnType<typeof splitPoolByQuota> & { modo?: 'livre'; modoPreco?: string; precoPct?: number; modalidade: string; jogos?: Array<Record<string, unknown>> };
+    let freePricing: CustomPricing | null = null;
     let freeGames: Array<{ ordem: number; numeros: number[]; quantidadeDezenas: number; custo: number }> | null = null;
-    if (free) {
-      if (!dto.totalCotas) throw new ConflictException('O preço livre exige um total finito de cotas.');
+    if (free || modal) {
+      if (!dto.totalCotas) throw new ConflictException(free ? 'O preço livre exige um total finito de cotas.' : 'Informe o total de cotas.');
       let costCents: number;
-      if (dto.precificacaoAutomatica) {
+      if (plannedCost) {
+        costCents = plannedCost.custoTotalCentavos;
+      } else if (dto.precificacaoAutomatica) {
         if (!this.pricing) throw new NotFoundException('Precificador indisponível.');
         const priced = await this.pricing.priceGames(contest.modalidade, (dto.jogos?.length ? dto.jogos : [{ numeros: dto.numerosApostados }]).map((game) => ({ ...('selecao' in game ? (game as { selecao?: object }).selecao : {}), numeros: game.numeros })));
         costCents = priced.custoTotalCentavos;
         freeGames = priced.jogos.map((game) => ({ ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custoCentavos / 100 }));
+      } else if (modal) {
+        throw new ConflictException('Informe os jogos ou a quantidade de números e de jogos para calcular o custo do registro.');
       } else {
         const typed = pendingNumbers ? [] : this.normalizeGames(dto.jogos, dto.numerosApostados);
         costCents = dto.custoRegistroCentavos ?? Math.round(typed.reduce((sum, game) => sum + (game.custo ?? 0), 0) * 100);
         costWarning = await this.officialCostWarning(contest.modalidade, dto, costCents, pendingNumbers);
       }
       let split: ReturnType<typeof splitPoolByQuota>;
-      try { const quotaCents = Math.round(dto.valorCota * 100); split = dto.taxaPorCotaCentavos !== undefined ? splitPoolByFee(costCents, dto.totalCotas, quotaCents, dto.taxaPorCotaCentavos) : splitPoolByQuota(costCents, dto.totalCotas, quotaCents); } catch (error) { throw new ConflictException(error instanceof Error ? error.message : 'Preço inválido.'); }
+      try {
+        const quotaCents = Math.round(dto.valorCota * 100);
+        const bps = Math.round((dto.modoPreco === 'total' || dto.modoPreco === 'por_cota' ? (dto.precoPct ?? dto.taxaAdministracaoPct) : 0) * 100);
+        if (modal) {
+          if (dto.modoPreco === 'total') split = splitPoolByTotalPct(costCents, dto.totalCotas, bps);
+          else if (dto.modoPreco === 'por_cota') split = splitPoolByQuota(costCents, dto.totalCotas, perQuotaPctQuota(costCents, dto.totalCotas, bps));
+          else {
+            split = splitPoolByQuota(costCents, dto.totalCotas, quotaCents);
+            // Cota digitada pelo afiliado: não pode passar do que o teto de taxa da modalidade permitiria sobre o total do registro.
+            const cap = Math.min(Number(contest.config.taxaAdministracaoTetoPct), 35);
+            if (user.papel !== 'admin' && quotaCents > totalPctQuota(costCents, dto.totalCotas, Math.round(cap * 100))) throw new ConflictException(`Taxa de administração acima do teto da modalidade: a cota de R$ ${(quotaCents / 100).toFixed(2).replace('.', ',')} passa de ${String(cap).replace('.', ',')}% sobre o registro.`);
+          }
+        } else {
+          split = dto.taxaPorCotaCentavos !== undefined ? splitPoolByFee(costCents, dto.totalCotas, quotaCents, dto.taxaPorCotaCentavos) : splitPoolByQuota(costCents, dto.totalCotas, quotaCents);
+          // O valor digitado na tela precisa bater com o que o servidor calcula pelo modo escolhido.
+          if (dto.modoPreco === 'total' || dto.modoPreco === 'por_cota') {
+            if (dto.precoPct === undefined) throw new ConflictException('Informe a porcentagem do modo de preço escolhido.');
+            const expected = dto.modoPreco === 'total' ? totalPctQuota(costCents, dto.totalCotas, bps) : perQuotaPctQuota(costCents, dto.totalCotas, bps);
+            if (expected !== quotaCents) throw new ConflictException(`O valor da cota mudou: pelo modo escolhido ela fica em R$ ${(expected / 100).toFixed(2).replace('.', ',')}. Confira os valores e salve de novo.`);
+          }
+        }
+      } catch (error) { if (error instanceof ConflictException) throw error; throw new ConflictException(error instanceof Error ? error.message : 'Preço inválido.'); }
       if (dto.totalCotadoCentavos !== undefined && dto.totalCotadoCentavos !== split.totalCents) throw new ConflictException('O preço mudou. Confira os valores e salve de novo.');
-      freePricing = { modo: 'livre', modalidade: contest.modalidade, ...(pendingNumbers ? { numerosADefinir: true } : {}), ...(freeGames ? { jogos: freeGames as unknown as Array<Record<string, unknown>> } : {}), ...split };
+      freePricing = {
+        ...(free ? { modo: 'livre' as const } : {}),
+        ...(dto.modoPreco ? { modoPreco: dto.modoPreco, ...(dto.modoPreco !== 'manual' ? { precoPct: dto.precoPct ?? dto.taxaAdministracaoPct } : {}) } : {}),
+        modalidade: contest.modalidade,
+        ...(pendingNumbers ? { numerosADefinir: true } : {}),
+        ...(plannedCost ? { dezenasPrevistas: plannedCost.dezenas, jogosPrevistos: plannedCost.jogos, custoPorJogoCentavos: plannedCost.custoPorJogoCentavos } : {}),
+        ...(freeGames ? { jogos: freeGames as unknown as Array<Record<string, unknown>> } : {}),
+        ...split,
+      } as CustomPricing;
       if (freeGames && !['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(contest.modalidade)) throw new ConflictException('Matriz disponível para consulta; habilitação desta modalidade depende da apuração dos prognósticos adicionais.');
       if (freeGames && dto.modeloOperacional === 'loterica_parceira' && new Set(freeGames.map((game) => game.quantidadeDezenas)).size > 1) throw new ConflictException('Recibo de bolão Caixa exige jogos com a mesma quantidade de números. Separe os recibos.');
     }
@@ -165,7 +206,7 @@ export class PoolsService {
         data: {
           // O registro da lotérica não é pré-requisito: o bolão pode abrir a venda antes e o comprovante é anexado depois, no próprio bolão.
           comprovanteAntesVenda: false,
-          vendaAntecipada: dto.vendaAntecipada === true,
+          vendaAntecipada: dto.vendaAntecipada === true || pendingNumbers,
           ...rules,
           concursoId: dto.concursoId,
           grupoId: dto.grupoId,
@@ -334,9 +375,10 @@ export class PoolsService {
    * Só vale enquanto os números ainda não existem e o concurso ainda não fechou. Quem já comprou é avisado.
    */
   async defineNumbers(id: string, dto: DefinePoolNumbersDto, user: AuthUser) {
-    if (user.papel !== 'admin') throw new ForbiddenException('Somente administradores definem os números.');
+    if (!['admin', 'afiliado'].includes(user.papel)) throw new ForbiddenException('Somente administradores e afiliados definem os números.');
     const pool = await this.prisma.bolao.findUnique({ where: { id }, include: { concurso: { include: { resultado: true } }, jogos: true } });
     if (!pool) throw new NotFoundException('Bolão não encontrado.');
+    await this.assertCanManagePool(pool, user);
     if (pool.jogos.length > 0 || pool.numerosApostados.length > 0) throw new ConflictException('Os números deste bolão já foram definidos e não mudam depois de abertos à venda.');
     if (!(['rascunho', 'aberto', 'fechado'] as StatusBolao[]).includes(pool.status)) throw new ConflictException('Bolão não aceita mais a definição de números neste estado.');
     if (pool.concurso.cutoffAt <= new Date() || pool.concurso.resultado) throw new ConflictException('O concurso já fechou; não dá mais para definir os números.');
@@ -352,7 +394,14 @@ export class PoolsService {
     }
     const snapshot = (pool.precificacao ?? {}) as Record<string, unknown>;
     const declared = typeof snapshot.costCents === 'number' ? snapshot.costCents : null;
-    const aviso = pricedTotal !== null && declared !== null && pricedTotal > declared ? `O registro destes jogos custa R$ ${(pricedTotal / 100).toFixed(2).replace('.', ',')}, acima dos R$ ${(declared / 100).toFixed(2).replace('.', ',')} previstos na cota. Confira se a sobra da cota cobre a diferença.` : null;
+    // Bolão criado só com a quantidade de números e de jogos: os jogos informados precisam caber no que foi previsto.
+    const plannedGames = typeof snapshot.jogosPrevistos === 'number' ? snapshot.jogosPrevistos : null;
+    const plannedDezenas = typeof snapshot.dezenasPrevistas === 'number' ? snapshot.dezenasPrevistas : null;
+    if (user.papel === 'afiliado' && pricedTotal !== null && declared !== null && pricedTotal > declared) throw new ConflictException(`O registro destes jogos custa R$ ${(pricedTotal / 100).toFixed(2).replace('.', ',')}, acima dos R$ ${(declared / 100).toFixed(2).replace('.', ',')} previstos na cota. Use jogos com a quantidade de números prevista.`);
+    if (user.papel === 'afiliado' && plannedGames !== null && games.length !== plannedGames) throw new ConflictException(`Este bolão foi criado para ${plannedGames} ${plannedGames === 1 ? 'jogo' : 'jogos'}${plannedDezenas ? ` de ${plannedDezenas} números` : ''}. Informe exatamente essa quantidade.`);
+    const planNote = plannedGames !== null && games.length !== plannedGames ? `Foram previstos ${plannedGames} ${plannedGames === 1 ? 'jogo' : 'jogos'}${plannedDezenas ? ` de ${plannedDezenas} números` : ''} e você informou ${games.length}.` : null;
+    const costNote = pricedTotal !== null && declared !== null && pricedTotal > declared ? `O registro destes jogos custa R$ ${(pricedTotal / 100).toFixed(2).replace('.', ',')}, acima dos R$ ${(declared / 100).toFixed(2).replace('.', ',')} previstos na cota. Confira se a sobra da cota cobre a diferença.` : null;
+    const aviso = [costNote, planNote].filter(Boolean).join(' ') || null;
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${id}::uuid FOR UPDATE`;
       const current = await tx.bolao.findUniqueOrThrow({ where: { id }, include: { concurso: true } });
@@ -533,6 +582,12 @@ export class PoolsService {
   private selectionData(games: PoolGameDto[] | undefined, ordem: number): { selecao?: Prisma.InputJsonValue } {
     const raw = games?.find((game, index) => Number(game.ordem || index + 1) === ordem)?.selecao;
     return raw && typeof raw === 'object' && Object.keys(raw).length > 0 ? { selecao: raw as Prisma.InputJsonValue } : {};
+  }
+
+  /** Custo do registro de jogos sem números: quantidade de números e de jogos, pela tabela da CAIXA vigente. */
+  private async planCost(modalidade: string, dezenas: number, jogos: number) {
+    if (!this.pricing) throw new NotFoundException('Precificador indisponível.');
+    return this.pricing.priceByDezenas(modalidade, dezenas, jogos);
   }
 
   private normalizeGames(games: PoolGameDto[] | undefined, legacyNumbers: number[]): Array<{ ordem: number; numeros: number[]; quantidadeDezenas: number; custo?: number }> {

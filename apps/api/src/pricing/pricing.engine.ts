@@ -50,6 +50,35 @@ export function splitPool(costCents: number, shares: number, feeBps: number) {
     adminTotalCents: feePerShare * shares, totalCents: total };
 }
 /**
+ * Modo "% sobre o total do registro": soma a porcentagem ao valor TOTAL do registro e divide pelas cotas.
+ * Ex.: registro de R$ 504,00 + 10% = R$ 554,40; em 10 cotas, cada cota custa R$ 55,44. A cota é arredondada
+ * para cima (o centavo que sobra fica no bolão) e a divisão vem explicitada no resultado.
+ */
+export function totalPctQuota(costCents: number, shares: number, pctBps: number): number {
+  if (![costCents, shares, pctBps].every(Number.isSafeInteger) || costCents <= 0 || shares <= 0 || pctBps < 0 || pctBps > 10_000) throw new Error('Custo do registro, cotas ou porcentagem inválidos (a porcentagem vai de 0 a 100).');
+  return Math.ceil((costCents + Math.round(costCents * pctBps / 10_000)) / shares);
+}
+export function splitPoolByTotalPct(costCents: number, shares: number, pctBps: number) {
+  return splitPoolByQuota(costCents, shares, totalPctQuota(costCents, shares, pctBps));
+}
+/**
+ * Modo "registro ÷ cotas + % em cima de cada cota": o registro de cada cota (arredondado para cima) recebe o acréscimo.
+ * Ex.: R$ 504,00 em 10 cotas = R$ 50,40 por cota; com 10% a cota fica em R$ 55,44.
+ */
+export function perQuotaPctQuota(costCents: number, shares: number, pctBps: number): number {
+  if (![costCents, shares, pctBps].every(Number.isSafeInteger) || costCents <= 0 || shares <= 0 || pctBps < 0 || pctBps > 10_000) throw new Error('Custo do registro, cotas ou porcentagem inválidos (a porcentagem vai de 0 a 100).');
+  const ticketPerShare = Math.ceil(costCents / shares);
+  return ticketPerShare + Math.round(ticketPerShare * pctBps / 10_000);
+}
+/** Custo do registro de jogos ainda sem números: só a quantidade de dezenas e de jogos, pela tabela da CAIXA. */
+export const PLANNED_MODALITIES = ['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'] as const;
+export function plannedKey(modality: string, dezenas: number): string {
+  const rule = NUMBER_RULES[modality];
+  if (!rule || !(PLANNED_MODALITIES as readonly string[]).includes(modality)) throw new Error('Esta modalidade não permite definir só a quantidade de dezenas.');
+  if (!Number.isInteger(dezenas) || dezenas < rule[0] || dezenas > rule[1]) throw new Error(`Para esta modalidade a quantidade de números vai de ${rule[0]} a ${rule[1]}.`);
+  return String(dezenas);
+}
+/**
  * Preço livre: o custo do registro na CAIXA é só uma referência e o valor da cota é definido por quem cria o bolão.
  * Por cota: a parte do registro (arredondada para cima, com a sobra explicitada) e o resto é a taxa de serviço.
  */

@@ -14,10 +14,10 @@ function lotteries(extra: Record<string, unknown> = {}) {
 const firstWhere = (mock: jest.Mock): Where => (mock.mock.calls[0] as unknown as [{ where: Where }])[0].where;
 
 describe('concursos de festa fora da lista de abertos', () => {
-  it('lista pública normal não traz concurso de festa', async () => {
+  it('lista pública normal traz os da CAIXA e a festa que já tem número oficial, mas não a provisória', async () => {
     const { service, findMany } = lotteries();
     await service.list();
-    expect(firstWhere(findMany)).toMatchObject({ status: 'aberto', especial: null });
+    expect(firstWhere(findMany)).toMatchObject({ status: 'aberto', OR: [{ especial: null }, { numeroDefinido: true }] });
   });
 
   it('só traz festa quando pedida (tipo=festa) e traz tudo com tipo=todos', async () => {

@@ -49,8 +49,9 @@ export class LotteriesService {
     const allowed = modalidade ? this.assertModalidade(modalidade) : undefined;
     const openOnly = !status || status === 'aberto';
     if (openOnly) await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
-    // Concursos de festa (Mega da Virada etc.) só aparecem quando pedidos (tipo=festa ou tipo=todos): a lista normal traz só os da CAIXA.
-    const kind: Prisma.ConcursoWhereInput = tipo === 'festa' ? { especial: { not: null } } : tipo === 'todos' ? {} : openOnly ? { especial: null } : {};
+    // Festa com número oficial da CAIXA (ex.: Mega da Virada) é concurso aberto de verdade e entra na lista normal.
+    // Festa ainda provisória (sem número oficial) só aparece quando pedida (tipo=festa ou tipo=todos).
+    const kind: Prisma.ConcursoWhereInput = tipo === 'festa' ? { especial: { not: null } } : tipo === 'todos' ? {} : openOnly ? { OR: [{ especial: null }, { numeroDefinido: true }] } : {};
     const contests = await this.prisma.concurso.findMany({
       where: {
         ...(allowed ? { modalidade: allowed } : {}),
@@ -102,6 +103,9 @@ export class LotteriesService {
         fontes.add(source);
         sincronizados += 1;
         if (payload.numeroConcursoProximo) await this.lookahead(current, config.horarioCorteLocal, payload.numeroConcursoProximo).catch(() => 0);
+        // Festas já abertas na CAIXA para datas mais distantes (ex.: Mega da Virada em dezembro/janeiro).
+        const nextDraw = parseCaixaDate(payload.dataProximoConcurso);
+        if (payload.numeroConcursoProximo && nextDraw) await this.syncFestivals(current, config.horarioCorteLocal, payload.numeroConcursoProximo, nextDraw).catch(() => 0);
       } catch (error) {
         falhas.push({ modalidade: current, erro: error instanceof Error ? error.message : 'falha desconhecida' });
       }
@@ -131,7 +135,7 @@ export class LotteriesService {
    * e não seja previsto, e qualquer falha é ignorada: o calendário previsto cobre o que faltar.
    */
   private async lookahead(modalidade: ModalidadeLoteria, horarioCorteLocal: string, nextNumber: number): Promise<number> {
-    const extra = Math.min(Math.max(Math.trunc(Number(this.config.get<string>('CAIXA_CONCURSOS_A_FRENTE') ?? 2)) || 0, 0), 4);
+    const extra = Math.min(Math.max(Math.trunc(Number(this.config.get<string>('CAIXA_CONCURSOS_A_FRENTE') ?? 4)) || 0, 0), 10);
     const sources = this.caixaSources();
     const timeoutMs = resolveCaixaTimeout(this.config.get<string>('CAIXA_API_TIMEOUT_MS'));
     let added = 0;
@@ -152,6 +156,82 @@ export class LotteriesService {
       } catch { break; }
     }
     return added;
+  }
+
+  /**
+   * Procura, na CAIXA, o concurso numerado de cada festa da modalidade (ex.: Mega da Virada) que cai nos próximos meses,
+   * mesmo estando muito depois do "próximo concurso". Como as datas crescem com o número, a busca é binária (poucas consultas).
+   * Se achar, o concurso entra como oficial, com o nome da festa; se já havia um provisório do mesmo dia, ele é adotado.
+   * Qualquer falha é ignorada: o cadastro manual da data comemorativa continua valendo.
+   */
+  private async syncFestivals(modalidade: ModalidadeLoteria, horarioCorteLocal: string, nextNumber: number, nextDate: Date): Promise<number> {
+    const windowDays = Math.min(Math.max(Math.trunc(Number(this.config.get<string>('CAIXA_JANELA_FESTAS_DIAS') ?? 200)) || 0, 0), 400);
+    if (windowDays <= 0) return 0;
+    const sources = this.caixaSources();
+    const timeoutMs = resolveCaixaTimeout(this.config.get<string>('CAIXA_API_TIMEOUT_MS'));
+    const now = Date.now();
+    let found = 0;
+    for (const preset of FESTAS_PRESETS.filter((item) => item.modalidade === modalidade)) {
+      const draw = proximoSorteioFesta(preset.chave);
+      // Só datas confirmadas pela CAIXA: uma data apenas prevista poderia rotular como festa um sorteio comum.
+      if (!draw || !draw.confirmado) continue;
+      const targetInstant = new Date(`${draw.data}T${draw.hora}:00-03:00`);
+      if (targetInstant.getTime() - now > windowDays * 86_400_000) continue;
+      const already = (await this.prisma.concurso.findMany({ where: { modalidade, numeroDefinido: true, especial: preset.chave } })).some((item) => brazilDayKey(item.dataSorteio) === draw.data);
+      if (already) continue;
+      try {
+        const contestNumber = await this.findContestOnDay(modalidade, nextNumber, nextDate, draw.data, sources, timeoutMs);
+        if (contestNumber === null) continue;
+        await this.adoptFestival(modalidade, horarioCorteLocal, contestNumber, targetInstant, preset);
+        found += 1;
+      } catch { /* melhor esforço */ }
+    }
+    return found;
+  }
+
+  /** Busca binária do número do concurso que será sorteado no dia `targetDay` (AAAA-MM-DD). Devolve null se a CAIXA ainda não o publicou. */
+  private async findContestOnDay(modalidade: ModalidadeLoteria, nextNumber: number, nextDate: Date, targetDay: string, sources: ReturnType<LotteriesService['caixaSources']>, timeoutMs: number): Promise<number | null> {
+    const nextDay = brazilDayKey(nextDate);
+    if (nextDay === targetDay) return nextNumber;
+    if (nextDay > targetDay) return null;
+    const spanDays = Math.ceil((new Date(`${targetDay}T12:00:00-03:00`).getTime() - new Date(`${nextDay}T12:00:00-03:00`).getTime()) / 86_400_000);
+    let low = nextNumber + 1;
+    let high = nextNumber + Math.min(spanDays + 3, 450);
+    for (let step = 0; step < 14 && low <= high; step += 1) {
+      const middle = Math.floor((low + high) / 2);
+      const day = await this.probeContestDay(modalidade, middle, sources, timeoutMs);
+      if (day === null) high = middle - 1;
+      else if (day === targetDay) return middle;
+      else if (day < targetDay) low = middle + 1;
+      else high = middle - 1;
+    }
+    return null;
+  }
+
+  /** Dia (AAAA-MM-DD) do sorteio do concurso `numero` na CAIXA, ou null se ele não existe (ainda). */
+  private async probeContestDay(modalidade: ModalidadeLoteria, numero: number, sources: ReturnType<LotteriesService['caixaSources']>, timeoutMs: number): Promise<string | null> {
+    try {
+      const { payload } = await fetchCaixaContest(modalidade, sources, { timeoutMs, retries: 0, contestNumber: numero, userAgent: this.config.get<string>('CAIXA_USER_AGENT'), health: this.health });
+      const data = normalizeCaixaContestPayload(payload);
+      const drawDate = parseCaixaDate(data.dataApuracao);
+      if (data.numero !== numero || !drawDate) return null;
+      return brazilDayKey(drawDate);
+    } catch { return null; }
+  }
+
+  /** Grava o concurso numerado da festa: marca o que já existe, adota o provisório do mesmo dia ou cria. Mantém a hora oficial da festa. */
+  private async adoptFestival(modalidade: ModalidadeLoteria, horarioCorteLocal: string, numero: number, drawDate: Date, preset: { chave: string; nome: string }): Promise<void> {
+    const cutoffAt = festivalCutoff(drawDate, horarioCorteLocal);
+    await this.prisma.$transaction(async (tx) => {
+      await adoptProvisionalContests(tx as unknown as FestaTx, modalidade, numero, drawDate);
+      const existing = await tx.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: numero } } });
+      if (existing) {
+        if (existing.status === 'apurado') return;
+        await tx.concurso.update({ where: { id: existing.id }, data: { especial: existing.especial ?? preset.chave, nomeEspecial: existing.nomeEspecial ?? preset.nome, numeroDefinido: true, dataSorteio: drawDate, cutoffAt, status: cutoffAt.getTime() > Date.now() ? 'aberto' : existing.status, sincronizadoEm: new Date() } });
+      } else {
+        await tx.concurso.create({ data: { modalidade, numeroConcurso: numero, dataSorteio: drawDate, cutoffAt, valorEstimadoPremio: null, acumulado: false, status: cutoffAt.getTime() > Date.now() ? 'aberto' : 'fechado', fonteSincronizacao: 'caixa', especial: preset.chave, nomeEspecial: preset.nome, numeroDefinido: true } });
+      }
+    });
   }
 
   /** Testa a conexão com cada modalidade sem gravar nada. Usado pelo painel do admin. */

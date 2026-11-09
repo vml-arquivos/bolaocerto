@@ -164,3 +164,71 @@ describe('sync preserva hora e corte de concurso de festa', () => {
     expect(current.update).toHaveProperty('dataSorteio');
   });
 });
+
+describe('LotteriesService.sync: festa já aberta na CAIXA para data distante', () => {
+  // Mega da Virada: sorteio em 01/01/2027. O próximo concurso normal da CAIXA é bem antes; o número da festa só se acha por busca.
+  const FESTA_DIA = '01/01/2027';
+  const nextPayload = (n: number) => JSON.stringify({ numero: n, dataApuracao: '17/10/2026', numeroConcursoProximo: n + 1, dataProximoConcurso: '20/10/2026', acumulado: false, listaDezenas: ['01'], listaRateioPremio: [], valorEstimadoProximoConcurso: 1000 });
+  // Concursos 101..: datas crescentes de 3 em 3 dias a partir de 20/10/2026; o concurso 124 cai em 01/01/2027 e a CAIXA só conhece até o 130.
+  const dateOf = (n: number) => { const d = new Date(Date.UTC(2026, 9, 20) + (n - 101) * 3 * 86_400_000); return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`; };
+  const caixa = (known: number, festaNumber: number) => (url: string) => {
+    const match = url.match(/\/megasena\/(\d+)$/);
+    if (!match) return { body: nextPayload(100) };
+    const n = Number(match[1]);
+    if (n > known) return { status: 404, body: '{}' };
+    return { body: JSON.stringify({ numero: n, dataApuracao: n === festaNumber ? FESTA_DIA : dateOf(n), listaDezenas: [] }) };
+  };
+  function buildFesta(existing: Array<Record<string, unknown>> = []) {
+    const writes: Array<Record<string, any>> = [];
+    const tx = {
+      concurso: {
+        findMany: jest.fn(async () => []), findUnique: jest.fn(async () => null),
+        upsert: jest.fn(async () => ({ id: 'c1' })),
+        create: jest.fn(async (args: { data: Record<string, unknown> }) => { writes.push(args.data); return {}; }),
+        update: jest.fn(async () => ({})),
+      },
+      resultado: { upsert: jest.fn(async () => ({})) },
+      bolao: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    };
+    const prisma = {
+      configLoteria: { findUnique: jest.fn(async () => ({ horarioCorteLocal: '19:00' })) },
+      concurso: { updateMany: jest.fn(async () => ({ count: 0 })), findUnique: jest.fn(async () => null), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})), findMany: jest.fn(async () => existing) },
+      $transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+    };
+    const config = { get: (key: string, def?: string) => (key === 'CAIXA_CONCURSOS_A_FRENTE' ? '0' : def) } as unknown as ConfigService;
+    return { service: new LotteriesService(prisma as never, config), writes, prisma, tx };
+  }
+
+  it('acha o número da Mega da Virada por busca e grava como festa oficial, com a hora das 10h', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout'], now: new Date('2026-11-09T12:00:00-03:00') });
+    const spy = mockFetch(caixa(130, 124));
+    const { service, writes } = buildFesta();
+    await service.sync('megasena');
+    jest.useRealTimers();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ modalidade: 'megasena', numeroConcurso: 124, especial: 'mega-da-virada', nomeEspecial: 'Mega da Virada', numeroDefinido: true, fonteSincronizacao: 'caixa', status: 'aberto' });
+    expect((writes[0]!.dataSorteio as Date).toISOString()).toBe('2027-01-01T13:00:00.000Z');
+    // busca binária: bem menos consultas do que andar número por número
+    const probed = new Set(spy.mock.calls.map(([url]) => String(url).match(/\/megasena\/(\d+)$/)?.[1]).filter(Boolean));
+    expect(probed.size).toBeLessThan(10);
+  });
+
+  it('se a CAIXA ainda não publicou o concurso da festa, não inventa nada', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout'], now: new Date('2026-11-09T12:00:00-03:00') });
+    mockFetch(caixa(110, -1));
+    const { service, writes } = buildFesta();
+    await service.sync('megasena');
+    jest.useRealTimers();
+    expect(writes).toHaveLength(0);
+  });
+
+  it('não repete a busca quando a festa já está gravada com número oficial', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout'], now: new Date('2026-11-09T12:00:00-03:00') });
+    const spy = mockFetch(caixa(130, 124));
+    const { service, writes } = buildFesta([{ id: 'x', numeroConcurso: 124, numeroDefinido: true, especial: 'mega-da-virada', dataSorteio: new Date('2027-01-01T13:00:00Z') }]);
+    await service.sync('megasena');
+    jest.useRealTimers();
+    expect(writes).toHaveLength(0);
+    expect(spy.mock.calls.filter(([url]) => /\/megasena\/\d+$/.test(String(url))).length).toBe(0);
+  });
+});

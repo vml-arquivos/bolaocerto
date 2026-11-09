@@ -24,7 +24,7 @@ export interface FestaSorteio { data: string; hora: string; confirmado: boolean;
  * (a Mega da Virada 2026 passou de 31/12 às 20h para 1º/01/2027 às 10h), então o administrador sempre pode ajustar.
  */
 export const FESTAS_CALENDARIO: Record<string, readonly FestaSorteio[]> = {
-  'mega-da-virada': [{ data: '2027-01-01', hora: '10:00', confirmado: false, fonte: 'Calendário da CAIXA apresentado às lotéricas (aguarda comunicado oficial)' }],
+  'mega-da-virada': [{ data: '2027-01-01', hora: '10:00', confirmado: true, fonte: 'Comunicado da CAIXA: sorteio em 1º de janeiro de 2027, às 10h (apostas abertas desde 3 de novembro de 2026)' }],
 };
 
 const HORA_PADRAO = '20:00';

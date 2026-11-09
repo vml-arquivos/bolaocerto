@@ -172,6 +172,13 @@ export class PoolsController {
     return this.pools.removeUnused(id, user, force === 'true' || force === '1');
   }
 
+  @Post('afiliados/me/boloes/:id/numeros')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  defineAffiliateNumbers(@Param('id') id: string, @Body() dto: DefinePoolNumbersDto, @CurrentUser() user: AuthUser) {
+    return this.pools.defineNumbers(id, dto, user);
+  }
+
   @Post('admin/boloes/:id/numeros')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

@@ -114,8 +114,8 @@ describe('LotteriesService.createFestival / updateFestival', () => {
 });
 
 describe('calendário das festas', () => {
-  it('Mega da Virada 2026 vem do calendário da CAIXA: 1º/01/2027 às 10h, ainda não confirmada', () => {
-    expect(proximoSorteioFesta('mega-da-virada', new Date('2026-11-03T12:00:00-03:00'))).toMatchObject({ data: '2027-01-01', hora: '10:00', confirmado: false });
+  it('Mega da Virada 2026 vem do comunicado da CAIXA: 1º/01/2027 às 10h, confirmada', () => {
+    expect(proximoSorteioFesta('mega-da-virada', new Date('2026-11-03T12:00:00-03:00'))).toMatchObject({ data: '2027-01-01', hora: '10:00', confirmado: true });
   });
   it('depois que o sorteio passa, prevê a data tradicional do ano seguinte às 20h', () => {
     expect(proximoSorteioFesta('mega-da-virada', new Date('2027-01-02T12:00:00-03:00'))).toMatchObject({ data: '2027-12-31', hora: '20:00', confirmado: false });
