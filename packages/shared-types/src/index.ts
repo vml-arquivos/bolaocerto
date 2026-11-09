@@ -100,6 +100,8 @@ export interface CaixaContestPayload {
   listaDezenasSegundoSorteio?: string[];
   dezenasSorteadasOrdemSorteio?: string[];
   listaRateioPremio?: CaixaPrizeTier[];
+  /** Timemania: time sorteado. Dia de Sorte: mês sorteado. */
+  nomeTimeCoracaoMesSorte?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -156,6 +158,7 @@ export function normalizeCaixaContestPayload(value: unknown): CaixaContestPayloa
     listaDezenasSegundoSorteio: optionalStringArray(value.listaDezenasSegundoSorteio ?? value.dezenasSegundoSorteio),
     dezenasSorteadasOrdemSorteio: optionalStringArray(value.dezenasSorteadasOrdemSorteio ?? value.dezenasOrdemSorteio),
     listaRateioPremio: optionalPrizeTiers(value.listaRateioPremio ?? value.premiacoes),
+    nomeTimeCoracaoMesSorte: optionalString(value.nomeTimeCoracaoMesSorte ?? value.timeCoracao ?? value.mesSorte),
   };
 }
 

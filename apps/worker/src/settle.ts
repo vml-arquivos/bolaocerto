@@ -8,7 +8,7 @@ const ACTIVE_SHARE = ['registrada'];
  * Apura os bolões REGISTRADOS do concurso: confere cada jogo (inclusive o 2º sorteio da Dupla Sena),
  * soma os prêmios e divide entre as cotas em centavos exatos. Guarda o detalhe por jogo para a página pública do bolão.
  */
-export async function apurarConcurso(prisma: PrismaClient, concursoId: string, modality: string, contestNumber: number, numbers: number[], secondDraw: number[], tiers: CaixaPrizeTier[]): Promise<void> {
+export async function apurarConcurso(prisma: PrismaClient, concursoId: string, modality: string, contestNumber: number, numbers: number[], secondDraw: number[], tiers: CaixaPrizeTier[], drawnSpecial?: string): Promise<void> {
   const pools = await prisma.bolao.findMany({ where: { concursoId, status: 'registrado' }, include: { cotas: true, jogos: { where: { status: 'ativo' }, orderBy: { ordem: 'asc' } } } });
   for (const pool of pools) {
     if (!supportsAutoSettlement(modality)) {
@@ -16,13 +16,13 @@ export async function apurarConcurso(prisma: PrismaClient, concursoId: string, m
       await sendAlert(`manual:${pool.id}`, `Apuração MANUAL necessária: bolão ${modality} #${contestNumber} (${pool.id}). Esta modalidade não é conferida automaticamente.`, 12 * 3_600_000);
       continue;
     }
-    const games = pool.jogos.length ? pool.jogos.map((game) => ({ ordem: game.ordem, numeros: game.numeros })) : [{ ordem: 1, numeros: pool.numerosApostados }];
-    const result = settleGames({ games, drawn: numbers, secondDraw, tiers });
+    const games = pool.jogos.length ? pool.jogos.map((game) => ({ ordem: game.ordem, numeros: game.numeros, selecao: (game.selecao ?? null) as { timeCoracao?: string; mesSorte?: number } | null })) : [{ ordem: 1, numeros: pool.numerosApostados }];
+    const result = settleGames({ games, drawn: numbers, secondDraw, tiers, modality, drawnSpecial });
     const active = pool.cotas.filter((share) => ACTIVE_SHARE.includes(share.status));
     const parts = splitPrize(result.premioTotal, active.map((share) => ({ id: share.id, quantidade: share.quantidade })));
     const tierNames = [...new Set(result.jogos.flatMap((game) => game.premios.map((prize) => prize.faixa)))].join(' + ') || null;
     await prisma.$transaction(async (tx) => {
-      await tx.bolao.update({ where: { id: pool.id }, data: { status: 'apurado', teveGanhador: result.teveGanhador, premioTotal: result.premioTotal, apuradoEm: new Date(), apuracao: { concurso: contestNumber, sorteados: numbers, segundoSorteio: secondDraw, melhorFaixa: result.melhorFaixa, jogos: result.jogos } as unknown as Prisma.InputJsonValue } });
+      await tx.bolao.update({ where: { id: pool.id }, data: { status: 'apurado', teveGanhador: result.teveGanhador, premioTotal: result.premioTotal, apuradoEm: new Date(), apuracao: { concurso: contestNumber, sorteados: numbers, segundoSorteio: secondDraw, ...(result.faixaEspecialNaoConferida ? { faixaEspecialNaoConferida: result.faixaEspecialNaoConferida } : {}), melhorFaixa: result.melhorFaixa, jogos: result.jogos } as unknown as Prisma.InputJsonValue } });
       for (const share of active) {
         const prizeValue = result.teveGanhador ? (parts.get(share.id) ?? 0) : null;
         const status = result.teveGanhador ? 'premiada' : 'apurada';
@@ -36,6 +36,7 @@ export async function apurarConcurso(prisma: PrismaClient, concursoId: string, m
       }
       await tx.auditoriaEvento.create({ data: { entidade: 'bolao', entidadeId: pool.id, evento: 'resultado.apurado', payloadDepois: { teveGanhador: result.teveGanhador, premioTotal: result.premioTotal, melhorFaixa: result.melhorFaixa, jogos: result.jogos.map((game) => ({ ordem: game.ordem, acertos: game.acertos, total: game.total })) } } });
     });
+    if (result.faixaEspecialNaoConferida) await sendAlert(`especial:${pool.id}`, `CONFERIR faixa do Time do Coração / Mês de Sorte: bolão ${modality} #${contestNumber} (${pool.id}). A apuração automática considerou só as dezenas, porque ${result.faixaEspecialNaoConferida}. Confira o prêmio dessa faixa antes de repassar.`, 24 * 3_600_000);
     if (result.teveGanhador) await sendAlert(`premio:${pool.id}`, `Bolão PREMIADO! ${modality} #${contestNumber} — prêmio bruto total R$ ${result.premioTotal.toFixed(2)} (${tierNames ?? 'faixa'}). Cotas notificadas; confira os repasses.`, 24 * 3_600_000);
   }
 }

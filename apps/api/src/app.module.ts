@@ -22,6 +22,7 @@ import { SystemModule } from './system/system.module';
 import { HomeModule } from './home/home.module';
 import { NumbersModule } from './numbers/numbers.module';
 import { LegalModule } from './legal/legal.module';
+import { FunnelModule } from './funnel/funnel.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -47,6 +48,7 @@ import { HealthController } from './health.controller';
     NumbersModule,
     OperationModule,
     LegalModule,
+    FunnelModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

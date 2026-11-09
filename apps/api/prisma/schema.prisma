@@ -666,6 +666,15 @@ model PrecoLoteria {
   @@map("precos_loteria")
 }
 
+/// Funil de conversão: só contagem por dia e etapa (visitas, bolão visto, cadastro iniciado). Sem dado pessoal.
+model ContadorFunil {
+  dia   DateTime @db.Date
+  nome  String   @db.VarChar(30)
+  total Int      @default(0)
+  @@id([dia, nome])
+  @@map("contadores_funil")
+}
+
 /// Textos de Termos, Privacidade e contratos publicados pelo painel (Documentos). O mais recente com ativo=true vale.
 model DocumentoPublicado {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

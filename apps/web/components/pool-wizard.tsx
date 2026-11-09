@@ -72,6 +72,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [automatic, setAutomatic] = useState(true);
+  const [specialValue, setSpecialValue] = useState('');
   // Preço livre (administrador): a tabela da CAIXA só dá o custo do registro; a cota e a taxa são definidas aqui.
   const [quotaMode, setQuotaMode] = useState<QuotaMode>('digitar');
   const [quotaValue, setQuotaValue] = useState('');
@@ -151,7 +152,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   // Concurso de festa não entra na lista de abertos: só aparece se já foi escolhido ou criado agora (botão "nova data comemorativa").
   const availableContests = useMemo(() => contests.filter((contest) => contest.modalidade === modality && ['aberto', 'aberta'].includes(String(contest.status).toLowerCase()) && (!contest.especial || contest.id === contestId)), [contests, modality, contestId]);
   const selectedContest = contests.find((contest) => contest.id === contestId) ?? (editPool?.concursoId === contestId ? editPool.concurso : null);
-  const games = useMemo(() => numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number) })), [numbers]);
+  // Timemania: Time do Coração; Dia de Sorte: Mês de Sorte. Vale para todos os jogos e serve para conferir esse prêmio na apuração.
+  const specialSelecao = useMemo(() => modality === 'timemania' && specialValue.trim() ? { timeCoracao: specialValue.trim() } : modality === 'diadesorte' && Number(specialValue) >= 1 && Number(specialValue) <= 12 ? { mesSorte: Number(specialValue) } : null, [modality, specialValue]);
+  const games = useMemo(() => numbers.trim().split(/\n+/).filter(Boolean).map((line, i) => ({ ordem: i + 1, numeros: line.trim().split(/[\s,;]+/).map(Number), ...(specialSelecao ? { selecao: specialSelecao } : {}) })), [numbers, specialSelecao]);
   const uniqueNumbers = games[0]?.numeros ?? [];
   const canPrice = ['megasena', 'lotofacil', 'quina', 'duplasena', 'lotomania'].includes(modality);
   useEffect(() => {
@@ -360,7 +363,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       const response = await authFetch(path, { method: editing ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(Array.isArray(payload.message) ? payload.message.join(' ') : payload.message || (editing ? 'Não foi possível editar o bolão.' : 'Não foi possível criar o bolão.'));
-      setMessage(editing ? 'Bolão atualizado com sucesso.' : numbersLater ? 'Bolão criado como rascunho, sem números. Publique para abrir a venda e defina os jogos depois, em Mais › Definir números.' : 'Bolão criado como rascunho.');
+      const warnings = Array.isArray(payload?.avisos) ? ` Atenção: ${payload.avisos.join(' ')}` : '';
+      setMessage(editing ? 'Bolão atualizado com sucesso.' : numbersLater ? 'Bolão criado como rascunho, sem números. Publique para abrir a venda e defina os jogos depois, em Mais › Definir números.' : 'Bolão criado como rascunho.') + warnings;
       // Guarda os jogos no banco de números (e conta o uso). Se falhar, o bolão já foi criado e nada se perde.
       if (!editing && !numbersLater && role === 'admin' && canPrice) void authFetch('/api/v1/admin/numeros/usar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: modality, jogos: games.map((game) => ({ numeros: game.numeros })), ...(payload?.id ? { bolaoId: payload.id } : {}) }) }).catch(() => undefined);
       await onSuccess(editing ? undefined : payload);
@@ -378,8 +382,12 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     {message && <div className="admin-callout admin-callout-warning">{message}</div>}
     <div className="admin-form-grid admin-form-grid-three">
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
-      <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
+      <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setSpecialValue(''); setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
       <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateOnly(contest.dataSorteio)}{contest.fonteSincronizacao === 'projetado' || contest.previsto ? ' (data prevista)' : ''} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
+      {!editing && (modality === 'timemania' || modality === 'diadesorte') && <label className="admin-field admin-field-wide"><span>{modality === 'timemania' ? 'Time do Coração dos jogos' : 'Mês de Sorte dos jogos'}</span>{modality === 'timemania'
+        ? <input value={specialValue} maxLength={60} onChange={(event) => setSpecialValue(event.target.value)} placeholder="Ex.: Vasco da Gama/RJ" />
+        : <select value={specialValue} onChange={(event) => setSpecialValue(event.target.value)}><option value="">Escolha o mês</option>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>}
+        <small>Vale para todos os jogos. É com isso que a apuração confere o prêmio do {modality === 'timemania' ? 'Time do Coração' : 'Mês de Sorte'}; sem isso, a equipe precisa conferir essa faixa à mão.</small></label>}
       {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
         <button type="button" className="admin-button" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}>{newDate ? 'Fechar' : 'Criar para uma data comemorativa (sem concurso aberto)'}</button>
         {newDate && <div className="festa-inline-body">

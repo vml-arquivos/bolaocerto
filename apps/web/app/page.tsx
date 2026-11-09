@@ -16,6 +16,7 @@ import { apiGet } from '../lib/api';
 import { contestForModality, lotteryVisual, orderedLotteryVisuals } from '../lib/lottery-config';
 import { modalityNames, money, PublicContest, PublicPool, shortDate } from '../lib/domain';
 import { concursoNo, contestLabel, festaPrefix } from '../lib/contest';
+import { FunnelBeacon } from '../components/funnel-beacon';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +61,10 @@ export default async function HomePage() {
     const top = contests.filter((item) => new Date(item.cutoffAt).getTime() > now).sort((a, b) => Number(b.valorEstimadoPremio ?? 0) - Number(a.valorEstimadoPremio ?? 0)).slice(0, 3);
     for (const contest of top) {
       const visual = lotteryVisual(contest.modalidade);
-      slides.push({ key: contest.id, art: visual.art, accent: visual.accent, eyebrow: festaPrefix(contest).replace(/ · $/, '') || visual.eyebrow, titulo: modalityNames[contest.modalidade] ?? visual.name, subtitulo: `${contestLabel(contest)} · sorteio ${shortDate(contest.dataSorteio)}`, valor: money(contest.valorEstimadoPremio), botao: 'Encontrar um bolão', href: '#boloes' });
+      // Estoque real: o botão só aparece quando há bolão aberto dessa modalidade; sem estoque, o slide diz isso em vez de prometer compra.
+      const available = pools.filter((pool) => pool.concurso?.modalidade === contest.modalidade && canPurchase(pool, now)).length;
+      const stock = available > 0 ? ` · ${available} ${available === 1 ? 'bolão aberto' : 'bolões abertos'}` : ' · sem bolão aberto agora';
+      slides.push({ key: contest.id, art: visual.art, accent: visual.accent, eyebrow: festaPrefix(contest).replace(/ · $/, '') || visual.eyebrow, titulo: modalityNames[contest.modalidade] ?? visual.name, subtitulo: `${contestLabel(contest)} · sorteio ${shortDate(contest.dataSorteio)}${stock}`, valor: money(contest.valorEstimadoPremio), ...(available > 0 ? { botao: 'Ver bolões', href: '#boloes' } : {}) });
     }
   }
   if (!slides.length) slides.push({ key: 'padrao', art: lotteryVisual('megasena').art, accent: lotteryVisual('megasena').accent, eyebrow: 'Concursos oficiais', titulo: 'Mais chances começam com uma boa escolha.', subtitulo: 'Encontre o concurso certo, escolha suas cotas e acompanhe cada etapa com a clareza do BL — Bolão Livre.', botao: 'Ver bolões disponíveis', href: '#boloes' });
@@ -72,7 +76,7 @@ export default async function HomePage() {
     return [{ key: visual.key, nome: modalityNames[visual.key] ?? visual.name, icon: visual.icon, accent: visual.accent, sorteioEm: contest.dataSorteio, premio: contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : undefined, festa: contest.nomeEspecial ?? undefined }];
   });
 
-  return <><LiveStorefront /><SiteHeader /><main id="main-content">
+  return <><LiveStorefront /><FunnelBeacon name="visita_home" /><SiteHeader /><main id="main-content">
     <h1 className="sr-only">Bolão Livre: bolões de concursos oficiais</h1>
     <HomeCarousel slides={slides} />
     <div className="shell trust-row home-trust"><span><b>✓</b> Cotas rastreáveis</span><span><b>✓</b> Resultado oficial</span><span><b>✓</b> Jogo responsável</span></div>

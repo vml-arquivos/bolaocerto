@@ -26,6 +26,7 @@ async function bootstrap(): Promise<void> {
   app.use(rateLimit({ windowMs: 60_000, limit: Number(config.get('RATE_LIMIT_PER_MINUTE', 120)) || 120, standardHeaders: true, legacyHeaders: false }));
   // Freio por IP nas rotas sensíveis (além do bloqueio por conta): tentativa de força bruta e abuso de e-mail.
   const strict = (windowMs: number, limit: number) => rateLimit({ windowMs, limit, standardHeaders: true, legacyHeaders: false, message: { statusCode: 429, message: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.' } });
+  app.use('/api/v1/funil', strict(60_000, 60));
   app.use('/api/v1/auth/login', strict(15 * 60_000, 30));
   app.use('/api/v1/auth/registrar', strict(60 * 60_000, 20));
   app.use('/api/v1/auth/esqueci-senha', strict(60 * 60_000, 10));

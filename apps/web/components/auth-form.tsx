@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { PasswordField } from './password-field';
 import { rememberLogin } from './header-auth';
 import { passwordProblem } from '../lib/password';
+import { FunnelBeacon } from './funnel-beacon';
 
 import { isStaff, landingFor } from '../lib/roles';
 export type InviteContract = { texto: string; hash: string; versao: string; aprovado: boolean };
@@ -54,7 +55,7 @@ export function AuthForm({ mode, audience = 'cliente', invite }: { mode: 'login'
   }
   const asAffiliate = mode === 'register' && invite?.tipo === 'afiliado';
   const asStaff = mode === 'register' && invite?.tipo === 'equipe';
-  return <form onSubmit={submit}>
+  return <form onSubmit={submit}>{mode === 'register' && <FunnelBeacon name="cadastro_iniciado" />}
     {mode === 'register' && invite && <div className="notice invite-banner" role="status"><strong>{asStaff ? `Você foi convidado para ${invite?.papel === 'admin' ? 'a administração' : 'a equipe de operação'}` : asAffiliate ? 'Você foi convidado para ser afiliado' : invite.convidadoPor ? `${invite.convidadoPor} convidou você` : 'Você recebeu um convite'}</strong><span>{asStaff ? `${invite?.convidadoPor ? `${invite.convidadoPor} convidou você. ` : ''}Preencha os seus dados para criar o seu acesso. Ao terminar, você entra direto no painel do BL.${invite?.email ? ' Use o e-mail do convite.' : ''}` : asAffiliate ? `Complete seu cadastro. Ao terminar, você já entra na sua área de afiliado, com seu grupo e seu link de vendas.${invite.comissaoPct ? ` Sua comissão, definida pela equipe do BL: ${Number(invite.comissaoPct).toLocaleString('pt-BR')}% sobre a taxa de administração das vendas.` : ''}` : invite.grupo ? `Ao criar a conta, você entra automaticamente no grupo ${invite.grupo}.` : 'Ao criar a conta, você passa a fazer parte do grupo de quem indicou.'}</span></div>}
     {mode === 'register' && invite && <input type="hidden" name="codigoAfiliado" value={invite.codigo} />}
     {mode === 'register' && <><div className="field"><label htmlFor="nome">Nome completo</label><input id="nome" name="nome" minLength={2} required autoComplete="name" /></div><div className="form-row"><div className="field"><label htmlFor="cpf">CPF (somente números)</label><input id="cpf" name="cpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required /></div><div className="field"><label htmlFor="telefone">Telefone com DDD</label><input id="telefone" name="telefone" type="tel" inputMode="tel" autoComplete="tel" placeholder="(11) 91234-5678" minLength={10} maxLength={16} required /></div></div></>}

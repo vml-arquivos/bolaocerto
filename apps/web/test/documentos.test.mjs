@@ -38,3 +38,27 @@ test('senha: mínimo de 8 caracteres também no formulário de usuário criado p
   assert.ok(tools.includes('minLength={8}'));
   assert.ok(!tools.includes('mínimo 6'));
 });
+
+test('funil: etapas do navegador contadas uma vez por sessão e tela no painel', async () => {
+  const beacon = await read('components/funnel-beacon.tsx');
+  assert.ok(beacon.includes('sessionStorage'));
+  assert.ok(beacon.includes('doNotTrack'));
+  for (const [file, name] of [['app/page.tsx', 'visita_home'], ['app/boloes/[id]/page.tsx', 'bolao_visto'], ['components/auth-form.tsx', 'cadastro_iniciado']]) {
+    assert.ok((await read(file)).includes(`<FunnelBeacon name="${name}"`), `${file} deve contar ${name}`);
+  }
+  assert.ok((await read('components/admin-dashboard.tsx')).includes("view === 'funil'"));
+  assert.ok((await read('components/admin-shell.tsx')).includes("['funil', 'Funil de conversão'"));
+});
+
+test('carrossel: só oferece o botão quando há bolão aberto da modalidade', async () => {
+  const page = await read('app/page.tsx');
+  assert.ok(page.includes('sem bolão aberto agora'));
+  assert.ok(page.includes("...(available > 0 ? { botao: 'Ver bolões', href: '#boloes' } : {})"));
+});
+
+test('pool wizard: Timemania e Dia de Sorte pedem Time do Coração / Mês de Sorte para a apuração conferir', async () => {
+  const wizard = await read('components/pool-wizard.tsx');
+  assert.ok(wizard.includes('Time do Coração dos jogos'));
+  assert.ok(wizard.includes('mesSorte'));
+  assert.ok(wizard.includes('payload.avisos'));
+});

@@ -39,6 +39,7 @@ const groups = [
       ['vitrine', 'Página inicial', 'PI'],
       ['usuarios', 'Usuários e acessos', 'US'],
       ['documentos', 'Documentos', 'DC'],
+      ['funil', 'Funil de conversão', 'FC'],
       ['conexoes', 'Conexões', 'CX'],
       ['auditoria', 'Histórico', 'HI'],
       ['configuracoes', 'Configurações', 'CF'],

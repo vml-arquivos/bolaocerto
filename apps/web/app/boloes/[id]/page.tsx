@@ -10,6 +10,7 @@ import { PoolTransparency } from '../../../components/pool-transparency';
 import { PoolNumbers } from '../../../components/pool-numbers';
 import { PoolExtraInfo } from '../../../components/pool-extra-info';
 import { PurchaseForm } from '../../../components/purchase-form';
+import { FunnelBeacon } from '../../../components/funnel-beacon';
 import { SharePool } from '../../../components/share-pool';
 import { SiteHeader } from '../../../components/site-header';
 import { ClientFooter } from '../../../components/client-footer';
@@ -51,7 +52,7 @@ export default async function PoolPage({ params }: { params: Promise<{ id: strin
   const settled = Boolean(pool.transparencia?.apuradoEm && pool.transparencia?.apuracao);
   const progressState = progress >= 100 ? 'is-full' : progress >= 85 ? 'is-high' : progress >= 40 ? 'is-mid' : 'is-low';
 
-  return <><LiveStorefront /><SiteHeader/><main className="app-page" id="main-content">
+  return <><LiveStorefront /><FunnelBeacon name="bolao_visto" /><SiteHeader/><main className="app-page" id="main-content">
 <div className="shell"><div className="breadcrumb"><Link href="/">Início</Link><span>/</span><Link href="/#boloes">Bolões</Link><span>/</span><strong>{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Detalhes'}</strong></div>
 <section className="detail-hero"><LotteryArtwork modality={pool.concurso?.modalidade} compact /><div className="detail-hero-copy"><div className="detail-kicker"><span className="overline">{visual.eyebrow}</span><span className={`tag ${isOpen ? 'tag-open' : 'tag-closed'}`}>{isOpen ? 'Cotas abertas' : locked ? 'Aguardando prêmio' : withinSaleWindow(pool, now) && ruleState === 'em_breve' ? 'Venda em breve' : 'Encerrado'}</span></div><h1>{pool.grupo?.nome ?? 'Bolão BL'}</h1><p className="detail-subtitle">{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Concurso oficial'} <span>•</span> {contestLabel(pool.concurso)} <span>•</span> sorteio {shortDate(pool.concurso?.dataSorteio)}</p>{pool.grupo?.descricao && <p>{pool.grupo.descricao}</p>}<SharePool poolId={pool.id} title={`${modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Bolão'} · ${pool.grupo?.nome ?? 'BL'}`} detail={`${contestLabel(pool.concurso)}, sorteio ${shortDate(pool.concurso?.dataSorteio)}`} price={money(pool.valorCota)} /></div></section>
 <div className="detail-grid"><section className="detail-main">

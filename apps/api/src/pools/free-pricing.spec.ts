@@ -119,11 +119,12 @@ describe('PoolsService.create com preço livre', () => {
     expect(created[0].precificacao).toMatchObject({ costCents: 4200, ticketPerShare: 420, feePerShare: 1080 });
   });
 
-  it('sem a tabela, usa o custo do registro informado', async () => {
-    const { service, created, pricing } = setup();
-    await service.create(base({ precificacaoAutomatica: false, custoRegistroCentavos: 9000, jogos: [{ ordem: 1, numeros: [1, 2, 3, 4, 5, 6], custo: 0 }] }), admin);
-    expect(pricing.priceGames).not.toHaveBeenCalled();
+  it('sem a cotação automática, o custo do registro informado continua valendo; se diferir da tabela, só avisa', async () => {
+    const { service, created } = setup();
+    const result = await service.create(base({ precificacaoAutomatica: false, custoRegistroCentavos: 9000, jogos: [{ ordem: 1, numeros: [1, 2, 3, 4, 5, 6], custo: 0 }] }), admin);
     expect(created[0].precificacao).toMatchObject({ costCents: 9000, ticketPerShare: 90 });
+    expect(result).toHaveProperty('avisos');
+    expect((result as any).avisos[0]).toMatch(/diferente do preço oficial/);
   });
 
   it('recusa cota que não cobre o registro e preço que mudou', async () => {
@@ -145,5 +146,44 @@ describe('PoolsService.create com preço livre', () => {
 
   it('modelo antigo não mudou: taxa de 25% sobre o custo', () => {
     expect(computeShareAmounts(0.75, 100, 25, 0)).toMatchObject({ gross: 75, cost: 60, adminFee: 15 });
+  });
+});
+
+describe('conferência do custo digitado com a tabela oficial', () => {
+  const make = (priced: () => Promise<{ custoTotalCentavos: number }>) => new PoolsService({} as any, { record: jest.fn() } as any, undefined, { priceGames: jest.fn(priced) } as any);
+  const dto = (jogos = [{ ordem: 1, numeros: [1, 2, 3] }]) => ({ jogos }) as any;
+  const check = (service: PoolsService, d: any, cost: number, pending = false) => (service as any).officialCostWarning('lotofacil', d, cost, pending);
+
+  it('custo igual ao da tabela: sem aviso', async () => {
+    expect(await check(make(async () => ({ custoTotalCentavos: 3500 })), dto(), 3500)).toBeNull();
+  });
+
+  it('custo digitado diferente da tabela: avisa com os dois valores (e não bloqueia)', async () => {
+    const warning = await check(make(async () => ({ custoTotalCentavos: 3500 })), dto(), 175000);
+    expect(warning).toContain('R$ 1750,00');
+    expect(warning).toContain('R$ 35,00');
+  });
+
+  it('sem jogos, números a definir ou preço ausente na tabela: não há o que conferir', async () => {
+    expect(await check(make(async () => ({ custoTotalCentavos: 1 })), { jogos: [] } as any, 100)).toBeNull();
+    expect(await check(make(async () => ({ custoTotalCentavos: 1 })), dto(), 100, true)).toBeNull();
+    expect(await check(make(async () => { throw new Error('sem preço'); }), dto(), 100)).toBeNull();
+  });
+});
+
+describe('o jogo guarda o que tem além das dezenas', () => {
+  const service = new PoolsService({} as any, { record: jest.fn() } as any);
+  const pick = (games: any, ordem: number) => (service as any).selectionData(games, ordem);
+
+  it('guarda Time do Coração / Mês de Sorte do jogo certo', () => {
+    const games = [{ ordem: 1, numeros: [1], selecao: { timeCoracao: 'Vasco/RJ' } }, { ordem: 2, numeros: [2], selecao: { mesSorte: 3 } }, { ordem: 3, numeros: [3] }];
+    expect(pick(games, 1)).toEqual({ selecao: { timeCoracao: 'Vasco/RJ' } });
+    expect(pick(games, 2)).toEqual({ selecao: { mesSorte: 3 } });
+  });
+
+  it('sem seleção (ou vazia), não grava nada: o comportamento de antes continua igual', () => {
+    expect(pick([{ ordem: 1, numeros: [1] }], 1)).toEqual({});
+    expect(pick([{ ordem: 1, numeros: [1], selecao: {} }], 1)).toEqual({});
+    expect(pick(undefined, 1)).toEqual({});
   });
 });

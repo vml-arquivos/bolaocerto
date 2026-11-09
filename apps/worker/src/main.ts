@@ -133,7 +133,7 @@ async function syncOnce(): Promise<void> {
 
       if (numbers.length > 0) {
         const secondDraw = modality === 'duplasena' ? (payload.listaDezenasSegundoSorteio ?? []).map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0) : [];
-        await apurarConcurso(prisma, currentContestId!, modality, currentNumber, numbers, secondDraw, prizeTiers);
+        await apurarConcurso(prisma, currentContestId!, modality, currentNumber, numbers, secondDraw, prizeTiers, payload.nomeTimeCoracaoMesSorte);
       }
       console.log(JSON.stringify({ event: 'concursos.sincronizados', modalidade: modality, numero: payload.numero, proximo: payload.numeroConcursoProximo, fonte: source }));
     } catch (error) {

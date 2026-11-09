@@ -1,4 +1,4 @@
-import { countHits, parseTierHits, settleGames, splitPrize, supportsAutoSettlement } from '@bolaocerto/shared-types';
+import { countHits, normalizeCaixaContestPayload, parseTierHits, settleGames, splitPrize, supportsAutoSettlement } from '@bolaocerto/shared-types';
 
 const MEGA_TIERS = [
   { descricaoFaixa: '6 acertos', numeroDeGanhadores: 1, valorPremio: 50_000_000 },
@@ -95,5 +95,72 @@ describe('Divisão do prêmio entre as cotas', () => {
     const shares = Array.from({ length: 997 }, (_, i) => ({ id: `s${i}`, quantidade: (i % 5) + 1 }));
     const parts = splitPrize(100_000_000.01, shares);
     expect([...parts.values()].reduce((acc, value) => acc + Math.round(value * 100), 0)).toBe(10_000_000_001);
+  });
+});
+
+describe('faixa especial: Time do Coração e Mês de Sorte', () => {
+  const tiers = [
+    { descricaoFaixa: '7 acertos', numeroDeGanhadores: 0, valorPremio: 0 },
+    { descricaoFaixa: '3 acertos', numeroDeGanhadores: 10, valorPremio: 4 },
+    { descricaoFaixa: 'Time do Coração', numeroDeGanhadores: 500, valorPremio: 7.5 },
+  ];
+  const drawn = [1, 2, 3, 40, 41, 42, 43];
+  const game = (selecao: { timeCoracao?: string; mesSorte?: number } | null, numeros = [1, 2, 3, 10, 11, 12, 13]) => ({ ordem: 1, numeros, selecao });
+
+  it('acertou o time: soma o prêmio do Time do Coração ao das dezenas', () => {
+    const result = settleGames({ games: [game({ timeCoracao: 'Vasco da Gama/RJ' })], drawn, tiers, modality: 'timemania', drawnSpecial: 'VASCO DA GAMA/RJ' });
+    expect(result.faixaEspecialNaoConferida).toBeUndefined();
+    expect(result.premioTotal).toBe(11.5);
+    expect(result.jogos[0]!.premios.map((p) => p.faixa)).toEqual(['3 acertos', 'Time do Coração']);
+  });
+
+  it('acertar só o time (sem dezenas premiadas) também paga a faixa', () => {
+    const result = settleGames({ games: [game({ timeCoracao: 'Vasco' }, [10, 11, 12, 13, 14, 15, 16])], drawn, tiers, modality: 'timemania', drawnSpecial: 'VASCO/RJ' });
+    expect(result.premioTotal).toBe(7.5);
+    expect(result.teveGanhador).toBe(true);
+  });
+
+  it('time diferente: só as dezenas contam e não há dúvida', () => {
+    const result = settleGames({ games: [game({ timeCoracao: 'Flamengo/RJ' })], drawn, tiers, modality: 'timemania', drawnSpecial: 'VASCO DA GAMA/RJ' });
+    expect(result.premioTotal).toBe(4);
+    expect(result.faixaEspecialNaoConferida).toBeUndefined();
+  });
+
+  it('sem o time guardado no jogo ou sem o nome sorteado: mantém as dezenas e marca para conferir (não adivinha)', () => {
+    const semJogo = settleGames({ games: [game(null)], drawn, tiers, modality: 'timemania', drawnSpecial: 'VASCO/RJ' });
+    expect(semJogo.premioTotal).toBe(4);
+    expect(semJogo.faixaEspecialNaoConferida).toMatch(/guardado/);
+    const semNome = settleGames({ games: [game({ timeCoracao: 'Vasco' })], drawn, tiers, modality: 'timemania' });
+    expect(semNome.premioTotal).toBe(4);
+    expect(semNome.faixaEspecialNaoConferida).toMatch(/nome sorteado/);
+  });
+
+  it('nomes parecidos (um contém o outro, como "Sport" e "Sport Recife") ficam para conferência', () => {
+    const result = settleGames({ games: [game({ timeCoracao: 'Sport' })], drawn, tiers, modality: 'timemania', drawnSpecial: 'SPORT RECIFE/PE' });
+    expect(result.premioTotal).toBe(4);
+    expect(result.faixaEspecialNaoConferida).toMatch(/não bate com clareza/);
+  });
+
+  it('Dia de Sorte: confere o Mês de Sorte por nome ou número', () => {
+    const monthTiers = [{ descricaoFaixa: '4 acertos', numeroDeGanhadores: 5, valorPremio: 10 }, { descricaoFaixa: 'Mês de Sorte', numeroDeGanhadores: 900, valorPremio: 2.5 }];
+    const hit = settleGames({ games: [{ ordem: 1, numeros: [1, 2, 3, 4, 5, 6, 7], selecao: { mesSorte: 3 } }], drawn: [20, 21, 22, 23, 24, 25, 26], tiers: monthTiers, modality: 'diadesorte', drawnSpecial: 'Março' });
+    expect(hit.premioTotal).toBe(2.5);
+    const miss = settleGames({ games: [{ ordem: 1, numeros: [1, 2, 3, 4, 5, 6, 7], selecao: { mesSorte: 4 } }], drawn: [20, 21, 22, 23, 24, 25, 26], tiers: monthTiers, modality: 'diadesorte', drawnSpecial: '3' });
+    expect(miss.premioTotal).toBe(0);
+    expect(miss.faixaEspecialNaoConferida).toBeUndefined();
+  });
+
+  it('sem ganhadores na faixa especial ou sem informar a modalidade, nada muda (compatível com a apuração antiga)', () => {
+    const semGanhadores = settleGames({ games: [game(null)], drawn, tiers: tiers.map((t) => (t.descricaoFaixa === 'Time do Coração' ? { ...t, numeroDeGanhadores: 0 } : t)), modality: 'timemania', drawnSpecial: 'VASCO/RJ' });
+    expect(semGanhadores.premioTotal).toBe(4);
+    expect(semGanhadores.faixaEspecialNaoConferida).toBeUndefined();
+    const antiga = settleGames({ games: [game(null)], drawn, tiers });
+    expect(antiga.premioTotal).toBe(4);
+    expect(antiga.faixaEspecialNaoConferida).toBeUndefined();
+  });
+
+  it('o payload da CAIXA traz o nome sorteado', () => {
+    expect(normalizeCaixaContestPayload({ numero: 1, nomeTimeCoracaoMesSorte: 'VASCO DA GAMA/RJ' }).nomeTimeCoracaoMesSorte).toBe('VASCO DA GAMA/RJ');
+    expect(normalizeCaixaContestPayload({ numero: 1 }).nomeTimeCoracaoMesSorte).toBeUndefined();
   });
 });

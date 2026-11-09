@@ -31,7 +31,9 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     const responseHeaders = new Headers(upstream.headers);
     responseHeaders.set('Cache-Control', 'private, no-store');
     responseHeaders.delete('content-encoding'); responseHeaders.delete('content-length'); responseHeaders.delete('transfer-encoding');
-    return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
+    // 204/205/304 não podem ter corpo: sem isso o Response lança erro e a pessoa vê um 503 falso.
+    const noBody = [204, 205, 304].includes(upstream.status);
+    return new Response(noBody ? null : await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
   } catch {
     return Response.json({ message: 'Serviço do BL temporariamente indisponível.' }, { status: 503 });
   }

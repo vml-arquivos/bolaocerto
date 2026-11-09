@@ -237,6 +237,20 @@ test('senha com no mínimo 8 (sem limite de tamanho) e área Documentos do paine
   assert.deepEqual((await call('GET', '/conta/aceites-pendentes')).data.pendentes, [], 'o aceite do texto padrão continua valendo');
 });
 
+test('funil de conversão: contagem anônima do site e relatório do painel', async () => {
+  const send = (nome) => fetch(`${process.env.E2E_API_URL}/api/v1/funil/evento`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome }) });
+  assert.equal((await send('visita_home')).status, 200);
+  assert.equal((await send('bolao_visto')).status, 200);
+  assert.equal((await send('cadastro_iniciado')).status, 200);
+  assert.equal((await send('qualquer_coisa')).status, 400, 'só aceita as etapas da lista');
+  const report = await call('GET', '/admin/funil');
+  ok(report, 'relatório do funil');
+  assert.deepEqual(report.data.etapas.map((s) => s.chave), ['visita_home', 'bolao_visto', 'cadastro_iniciado', 'cadastro_concluido', 'reserva', 'pagamento']);
+  assert.ok(report.data.etapas[0].total >= 1 && report.data.etapas[1].total >= 1 && report.data.etapas[2].total >= 1);
+  assert.equal((await call('GET', '/admin/funil?de=2026-12-01&ate=2026-11-01')).status, 400);
+  assert.equal((await fetch(`${process.env.E2E_API_URL}/api/v1/admin/funil`)).status, 401, 'o relatório não é público');
+});
+
 test('bolão de data festiva: abre a venda sem números e define os jogos depois', async () => {
   const noNumbers = await call('POST', '/admin/boloes', {
     concursoId: state.contestId, grupoId: state.groupId, numerosApostados: [],
