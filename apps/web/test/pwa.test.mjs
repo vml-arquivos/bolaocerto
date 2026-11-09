@@ -84,9 +84,9 @@ test('/instalar apresenta os três aplicativos, cada um instalado na sua entrada
   const page = await readFile(new URL('../app/instalar/page.tsx', import.meta.url), 'utf8');
   for (const trecho of ['bl-icon-192.png', 'bl-afiliado-icon-192.png', 'bl-admin-icon-192.png', '/afiliado/entrar', '/admin/entrar']) assert.ok(page.includes(trecho), `faltou ${trecho}`);
 });
-test('senha: regra única (mínimo 6, letra e número) no formulário', async () => {
+test('senha: regra única (mínimo 8, letra e número) no formulário', async () => {
   const lib = await readFile(new URL('../lib/password.ts', import.meta.url), 'utf8');
-  assert.match(lib, /PASSWORD_MIN = 6/); assert.match(lib, /\\p\{L\}/);
+  assert.match(lib, /PASSWORD_MIN = 8/); assert.match(lib, /\\p\{L\}/);
   for (const file of ['auth-form', 'password-forms', 'account-extras']) {
     const code = await readFile(new URL(`../components/${file}.tsx`, import.meta.url), 'utf8');
     assert.ok(!/pattern="\[0-9\]\{6,8\}"/.test(code), `${file} ainda exige só números`);

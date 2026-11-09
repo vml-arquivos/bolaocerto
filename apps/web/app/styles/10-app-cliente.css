@@ -170,3 +170,9 @@
 .legal-gate-card h2 { margin: 0 0 6px; font-size: 20px; }
 .legal-gate-card > p { margin: 0 0 14px; color: var(--muted, inherit); }
 .legal-gate-card .button { width: 100%; margin-top: 6px; }
+
+/* Aviso: o Bolão Livre não registra jogos (rodapés e pagamento) */
+.aviso-nao-registra { margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--border, rgba(127, 127, 127, .28)); border-radius: 12px; font-size: .82rem; line-height: 1.55; text-align: left; color: inherit; background: rgba(127, 127, 127, .07); }
+.aviso-nao-registra.is-compact { font-size: .74rem; padding: 8px 12px; }
+.aviso-nao-registra.is-on-dark { border-color: rgba(255, 255, 255, .22); background: rgba(255, 255, 255, .06); color: #dbe4f7; }
+.aviso-nao-registra.checkout-aviso { margin: 0 auto 16px; max-width: 720px; }

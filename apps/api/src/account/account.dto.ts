@@ -11,7 +11,7 @@ export class ResetPasswordDto {
 }
 
 export class ChangePasswordDto {
-  @IsString() @MinLength(1) @MaxLength(128) senhaAtual!: string;
+  @IsString() @MinLength(1) @MaxLength(NEW_PASSWORD_MAX_LENGTH) senhaAtual!: string;
   @IsString() @Length(NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, { message: NEW_PASSWORD_MESSAGE }) @Matches(NEW_PASSWORD_PATTERN, { message: NEW_PASSWORD_MESSAGE }) novaSenha!: string;
 }
 

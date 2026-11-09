@@ -666,6 +666,20 @@ model PrecoLoteria {
   @@map("precos_loteria")
 }
 
+/// Textos de Termos, Privacidade e contratos publicados pelo painel (Documentos). O mais recente com ativo=true vale.
+model DocumentoPublicado {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tipo           String   @db.VarChar(30)
+  versao         String   @db.VarChar(40)
+  texto          String
+  hash           String   @db.VarChar(64)
+  ativo          Boolean  @default(true)
+  publicadoPorId String?  @map("publicado_por_id") @db.Uuid
+  publicadoEm    DateTime @default(now()) @map("publicado_em")
+  @@index([tipo, publicadoEm])
+  @@map("documentos_publicados")
+}
+
 model AceiteLegal {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   usuarioId String @map("usuario_id") @db.Uuid

@@ -35,7 +35,7 @@ export class RegisterDto {
 
   /** Repetir a senha evita erro de digitação no cadastro. */
   @IsString()
-  @Length(1, 128, { message: 'Repita a senha.' })
+  @Length(1, NEW_PASSWORD_MAX_LENGTH, { message: 'Repita a senha.' })
   confirmarSenha!: string;
 
   /** Aceite dos Termos de Uso. */

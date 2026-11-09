@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { money } from '../lib/domain';
+import { AvisoNaoRegistra } from './aviso-nao-registra';
 import { PixQr } from './pix-qr';
 
 type Payment = {
@@ -105,6 +106,7 @@ export function Checkout({ shareId, voltar }: { shareId: string; voltar?: string
       {summary.titulo && <p className="muted">{summary.titulo}{summary.quantidade ? ` · ${summary.quantidade} ${summary.quantidade === 1 ? 'cota' : 'cotas'}` : ''}{summary.titular ? ` · titular ${summary.titular}` : ''}</p>}
     </div>
 
+    <AvisoNaoRegistra compact className="checkout-aviso" />
     {error && <div className="checkout-card checkout-state is-error" role="alert"><strong>{error}</strong><Link className="button button-secondary" href={back}>Voltar ao bolão</Link></div>}
     {!error && !payment && <div className="checkout-card checkout-state" role="status"><span className="checkout-spinner" aria-hidden="true" /><strong>Carregando o seu pagamento…</strong></div>}
 

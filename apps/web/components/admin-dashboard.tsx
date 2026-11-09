@@ -9,6 +9,7 @@ import { StaffGate, useIsSuperAdmin } from './staff-gate';
 import { PoolWizard as SimplePoolWizard } from './pool-wizard';
 import { CrmView, PoolControlView } from './admin-crm-tools';
 import { ComunicadosView } from './admin-comunicados';
+import { DocumentsView } from './admin-documents';
 import { VitrineView } from './admin-vitrine';
 import { AdminModal, AttachmentsPanel, RegisterBetDialog } from './admin-attachments';
 import { ConnectionsView } from './admin-connections';
@@ -37,7 +38,7 @@ import { FinanceView } from './admin-views/finance-view';
 import { AdminHubTabs } from './admin-hub-tabs';
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine']);
+const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
 function AdminDashboardContent({ testMode }: { testMode: boolean }) {
@@ -208,6 +209,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'comprovantes') return <ReceiptsView ctx={ctx} />;
     if (view === 'lotericas') return <PartnersView ctx={ctx} />;
     if (view === 'auditoria') return <AuditView ctx={ctx} />;
+    if (view === 'documentos') return <DocumentsView notify={notify} />;
     if (view === 'conexoes') return <ConnectionsView notify={notify} />;
     if (view === 'configuracoes') return <><SettingsView ctx={ctx} /><PaymentSettingsPanel notify={notify} /></>;
     return <DashboardView ctx={ctx} />;

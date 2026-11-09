@@ -1,7 +1,7 @@
-export const NEW_PASSWORD_MIN_LENGTH = 6;
-/** Limite técnico (evita abuso no cálculo do hash); na prática a pessoa escolhe o tamanho que quiser. */
-export const NEW_PASSWORD_MAX_LENGTH = 128;
-export const NEW_PASSWORD_MESSAGE = 'A senha deve ter no mínimo 6 caracteres, com pelo menos uma letra e um número.';
+export const NEW_PASSWORD_MIN_LENGTH = 8;
+/** Limite técnico (só para barrar abuso; o hash é argon2, que aceita senhas longas); na prática a pessoa escolhe o tamanho que quiser. */
+export const NEW_PASSWORD_MAX_LENGTH = 1024;
+export const NEW_PASSWORD_MESSAGE = 'A senha deve ter no mínimo 8 caracteres, com pelo menos uma letra e um número.';
 /** Para usar em @Matches(): exige ao menos uma letra e um número. */
 export const NEW_PASSWORD_PATTERN = /^(?=.*\p{L})(?=.*\d).+$/u;
 

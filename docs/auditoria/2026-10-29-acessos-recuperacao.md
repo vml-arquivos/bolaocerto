@@ -21,7 +21,7 @@ printf '%s' "$BL_RECOVERY_SECRET" | node dist/tools/recover-admin.js --apply
 unset BL_RECOVERY_SECRET RECOVERY_ADMIN_EMAIL
 ```
 
-O comando não imprime a senha, não a recebe em argumentos e não usa ADMIN_BOOTSTRAP_PASSWORD. A senha informada deve ter no mínimo 6 caracteres, com letra e número. Recupera somente administrador existente e ativo; não cria usuário, não promove cliente e não desliga 2FA. Invalida sessões e links de senha e registra auditoria. Se houver 2FA, o código do autenticador continuará necessário. Uma falha em qualquer etapa do banco reverte a transação. Conta desativada exige reativação por outro administrador.
+O comando não imprime a senha, não a recebe em argumentos e não usa ADMIN_BOOTSTRAP_PASSWORD. A senha informada deve ter no mínimo 8 caracteres, com letra e número. Recupera somente administrador existente e ativo; não cria usuário, não promove cliente e não desliga 2FA. Invalida sessões e links de senha e registra auditoria. Se houver 2FA, o código do autenticador continuará necessário. Uma falha em qualquer etapa do banco reverte a transação. Conta desativada exige reativação por outro administrador.
 
 Se a senha redefinida continuar falhando, confira se o frontend aponta para a mesma API/banco em que a redefinição foi feita. Guarde horário e status HTTP da tentativa; não registre o corpo com credenciais. Erro 500 por coluna inexistente exige aplicar as migrações da revisão anterior; não deve ser tratado como senha incorreta.
 

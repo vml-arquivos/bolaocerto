@@ -115,3 +115,8 @@
 .contest-status-strip > div.is-open { border-left-color: var(--success, #1fa971); }
 .contest-status-strip > div.is-closed { border-left-color: var(--warning, #e0a100); }
 .contest-status-strip span { color: var(--text-muted, #8da2cf); }
+
+/* Documentos (termos, privacidade, contratos) */
+.doc-text-input { width: 100%; min-height: 280px; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
+.doc-text-preview { max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 14px; margin: 0 0 16px; border: 1px solid var(--admin-border, rgba(127, 127, 127, .3)); border-radius: 12px; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+tr.is-selected td { background: rgba(37, 99, 235, .08); }

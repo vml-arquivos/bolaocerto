@@ -21,7 +21,7 @@ Pontos que importam:
 
 ## Senha
 
-Regra para criar ou trocar senha: no mínimo 6 caracteres, com pelo menos uma letra e um número (sem máximo prático; limite técnico de 128). Contas antigas com senha só de números continuam entrando; a regra vale na próxima troca. O botão "Mostrar" aparece nos campos de senha.
+Regra para criar ou trocar senha: no mínimo 8 caracteres, com pelo menos uma letra e um número (sem máximo prático; limite técnico de 1024). Contas antigas com senha só de números continuam entrando; a regra vale na próxima troca. O botão "Mostrar" aparece nos campos de senha.
 
 ## Perfis de acesso
 

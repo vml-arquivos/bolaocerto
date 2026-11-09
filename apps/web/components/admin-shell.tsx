@@ -38,6 +38,7 @@ const groups = [
     items: [
       ['vitrine', 'Página inicial', 'PI'],
       ['usuarios', 'Usuários e acessos', 'US'],
+      ['documentos', 'Documentos', 'DC'],
       ['conexoes', 'Conexões', 'CX'],
       ['auditoria', 'Histórico', 'HI'],
       ['configuracoes', 'Configurações', 'CF'],

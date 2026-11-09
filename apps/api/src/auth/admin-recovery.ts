@@ -4,7 +4,7 @@ import { isValidNewPassword } from './password-policy';
 /** Explicit server-console recovery; never called by startup or HTTP routes. */
 export async function recoverAdmin(prisma: PrismaClient, email: string, password: string) {
   email = email.trim().toLowerCase();
-  if (!email.includes('@') || !isValidNewPassword(password)) throw new Error('Informe o e-mail e uma senha com no mínimo 6 caracteres, com letra e número.');
+  if (!email.includes('@') || !isValidNewPassword(password)) throw new Error('Informe o e-mail e uma senha com no mínimo 8 caracteres, com letra e número.');
   const hash = await argon2.hash(password, { type: argon2.argon2id });
   return prisma.$transaction(async tx => {
     // The row lock below is portable across the managed PostgreSQL variants used in production.

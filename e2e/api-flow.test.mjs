@@ -177,13 +177,64 @@ test('cadastro exige repetir a senha e aceitar termos, LGPD e 18 anos; o aceite 
   ok(pending, 'pendências'); assert.deepEqual(pending.data.pendentes, []);
   const mine = await call('GET', '/conta/contratos', null, {}, jar);
   ok(mine, 'contratos'); assert.deepEqual(mine.data.afiliacao.map((row) => row.tipo).sort(), ['privacidade', 'termos']);
-  // Conta antiga (o administrador de teste nunca aceitou): fica pendente até aceitar.
+  // Conta antiga (o administrador de teste, num banco novo, nunca aceitou): fica pendente até aceitar.
+  // Em banco já usado em outra rodada o aceite já existe; nesse caso só confere que não há pendência.
   const before = await call('GET', '/conta/aceites-pendentes');
-  ok(before, 'pendências do admin'); assert.equal(before.data.pendentes.length, 2);
-  assert.equal((await call('POST', '/conta/aceites', { termos: true, privacidade: true, maiorDeIdade: false })).status, 400);
-  ok(await call('POST', '/conta/aceites', { termos: true, privacidade: true, maiorDeIdade: true }), 'aceitar');
+  ok(before, 'pendências do admin'); assert.ok([0, 2].includes(before.data.pendentes.length));
+  if (before.data.pendentes.length === 2) {
+    assert.equal((await call('POST', '/conta/aceites', { termos: true, privacidade: true, maiorDeIdade: false })).status, 400);
+    ok(await call('POST', '/conta/aceites', { termos: true, privacidade: true, maiorDeIdade: true }), 'aceitar');
+  }
   assert.deepEqual((await call('GET', '/conta/aceites-pendentes')).data.pendentes, []);
   const doc = await call('GET', '/config/contratos/termos'); ok(doc, 'documento termos'); assert.equal(doc.data.tipo, 'termos');
+});
+
+test('senha com no mínimo 8 (sem limite de tamanho) e área Documentos do painel', async () => {
+  const cpfDigits = () => { const n = Array.from({ length: 9 }, () => Math.floor(Math.random() * 9)); const d = (len) => { const sum = n.slice(0, len).reduce((a, v, i) => a + v * (len + 1 - i), 0); const r = (sum * 10) % 11; return r === 10 ? 0 : r; }; n.push(d(9)); n.push(d(10)); return n.join(''); };
+  const reg = (senha) => ({ nome: 'Pessoa Senha', cpf: cpfDigits(), email: `senha.${Date.now()}.${Math.floor(Math.random() * 1e6)}@teste.local`, telefone: '11912345678', maiorDeIdade: true, senha, confirmarSenha: senha, aceiteTermos: true, aceitePrivacidade: true });
+  const jar = { cookie: '' };
+  const short = await call('POST', '/auth/registrar', reg('Senha12'), {}, jar);
+  assert.ok([400, 409].includes(short.status), `7 caracteres devem ser recusados (HTTP ${short.status})`);
+  const noDigit = await call('POST', '/auth/registrar', reg('SomenteLetras'), {}, jar);
+  assert.ok([400, 409].includes(noDigit.status), 'sem número deve ser recusada');
+  const longPassword = 'Aa1' + 'x'.repeat(297);
+  const body = reg(longPassword);
+  ok(await call('POST', '/auth/registrar', body, {}, jar), 'cadastro com senha de 300 caracteres');
+  const relogin = { cookie: '' };
+  ok(await call('POST', '/auth/login', { email: body.email, senha: longPassword }, {}, relogin), 'entra com a senha longa');
+
+  // Quem não é administrador não vê a área de documentos.
+  assert.equal((await call('GET', '/admin/documentos', null, {}, relogin)).status, 403);
+
+  const list = await call('GET', '/admin/documentos');
+  ok(list, 'lista de documentos');
+  assert.deepEqual(list.data.documentos.map((d) => d.tipo), ['termos', 'privacidade', 'participacao', 'afiliado', 'parceiro', 'funcionario']);
+  assert.equal((await call('GET', '/admin/documentos/inexistente')).status, 404);
+  assert.equal((await call('POST', '/admin/documentos/parceiro/publicar', { texto: 'curto', confirmo: true })).status, 400);
+  assert.equal((await call('POST', '/admin/documentos/parceiro/publicar', { texto: 'x'.repeat(300) })).status, 400, 'sem confirmar a revisão');
+
+  // Banco usado em outra rodada: começa sem texto publicado pelo painel.
+  for (const kind of ['parceiro', 'termos']) await call('POST', `/admin/documentos/${kind}/voltar-ao-padrao`);
+
+  // Contrato interno: publica, fica só no painel (não é página pública) e volta ao padrão.
+  const partnerText = 'CONTRATO DE PARCERIA DEFINITIVO. ' + 'Cláusula de teste. '.repeat(20).trim();
+  const published = await call('POST', '/admin/documentos/parceiro/publicar', { texto: partnerText, confirmo: true });
+  ok(published, 'publicar parceiro');
+  const detail = await call('GET', '/admin/documentos/parceiro');
+  ok(detail, 'detalhe'); assert.equal(detail.data.origem, 'painel'); assert.equal(detail.data.texto, partnerText); assert.equal(detail.data.historico.length >= 1, true);
+  assert.equal((await call('GET', '/config/contratos/parceiro')).status, 404, 'contrato de parceiro não é público');
+  ok(await call('POST', '/admin/documentos/parceiro/voltar-ao-padrao'), 'voltar ao padrão');
+  assert.equal((await call('GET', '/admin/documentos/parceiro')).data.origem, 'minuta');
+  assert.equal((await call('POST', '/admin/documentos/parceiro/voltar-ao-padrao')).status, 400);
+
+  // Termos de uso publicados: passa a valer na página pública e todos precisam aceitar de novo; voltar ao padrão restaura.
+  const termsText = 'TERMOS DE USO DEFINITIVOS. ' + 'Cláusula de teste. '.repeat(20).trim();
+  ok(await call('POST', '/admin/documentos/termos/publicar', { texto: termsText, confirmo: true }), 'publicar termos');
+  assert.equal((await call('GET', '/config/contratos/termos')).data.texto, termsText);
+  const pendingAfter = await call('GET', '/conta/aceites-pendentes'); ok(pendingAfter, 'pendências');
+  assert.deepEqual(pendingAfter.data.pendentes.map((p) => p.tipo), ['termos'], 'quem já aceitou precisa aceitar o texto novo');
+  ok(await call('POST', '/admin/documentos/termos/voltar-ao-padrao'), 'voltar termos ao padrão');
+  assert.deepEqual((await call('GET', '/conta/aceites-pendentes')).data.pendentes, [], 'o aceite do texto padrão continua valendo');
 });
 
 test('bolão de data festiva: abre a venda sem números e define os jogos depois', async () => {

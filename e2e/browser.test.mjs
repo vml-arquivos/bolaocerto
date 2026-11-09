@@ -10,7 +10,7 @@ const BASE = (process.env.E2E_BASE_URL ?? 'http://localhost:3000').replace(/\/$/
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'admin@teste.local';
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Senha123';
 const PUBLIC_PAGES = ['/', '/resultados', '/estatisticas', '/termos', '/privacidade', '/jogo-responsavel', '/login', '/cadastro', '/esqueci-senha', '/instalar'];
-const ADMIN_VIEWS = ['visao-geral', 'concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'comprovantes', 'operacao', 'afiliados', 'convites', 'grupos', 'comissoes', 'repasses', 'usuarios', 'lotericas', 'auditoria', 'configuracoes', 'vitrine', 'crm', 'controle', 'comunicados', 'relatorios', 'notas-fiscais', 'conexoes'];
+const ADMIN_VIEWS = ['visao-geral', 'concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'comprovantes', 'operacao', 'afiliados', 'convites', 'grupos', 'comissoes', 'repasses', 'usuarios', 'lotericas', 'auditoria', 'configuracoes', 'vitrine', 'crm', 'controle', 'comunicados', 'relatorios', 'notas-fiscais', 'conexoes', 'documentos'];
 
 let browser;
 before(async () => { browser = await chromium.launch(); });
