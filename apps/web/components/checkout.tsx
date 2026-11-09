@@ -44,6 +44,35 @@ function useCountdown(until?: string | null) {
   return { left, label: `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`, days: Math.floor(left / 86400) };
 }
 
+/** Pagar com o crédito da carteira: só aparece se o saldo cobrir a cota inteira. */
+function WalletPay({ shareId, valorBruto, onPaid }: { shareId: string; valorBruto?: string; onPaid: () => void }) {
+  const [balance, setBalance] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    let off = false;
+    void fetch('/api/v1/usuarios/me/carteira', { credentials: 'include', cache: 'no-store' }).then(async (response) => (response.ok ? await response.json() as { saldoCentavos: number } : null)).then((data) => { if (!off && data) setBalance(data.saldoCentavos); }).catch(() => undefined);
+    return () => { off = true; };
+  }, []);
+  const needed = Math.round(Number(valorBruto ?? 0) * 100);
+  if (balance === null || balance <= 0 || needed <= 0) return null;
+  const covers = balance >= needed;
+  async function pay() {
+    setBusy(true); setMessage('');
+    try {
+      const response = await fetch(`/api/v1/cotas/${shareId}/pagar-com-saldo`, { method: 'POST', credentials: 'include' });
+      const data = await response.json().catch(() => ({})) as { message?: string | string[] };
+      if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível pagar com o saldo.');
+      onPaid();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setBusy(false); }
+  }
+  return <div className="checkout-wallet">
+    <p>Você tem <strong>{money(balance / 100)}</strong> de saldo na carteira.{covers ? '' : ' Para pagar com o saldo, ele precisa cobrir o valor inteiro da cota. Pague com Pix abaixo.'}</p>
+    {covers && <button type="button" className="button button-secondary" disabled={busy} onClick={() => void pay()}>{busy ? 'Pagando…' : `Pagar ${money(needed / 100)} com o saldo`}</button>}
+    {message && <div className="form-message form-error" role="alert">{message}</div>}
+  </div>;
+}
+
 /** Página de pagamento: QR Code e código do Pix, boleto ou cartão, confirmação automática e volta ao bolão. */
 export function Checkout({ shareId, voltar }: { shareId: string; voltar?: string }) {
   const [payment, setPayment] = useState<Payment | null>(null);
@@ -130,6 +159,7 @@ export function Checkout({ shareId, voltar }: { shareId: string; voltar?: string
     {payment && !paid && !failed && <div className="checkout-grid">
       <section className="checkout-card checkout-pay" aria-label="Pagamento">
         {payment.valorBruto && <div className="checkout-amount"><span>Valor a pagar</span><strong>{money(payment.valorBruto)}</strong></div>}
+        <WalletPay shareId={shareId} valorBruto={payment.valorBruto} onPaid={() => void load()} />
 
         {!isCard && payment.qrCodePix && <>
           <div className="checkout-qr"><PixQr payload={payment.qrCodePix} /></div>

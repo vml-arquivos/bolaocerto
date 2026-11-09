@@ -1,0 +1,67 @@
+/* Minha conta: carteira, indicação, Meus dados completos, revisão da compra e CRM do afiliado. */
+.account-tabs.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.account-tabs.is-four button { font-size: .8rem; padding: 0 4px; }
+.account-stats.is-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 560px) { .account-stats.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.wallet-balance, .referral-card { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.wallet-balance small, .referral-card small { color: var(--text-muted); font-size: .76rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.wallet-balance strong { font-size: 1.9rem; line-height: 1.1; color: var(--text-primary); }
+.wallet-balance p, .referral-card p { margin: 0; color: var(--text-secondary); font-size: .86rem; }
+.wallet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wallet-actions .button { min-height: 38px; padding: 0 14px; font-size: .84rem; flex: 1 1 auto; justify-content: center; }
+.referral-card input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: .88rem; }
+.wallet-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.wallet-totals > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); min-width: 0; }
+.wallet-totals small { color: var(--text-muted); font-size: .72rem; }
+.wallet-totals strong { color: var(--text-primary); font-size: 1.02rem; overflow-wrap: anywhere; }
+.wallet-moves { list-style: none; margin: 8px 0 0; padding: 0; display: grid; }
+.wallet-moves li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.wallet-moves li:first-child { border-top: 0; }
+.wallet-moves li > div { display: grid; gap: 2px; min-width: 0; }
+.wallet-moves small { color: var(--text-muted); font-size: .76rem; }
+.wallet-moves span { flex: 0 0 auto; font-weight: 700; font-size: .9rem; }
+.wallet-moves .is-in { color: var(--success); }
+.wallet-moves .is-out { color: var(--text-primary); }
+.wallet-moves .is-wait { color: var(--text-muted); font-weight: 600; font-size: .8rem; }
+.wallet-help { padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); font-size: .86rem; }
+.wallet-help summary { cursor: pointer; font-weight: 600; color: var(--text-secondary); }
+.wallet-help ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--text-secondary); }
+
+.profile-check { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-muted); margin-bottom: 10px; }
+.profile-check > strong { font-size: .9rem; }
+.profile-check ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .84rem; }
+.profile-check li { display: flex; gap: 8px; align-items: center; color: var(--text-secondary); }
+.profile-check li.is-done { color: var(--success); }
+.profile-check li.is-todo { color: var(--warning); font-weight: 600; }
+.profile-check-bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.profile-check-bar > span { display: block; height: 100%; background: var(--success); }
+
+.purchase-review { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-muted); }
+.purchase-review h3 { margin: 0; font-size: 1rem; }
+.purchase-review dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: .88rem; }
+.purchase-review dt { color: var(--text-muted); }
+.purchase-review dd { margin: 0; text-align: right; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.purchase-review .review-total { font-size: 1.1rem; }
+.purchase-review-actions { display: grid; gap: 8px; }
+.checkout-wallet { display: grid; gap: 8px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: var(--radius-md); background: var(--surface-muted); margin-top: 10px; }
+.checkout-wallet p { margin: 0; font-size: .86rem; color: var(--text-secondary); }
+
+/* CRM e funil (cliente do afiliado e administração) */
+.crm-funnel { display: grid; gap: 6px; margin: 8px 0 12px; }
+.crm-funnel-step { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); cursor: pointer; font: inherit; text-align: left; color: inherit; }
+.crm-funnel-step.is-on { border-color: var(--brand, var(--text-primary)); box-shadow: var(--shadow-sm); }
+.crm-funnel-step strong { font-size: 1.05rem; }
+.crm-funnel-step span { font-size: .84rem; color: var(--text-secondary); }
+.crm-funnel-step small { grid-column: 1 / -1; color: var(--text-muted); font-size: .74rem; }
+.crm-funnel-bar { grid-column: 1 / -1; height: 5px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.crm-funnel-bar > i { display: block; height: 100%; background: var(--success); }
+.crm-stage { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; background: var(--neutral-soft); color: var(--text-secondary); white-space: nowrap; }
+.crm-stage.is-pagou, .crm-stage.is-recorrente { background: var(--success-soft); color: var(--success); }
+.crm-stage.is-reservou, .crm-stage.is-reserva_vencida { background: var(--warning-soft); color: var(--warning); }
+.crm-detail { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-muted); margin-top: 8px; }
+.crm-detail textarea { width: 100%; min-height: 70px; font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: inherit; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.kpi-grid > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); min-width: 0; }
+.kpi-grid small { color: var(--text-muted); font-size: .72rem; }
+.kpi-grid strong { font-size: 1.05rem; color: var(--text-primary); overflow-wrap: anywhere; }

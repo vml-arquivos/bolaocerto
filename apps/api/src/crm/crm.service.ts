@@ -8,21 +8,22 @@ import { buildCsv, buildXlsx, Column, formatCpf, maskCpf, Row } from '../reports
 import { brl, buildPdfReport } from '../reports/pdf.util';
 import { ReportFile } from '../reports/reports.service';
 import { CrmListQueryDto, CrmNoteDto, CrmProfileDto } from './crm.dto';
-import { BettorMetrics, classify, crmConfigFromEnv, EMPTY_METRICS, LEVEL_LABELS, Nivel, Segmento, SEGMENT_LABELS } from './crm.segments';
+import { BettorMetrics, buildFunnel, classify, crmConfigFromEnv, EMPTY_METRICS, Etapa, etapaFunil, ETAPA_ACOES, ETAPA_LABELS, LEVEL_LABELS, Nivel, Segmento, SEGMENT_LABELS } from './crm.segments';
 
 const PAID: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
 
 export interface BettorRow {
   id: string; nome: string; cpf: string; email: string; telefone: string | null; cidade: string | null; uf: string | null; papel: string; cadastradoEm: Date;
   afiliadoOrigem: string | null; etiquetas: string[]; proximoContatoEm: Date | null;
+  etapa: Etapa; etapaNome: string; proximaAcao: string;
   nivel: Nivel; nivelNome: string; segmentos: Segmento[]; segmentoNomes: string[];
   totalGasto: number; cotasPagas: number; compras: number; boloesDistintos: number; ticketMedio: number; primeiraCompraEm: Date | null; ultimaCompraEm: Date | null; diasSemComprar: number | null;
-  cotasPendentes: number; valorPendente: number; reservasVencidas: number; premiosGanhos: number;
+  cotasPendentes: number; valorPendente: number; reservasVencidas: number; reservasCanceladas: number; premiosGanhos: number;
 }
 
 const EXPORT_COLUMNS: Column[] = [
   { key: 'nome', header: 'Apostador', width: 30 }, { key: 'cpf', header: 'CPF', width: 16 }, { key: 'email', header: 'E-mail', width: 30 }, { key: 'telefone', header: 'Telefone', width: 16 },
-  { key: 'cidade', header: 'Cidade/UF', width: 18 }, { key: 'nivelNome', header: 'Nível', width: 10 }, { key: 'segmentos', header: 'Segmentos', width: 34 },
+  { key: 'cidade', header: 'Cidade/UF', width: 18 }, { key: 'etapaNome', header: 'Etapa do funil', width: 28 }, { key: 'nivelNome', header: 'Nível', width: 10 }, { key: 'segmentos', header: 'Segmentos', width: 34 },
   { key: 'totalGasto', header: 'Total investido', type: 'money', sum: true }, { key: 'cotasPagas', header: 'Cotas pagas', type: 'int', width: 11, sum: true }, { key: 'compras', header: 'Compras', type: 'int', width: 10, sum: true },
   { key: 'boloesDistintos', header: 'Bolões', type: 'int', width: 9 }, { key: 'ticketMedio', header: 'Ticket médio', type: 'money' },
   { key: 'primeiraCompraEm', header: 'Primeira compra', type: 'date' }, { key: 'ultimaCompraEm', header: 'Última compra', type: 'date' }, { key: 'diasSemComprar', header: 'Dias sem comprar', type: 'int', width: 12 },
@@ -36,10 +37,12 @@ export class CrmService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
   /** Métricas por apostador, calculadas a partir de cotas pagas e reservas. */
-  private async metrics(now: Date): Promise<{ byUser: Map<string, BettorMetrics>; prizes: Map<string, number> }> {
-    const [paid, pending] = await Promise.all([
-      this.prisma.cota.findMany({ where: { status: { in: PAID } }, select: { compradorId: true, bolaoId: true, quantidade: true, valorPago: true, criadoEm: true, status: true, valorPremio: true, pagamento: { select: { valorBruto: true, confirmadoEm: true } } } }),
-      this.prisma.cota.findMany({ where: { status: StatusCota.reservada }, select: { compradorId: true, quantidade: true, expiraReservaEm: true, bolao: { select: { valorCota: true } } } }),
+  private async metrics(now: Date, scope: Prisma.CotaWhereInput = {}): Promise<{ byUser: Map<string, BettorMetrics>; prizes: Map<string, number> }> {
+    const [paid, pending, cancelled] = await Promise.all([
+      this.prisma.cota.findMany({ where: { status: { in: PAID }, ...scope }, select: { compradorId: true, bolaoId: true, quantidade: true, valorPago: true, criadoEm: true, status: true, valorPremio: true, pagamento: { select: { valorBruto: true, confirmadoEm: true } } } }),
+      this.prisma.cota.findMany({ where: { status: StatusCota.reservada, ...scope }, select: { compradorId: true, quantidade: true, expiraReservaEm: true, bolao: { select: { valorCota: true } } } }),
+      // Reserva cancelada por falta de pagamento: tinha prazo, nunca foi paga.
+      this.prisma.cota.groupBy({ by: ['compradorId'], where: { status: StatusCota.cancelada, expiraReservaEm: { not: null }, pagamento: null, ...scope }, _count: { _all: true } }),
     ]);
     const byUser = new Map<string, BettorMetrics>();
     const pools = new Map<string, Set<string>>();
@@ -64,43 +67,48 @@ export class CrmService {
       item.valorPendente = round2(item.valorPendente + Number(share.bolao.valorCota) * share.quantidade);
       if (share.expiraReservaEm && share.expiraReservaEm < now) item.reservasVencidas += 1;
     }
+    for (const row of cancelled) get(row.compradorId).reservasCanceladas = row._count._all;
     return { byUser, prizes };
   }
 
-  private async rows(full: boolean): Promise<BettorRow[]> {
+  async rows(full: boolean, opts: { userWhere?: Prisma.UsuarioWhereInput; cotaScope?: Prisma.CotaWhereInput; hideAdminProfile?: boolean } = {}): Promise<BettorRow[]> {
     const now = new Date();
     const [{ byUser, prizes }, users] = await Promise.all([
-      this.metrics(now),
+      this.metrics(now, opts.cotaScope),
       this.prisma.usuario.findMany({
         // Clientes = só quem compra (cotistas) e ainda tem acesso. Afiliados e equipe têm as próprias telas.
-        where: { papel: 'cotista', desativadoEm: null },
+        where: { papel: 'cotista', desativadoEm: null, ...(opts.userWhere ?? {}) },
         select: { id: true, nome: true, cpf: true, email: true, telefone: true, enderecoCidade: true, enderecoUf: true, papel: true, criadoEm: true, indicadoPorAfiliado: { select: { codigoAfiliado: true } }, crmPerfil: { select: { etiquetas: true, proximoContatoEm: true } } },
       }),
     ]);
     return users.map((user) => {
       const metric = byUser.get(user.id) ?? EMPTY_METRICS;
-      const tags = user.crmPerfil?.etiquetas ?? [];
+      // O afiliado não enxerga as etiquetas nem o próximo contato da administração.
+      const tags = opts.hideAdminProfile ? [] : user.crmPerfil?.etiquetas ?? [];
       const { nivel, segmentos } = classify(metric, tags, now, this.cfg);
+      const etapa = etapaFunil(metric, now, this.cfg);
       return {
+        etapa, etapaNome: ETAPA_LABELS[etapa], proximaAcao: ETAPA_ACOES[etapa],
         id: user.id, nome: user.nome, cpf: full ? formatCpf(user.cpf) : maskCpf(user.cpf), email: user.email, telefone: user.telefone,
         cidade: user.enderecoCidade, uf: user.enderecoUf, papel: user.papel, cadastradoEm: user.criadoEm,
-        afiliadoOrigem: user.indicadoPorAfiliado?.codigoAfiliado ?? null, etiquetas: tags, proximoContatoEm: user.crmPerfil?.proximoContatoEm ?? null,
+        afiliadoOrigem: opts.hideAdminProfile ? null : user.indicadoPorAfiliado?.codigoAfiliado ?? null, etiquetas: tags, proximoContatoEm: opts.hideAdminProfile ? null : user.crmPerfil?.proximoContatoEm ?? null,
         nivel, nivelNome: LEVEL_LABELS[nivel], segmentos, segmentoNomes: segmentos.map((segment) => SEGMENT_LABELS[segment]),
         totalGasto: metric.totalGasto, cotasPagas: metric.cotasPagas, compras: metric.compras, boloesDistintos: metric.boloesDistintos,
         ticketMedio: metric.compras ? round2(metric.totalGasto / metric.compras) : 0,
         primeiraCompraEm: metric.primeiraCompraEm, ultimaCompraEm: metric.ultimaCompraEm,
         diasSemComprar: metric.ultimaCompraEm ? Math.floor((now.getTime() - metric.ultimaCompraEm.getTime()) / 86_400_000) : null,
-        cotasPendentes: metric.cotasPendentes, valorPendente: metric.valorPendente, reservasVencidas: metric.reservasVencidas, premiosGanhos: prizes.get(user.id) ?? 0,
+        cotasPendentes: metric.cotasPendentes, valorPendente: metric.valorPendente, reservasVencidas: metric.reservasVencidas, reservasCanceladas: metric.reservasCanceladas, premiosGanhos: prizes.get(user.id) ?? 0,
       };
     });
   }
 
-  private filtered(rows: BettorRow[], query: CrmListQueryDto): BettorRow[] {
+  filtered(rows: BettorRow[], query: CrmListQueryDto): BettorRow[] {
     const term = query.busca?.trim().toLowerCase();
     const digits = term?.replace(/\D/g, '');
     let result = rows.filter((row) => {
       if (query.segmento && !row.segmentos.includes(query.segmento)) return false;
       if (query.nivel && row.nivel !== query.nivel) return false;
+      if (query.etapa && row.etapa !== query.etapa) return false;
       if (term && !(row.nome.toLowerCase().includes(term) || row.email.toLowerCase().includes(term) || (digits && row.cpf.replace(/\D/g, '').includes(digits)) || row.etiquetas.some((tag) => tag.toLowerCase().includes(term)))) return false;
       return true;
     });
@@ -127,6 +135,7 @@ export class CrmService {
       totais: { cadastrados: rows.length, compradores: buyers.length, receitaTotal: revenue, ticketMedioPorApostador: buyers.length ? round2(revenue / buyers.length) : 0, receitaVip: vipRevenue, participacaoVipPct: revenue ? round2((vipRevenue / revenue) * 100) : 0 },
       segmentos: (Object.keys(SEGMENT_LABELS) as Segmento[]).map((segment) => ({ chave: segment, nome: SEGMENT_LABELS[segment], apostadores: count(segment) })),
       niveis: tiers,
+      funil: buildFunnel(rows),
       maioresApostadores: top, reativar: reactivate, acompanhamentos: followUps,
       criterios: { prata: this.cfg.prata, ouro: this.cfg.ouro, diamante: this.cfg.diamante, inativoDias: this.cfg.inativoDias, novoDias: this.cfg.novoDias, recorrenteMinBoloes: this.cfg.recorrenteMinBoloes },
     };

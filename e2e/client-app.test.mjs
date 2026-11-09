@@ -66,6 +66,10 @@ test('app do cliente: carrossel, todos os números, compra sem repetir dados e c
     assert.ok((await page.locator('.buy-total').innerText()).includes('40,00'), 'total = 2 × R$ 20,00');
     await page.check('.purchase-card form input[type=checkbox]');
     await page.click('.purchase-card form button.button-primary');
+    // Revisão da compra: nada é reservado até o cliente confirmar.
+    await page.waitForSelector('.purchase-review');
+    assert.ok((await page.locator('.purchase-review').innerText()).includes('40,00'), 'resumo mostra o total');
+    await page.click('.purchase-review button.button-primary');
     await page.waitForURL((url) => url.pathname.startsWith('/checkout/'), { timeout: 60000 });
 
     // Conta enxuta: cotas em destaque; o resto recolhido; sem 2FA e sem aviso de teste para cliente.
@@ -80,7 +84,14 @@ test('app do cliente: carrossel, todos os números, compra sem repetir dados e c
     assert.ok(!rows.some((row) => row.includes('Verificação em duas etapas')), 'cliente não vê 2FA');
     await page.locator('.app-row > summary', { hasText: 'Meus dados' }).click();
     const data = await page.locator('.app-row[open] .app-row-body').first().innerText();
-    assert.ok(!/Pix/i.test(data), 'cliente não vê chave Pix');
+    assert.ok(/Chave Pix/i.test(data), 'cliente cadastra a própria chave Pix em Meus dados');
+    assert.ok(/Endereço|endereço/.test(data), 'cliente vê o endereço em Meus dados');
+    for (const name of ['Carteira', 'Indicar amigos']) await page.getByRole('tab', { name }).waitFor();
+    await page.getByRole('tab', { name: 'Indicar amigos' }).click();
+    await page.waitForSelector('.referral-card input');
+    assert.ok((await page.locator('.referral-card input').inputValue()).includes('/r/'), 'link de indicação do cliente');
+    await page.getByRole('tab', { name: 'Carteira' }).click();
+    await page.waitForSelector('.wallet-balance');
     assert.deepEqual(problems, []);
   } finally { await browser.close(); }
 });

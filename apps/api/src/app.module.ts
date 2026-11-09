@@ -25,6 +25,7 @@ import { LegalModule } from './legal/legal.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { ConferidorModule } from './conferidor/conferidor.module';
 import { ModalityAlertsModule } from './alerts/modality-alerts.module';
+import { WalletModule } from './wallet/wallet.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -53,6 +54,7 @@ import { HealthController } from './health.controller';
     FunnelModule,
     ConferidorModule,
     ModalityAlertsModule,
+    WalletModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

@@ -7,6 +7,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { addDaysToDate, brazilDate, endOfBrazilDay, round2 } from '../common/brazil-time';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
+import { addEntry, grantReferralCashback, lockWallet, unwindWalletForPayment, walletBalance, WALLET_KINDS } from '../wallet/wallet';
 import { CancelShareDto, CreatePaymentDto, ManualPaymentDto, ManualSaleDto } from './payments.dto';
 import { buildCardProvider, buildPaymentProvider, ChargeMethod, ChargeStatus, CoraProvider, PaymentProvider } from './payment.provider';
 
@@ -249,6 +250,7 @@ export class PaymentsService {
       return { divergente: true };
     }
     const result = await this.prisma.$transaction((tx) => this.settleTx(tx, payment, actorId, 'pagamento.confirmado'));
+    await this.afterSettled(result.id);
     return this.toPublicPayment(result);
   }
 
@@ -313,6 +315,7 @@ export class PaymentsService {
     if (status === StatusPagamento.falhou && payment.status === StatusPagamento.confirmado) return this.toPublicPayment(payment);
     if (payment.status === status) return this.toPublicPayment(payment);
     const target = payment;
+    let unwind: { pagamentoId: string; compradorId: string; formaBaixa: string | null; valorBruto: number } | null = null;
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.lockBolao(tx, target.cota.bolaoId);
       const payment = await tx.pagamento.findUniqueOrThrow({ where: { id: target.id }, include: { cota: true } });
@@ -326,8 +329,10 @@ export class PaymentsService {
       const cancelled = await tx.comissao.updateMany({ where: { cotaId: payment.cotaId, status: StatusComissao.pendente }, data: { status: StatusComissao.cancelada, observacao: `Venda ${status === 'estornado' ? 'estornada' : 'cancelada'} em ${brazilDate()}` } });
       const alreadyPaid = await tx.comissao.count({ where: { cotaId: payment.cotaId, status: StatusComissao.paga } });
       await this.audit.record(tx, { entidade: 'pagamento', entidadeId: payment.id, evento: `pagamento.${status}`, atorId: actorId, payloadAntes: payment as unknown as Prisma.InputJsonValue, payloadDepois: { pagamento: current, cota: shareUpdated, comissoesCanceladas: cancelled.count, comissaoJaRepassada: alreadyPaid > 0 } as unknown as Prisma.InputJsonValue });
+      if (payment.status === StatusPagamento.confirmado) unwind = { pagamentoId: payment.id, compradorId: payment.cota.compradorId, formaBaixa: payment.formaBaixa, valorBruto: Number(payment.valorBruto) };
       return current;
     });
+    if (unwind) await this.afterRelease(unwind);
     return this.toPublicPayment(updated);
   }
 
@@ -410,6 +415,57 @@ export class PaymentsService {
       if (fresh.status !== StatusCota.paga) throw new ConflictException('Não há mais cotas disponíveis neste bolão para reativar esta reserva.');
       return settled;
     });
+    await this.afterSettled(result.id);
+    return this.toPublicPayment(result);
+  }
+
+  /** Depois da baixa: cashback de indicação. Roda em transação própria; qualquer falha aqui nunca desfaz o pagamento. */
+  private async afterSettled(paymentId: string): Promise<void> {
+    try {
+      const payment = await this.prisma.pagamento.findUnique({ where: { id: paymentId }, include: { cota: { select: { compradorId: true, status: true } } } });
+      if (!payment || payment.status !== StatusPagamento.confirmado || !([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(payment.cota.status)) return;
+      await this.prisma.$transaction((tx) => grantReferralCashback(tx, { pagamentoId: payment.id, compradorId: payment.cota.compradorId, taxaAdmin: Number(payment.valorTaxaAdmin), comissaoAfiliado: Number(payment.valorComissaoAfiliado) }));
+    } catch (error) { this.logger.warn(`Cashback de indicação não registrado: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+
+  /** Depois do estorno: devolve o saldo usado na compra e desfaz o cashback. Idempotente. */
+  private async afterRelease(input: { pagamentoId: string; compradorId: string; formaBaixa: string | null; valorBruto: number }): Promise<void> {
+    try { await this.prisma.$transaction((tx) => unwindWalletForPayment(tx, input)); }
+    catch (error) { this.logger.error(`Carteira não ajustada no estorno do pagamento ${input.pagamentoId}: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+
+  /**
+   * Paga a cota inteira com o crédito da carteira (sem cobrança no banco). Só vale quando o saldo cobre o valor todo;
+   * o desconto do saldo e a baixa da cota acontecem juntos, na mesma transação.
+   */
+  async payWithBalance(shareId: string, user: AuthUser) {
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: true, afiliadoReferencia: true, pagamento: true } });
+    if (!share) throw new NotFoundException('Cota não encontrada.');
+    if (share.compradorId !== user.id) throw new ConflictException('A cota não pertence ao usuário autenticado.');
+    if (share.status !== StatusCota.reservada || (share.expiraReservaEm && share.expiraReservaEm <= new Date())) throw new ConflictException('A reserva não está mais disponível para pagamento.');
+    if (share.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Esta cota já está paga.');
+    const amounts = this.shareAmounts(share);
+    const grossCents = Math.round(amounts.gross * 100);
+    const chargeProvider = this.providerByName(share.pagamento?.pspProvedor);
+    if (share.pagamento?.pspTransactionId && chargeProvider?.cancelCharge) {
+      try { await chargeProvider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Não foi possível cancelar a cobrança no provedor: ${(error as Error).message}`); }
+    }
+    const data = { metodo: MetodoPagamento.manual, origem: 'saldo', pspProvedor: 'saldo', pspTransactionId: null, formaBaixa: 'saldo_bl', observacao: 'Pago com crédito da carteira BL', baixaPor: user.id, status: StatusPagamento.pendente, valorBruto: new Prisma.Decimal(amounts.gross), valorTaxaAdmin: new Prisma.Decimal(amounts.adminFee), valorComissaoAfiliado: new Prisma.Decimal(amounts.affiliateCommission), valorCustoBilhete: new Prisma.Decimal(amounts.cost) };
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockBolao(tx, share.bolaoId);
+      await lockWallet(tx, user.id);
+      const fresh = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true } });
+      if (fresh.status !== StatusCota.reservada || fresh.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Pagamento ou cota mudou; recarregue.');
+      const balance = await walletBalance(tx, user.id);
+      if (balance < grossCents) throw new ConflictException('O saldo da carteira não cobre o valor desta cota. Pague com Pix ou cartão.');
+      const row = fresh.pagamento ? await tx.pagamento.update({ where: { id: fresh.pagamento.id }, data }) : await tx.pagamento.create({ data: { cotaId: share.id, ...data } });
+      await addEntry(tx, { usuarioId: user.id, tipo: WALLET_KINDS.purchase, valorCentavos: -grossCents, descricao: 'Compra de cota paga com a carteira', chave: `compra:${row.id}` });
+      const settled = await this.settleTx(tx, row, user.id, 'pagamento.saldo_bl');
+      const after = await tx.cota.findUniqueOrThrow({ where: { id: share.id } });
+      if (after.status !== StatusCota.paga) throw new ConflictException('Não há mais cotas disponíveis neste bolão para esta reserva.');
+      return settled;
+    });
+    await this.afterSettled(result.id);
     return this.toPublicPayment(result);
   }
 

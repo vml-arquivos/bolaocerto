@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser } from '../auth/auth.decorators';
@@ -14,6 +14,14 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   create(@Param('id') id: string, @Body() dto: CreatePaymentDto, @CurrentUser() user: AuthUser) {
     return this.payments.createForShare(id, dto, user);
+  }
+
+  /** Paga a cota inteira com o crédito da carteira. */
+  @Post('cotas/:id/pagar-com-saldo')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  payWithBalance(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.payWithBalance(id, user);
   }
 
   @Get('cotas/:id/pagamento')

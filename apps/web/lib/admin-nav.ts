@@ -4,7 +4,7 @@ export type Hub = { key: string; label: string; icon: string; entry: string; tab
 
 export const ADMIN_HUBS: readonly Hub[] = [
   { key: 'boloes', label: 'Bolões', icon: 'BO', entry: 'boloes', tabs: [['boloes', 'Bolões'], ['jogos', 'Jogos e apostas'], ['cotas', 'Cotas vendidas'], ['controle', 'Acompanhar bolão']] },
-  { key: 'financeiro', label: 'Financeiro', icon: 'FN', entry: 'financeiro', aliases: ['pagamentos'], tabs: [['financeiro', 'Painel'], ['recebimentos', 'Recebimentos'], ['comissoes', 'Comissões'], ['repasses', 'Pagar comissões'], ['notas-fiscais', 'Notas fiscais']] },
+  { key: 'financeiro', label: 'Financeiro', icon: 'FN', entry: 'financeiro', aliases: ['pagamentos'], tabs: [['financeiro', 'Painel'], ['recebimentos', 'Recebimentos'], ['comissoes', 'Comissões'], ['repasses', 'Pagar comissões'], ['notas-fiscais', 'Notas fiscais'], ['carteira', 'Carteira dos clientes']] },
   { key: 'operacao', label: 'Operação', icon: 'OP', entry: 'operacao', tabs: [['operacao', 'Para fazer'], ['comprovantes', 'Comprovantes'], ['lotericas', 'Lotéricas'], ['comunicados', 'Mensagens aos clientes']] },
 ];
 

@@ -51,6 +51,12 @@ export class RegisterDto {
   @Length(3, 20)
   codigoAfiliado?: string;
 
+  /** Chave Pix do cliente, para receber prêmios e reembolsos. A tela de cadastro pede; a API aceita sem. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 140)
+  chavePix?: string;
+
   /** Chave Pix para receber comissões (convite de afiliado). */
   @IsOptional()
   @IsString()
@@ -125,4 +131,9 @@ export class GoogleSignupDto {
   @IsString()
   @Length(3, 20)
   codigoAfiliado?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 140)
+  chavePix?: string;
 }

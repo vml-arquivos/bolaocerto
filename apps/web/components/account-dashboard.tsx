@@ -11,6 +11,7 @@ import { ModalityAlertsCard } from './modality-alerts-card';
 import { ProfilePanel } from './profile-panel';
 import { NotificationsCard, PasswordCard, PrivacyCard, ReceiptsCard, ResponsiblePlayCard, TwoFactorCard } from './account-extras';
 import { concursoNo } from '../lib/contest';
+import { brl, ReferralTab, WalletData, WalletTab } from './account-wallet';
 
 type User = { id: string; nome: string; email: string; papel: string; statusKyc: string };
 type Share = {
@@ -19,6 +20,7 @@ type Share = {
   bolao?: { id: string; status: string; grupo: string; valorCota: string; modalidade: string; numeroConcurso: number; dataSorteio: string; teveGanhador: boolean; jogos: Array<{ ordem: number; numeros: number[] }> };
   pagamento?: (PaymentView & { id: string; notaFiscal?: { status: string; numero: string | null; pdfUrl: string | null } | null }) | null;
 };
+type Perfil = { telefone: string | null; chavePix: string | null };
 type Address = { cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; completo: boolean; nfseAtiva: boolean };
 const NOTE_TEXT: Record<string, string> = { aguardando: 'em processamento', aguardando_certificado: 'em processamento', emitida: 'emitida', erro: 'em análise' };
 
@@ -67,11 +69,11 @@ function AddressCard({ address, onSaved }: { address: Address; onSaved: () => vo
       const response = await authenticatedFetch('/api/v1/usuarios/me/endereco', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error((Array.isArray(data.message) ? data.message.join(' ') : data.message) || 'Não foi possível salvar o endereço.');
-      setMessage('Endereço salvo. Sua nota fiscal será emitida automaticamente.'); onSaved();
+      setMessage(address.nfseAtiva ? 'Endereço salvo. Sua nota fiscal será emitida automaticamente.' : 'Endereço salvo.'); onSaved();
     } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setSaving(false); }
   }
-  return <article className="dashboard-card wide keep-title"><h2>Endereço para nota fiscal</h2>
-    <p className="muted">{address.completo ? 'Seu endereço está completo. Você pode atualizá-lo aqui.' : 'Informe seu endereço para receber a nota fiscal de serviço das suas participações.'}</p>
+  return <article className="dashboard-card wide keep-title"><h2>{address.nfseAtiva ? 'Endereço para nota fiscal' : 'Meu endereço'}</h2>
+    <p className="muted">{address.completo ? 'Seu endereço está completo. Você pode atualizá-lo aqui.' : address.nfseAtiva ? 'Informe seu endereço para receber a nota fiscal de serviço das suas participações.' : 'Mantenha seu endereço completo. Ele fica salvo na sua conta e será usado se for preciso emitir documentos.'}</p>
     <form onSubmit={submit} className="admin-form-grid">
       <div className="field"><label htmlFor="end-cep">CEP</label><input id="end-cep" name="cep" inputMode="numeric" maxLength={9} defaultValue={address.cep ?? ''} required /></div>
       <div className="field"><label htmlFor="end-logradouro">Rua / logradouro</label><input id="end-logradouro" name="logradouro" defaultValue={address.logradouro ?? ''} required /></div>
@@ -84,6 +86,25 @@ function AddressCard({ address, onSaved }: { address: Address; onSaved: () => vo
     </form>
     {message && <div className={`form-message ${message.startsWith('Endereço salvo') ? 'form-success' : 'form-error'}`}>{message}</div>}
   </article>;
+}
+
+/** Lista do que falta para o cadastro ficar completo (telefone, Pix e endereço). */
+function ProfileChecklist({ perfil, address, onComplete }: { perfil: Perfil | null; address: Address | null; onComplete: () => void }) {
+  if (!perfil) return null;
+  const items = [
+    { label: 'Nome, CPF e e-mail', done: true },
+    { label: 'Telefone com DDD', done: Boolean(perfil.telefone) },
+    { label: 'Chave Pix (para receber prêmios e reembolsos)', done: Boolean(perfil.chavePix) },
+    ...(address ? [{ label: 'Endereço', done: address.completo }] : []),
+  ];
+  const done = items.filter((item) => item.done).length;
+  const pct = Math.round((done / items.length) * 100);
+  return <div className="profile-check" role="status">
+    <strong>{pct === 100 ? 'Cadastro completo' : `Cadastro ${pct}% completo`}</strong>
+    <div className="profile-check-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></div>
+    <ul>{items.map((item) => <li key={item.label} className={item.done ? 'is-done' : 'is-todo'}><span aria-hidden="true">{item.done ? '✓' : '!'}</span>{item.label}</li>)}</ul>
+    {pct < 100 && <button type="button" className="button button-secondary" onClick={onComplete}>Completar agora</button>}
+  </div>;
 }
 
 const ICONS: Record<string, string> = {
@@ -104,16 +125,22 @@ function Row({ title, icon, children, open = false }: { title: string; icon: str
 
 export function AccountDashboard() {
   const params = useSearchParams();
-  const [tab, setTab] = useState<'cotas' | 'conta'>(params.get('aba') === 'conta' ? 'conta' : 'cotas');
+  type Tab = 'cotas' | 'carteira' | 'indicar' | 'conta';
+  const asTab = (value: string | null): Tab => (value === 'conta' || value === 'carteira' || value === 'indicar' ? value : 'cotas');
+  const [tab, setTab] = useState<Tab>(asTab(params.get('aba')));
   const abaParam = params.get('aba');
-  useEffect(() => { setTab(abaParam === 'conta' ? 'conta' : 'cotas'); }, [abaParam]);
-  function selectTab(next: 'cotas' | 'conta') {
+  useEffect(() => { setTab(asTab(abaParam)); }, [abaParam]);
+  function selectTab(next: Tab) {
     setTab(next);
-    try { const url = new URL(window.location.href); if (next === 'conta') url.searchParams.set('aba', 'conta'); else url.searchParams.delete('aba'); window.history.replaceState(null, '', url); } catch { /* sem histórico */ }
+    try { const url = new URL(window.location.href); if (next !== 'cotas') url.searchParams.set('aba', next); else url.searchParams.delete('aba'); window.history.replaceState(null, '', url); } catch { /* sem histórico */ }
   }
+  const [dataNonce, setDataNonce] = useState(0);
+  function openMyData() { setDataNonce((value) => value + 1); selectTab('conta'); }
   const [user, setUser] = useState<User | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
   const [address, setAddress] = useState<Address | null>(null);
+  const [wallet, setWallet] = useState<WalletData | null>(null);
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -128,6 +155,8 @@ export function AccountDashboard() {
       if (!meResponse.ok || !sharesResponse.ok) throw new Error('Não foi possível carregar sua conta.');
       setUser(await meResponse.json()); setShares(await sharesResponse.json()); setError(''); setUpdatedAt(new Date());
       try { const addressResponse = await authenticatedFetch('/api/v1/usuarios/me/endereco'); setAddress(addressResponse.ok ? await addressResponse.json() : null); } catch { setAddress(null); }
+      try { const walletResponse = await authenticatedFetch('/api/v1/usuarios/me/carteira', { cache: 'no-store' }); setWallet(walletResponse.ok ? await walletResponse.json() as WalletData : null); } catch { setWallet(null); }
+      try { const profileResponse = await authenticatedFetch('/api/v1/usuarios/me/perfil', { cache: 'no-store' }); setPerfil(profileResponse.ok ? await profileResponse.json() as Perfil : null); } catch { setPerfil(null); }
     } catch (issue) { setError(issue instanceof Error ? issue.message : 'Falha ao carregar.'); } finally { setLoading(false); inFlight.current = false; }
   }, []);
   useEffect(() => { void load();
@@ -153,13 +182,16 @@ export function AccountDashboard() {
       <div className="account-top-actions">{user?.papel === 'admin' && <Link className="button button-secondary" href="/admin">Administração</Link>}{user?.papel === 'afiliado' && <Link className="button button-secondary" href="/afiliado">Painel do afiliado</Link>}<button type="button" className="button button-ghost" onClick={() => void logout()}>Sair</button></div>
     </header>
     {error && <p className="notice" role="status">{error} Os dados abaixo são da última consulta concluída.</p>}
-    <div className="account-stats" aria-label="Resumo">
+    <div className="account-stats is-four" aria-label="Resumo">
       <div><small>Investido</small><strong>{money(spent)}</strong></div>
       <div><small>A pagar</small><strong>{awaiting}</strong></div>
       <div><small>Prêmios</small><strong>{money(prizes)}</strong></div>
+      <div><small>Saldo na carteira</small><strong>{wallet ? brl(wallet.saldoCentavos) : '—'}</strong></div>
     </div>
-    <div className="account-tabs" role="tablist" aria-label="Seções da conta">
+    <div className="account-tabs is-four" role="tablist" aria-label="Seções da conta">
       <button type="button" role="tab" aria-selected={tab === 'cotas'} className={tab === 'cotas' ? 'is-on' : ''} onClick={() => selectTab('cotas')}>Minhas cotas</button>
+      <button type="button" role="tab" aria-selected={tab === 'carteira'} className={tab === 'carteira' ? 'is-on' : ''} onClick={() => selectTab('carteira')}>Carteira</button>
+      <button type="button" role="tab" aria-selected={tab === 'indicar'} className={tab === 'indicar' ? 'is-on' : ''} onClick={() => selectTab('indicar')}>Indicar amigos</button>
       <button type="button" role="tab" aria-selected={tab === 'conta'} className={tab === 'conta' ? 'is-on' : ''} onClick={() => selectTab('conta')}>Minha conta</button>
     </div>
     {tab === 'cotas' ? <div className="account-section">
@@ -167,11 +199,15 @@ export function AccountDashboard() {
       {shares.length ? <div className="cota-list">{shares.map((share) => <ShareCard key={share.id} share={share} onPaid={() => void load()} />)}</div>
         : <div className="empty-state compact"><h3>Você ainda não tem cotas</h3><p>Escolha um bolão e participe em poucos toques.</p><Link className="button button-primary" href="/aplicativo">Ver bolões</Link></div>}
       <p className="account-updated">{updatedAt ? `Atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}</p>
-    </div> : <div className="account-section app-rows">
-      <Row title="Meus dados" icon="user" open={false}>
-        <ProfilePanel showPix={isStaff} showPhoto={isStaff} />
-        {address?.nfseAtiva && paidShares.length > 0 && <AddressCard address={address} onSaved={() => void load()} />}
+    </div> : tab === 'carteira' ? <WalletTab wallet={wallet} />
+    : tab === 'indicar' ? <ReferralTab pixMissing={perfil !== null && !perfil.chavePix} onOpenData={openMyData} />
+    : <div className="account-section app-rows">
+      <ProfileChecklist perfil={perfil} address={address} onComplete={openMyData} />
+      <Row key={dataNonce} title="Meus dados" icon="user" open={dataNonce > 0}>
+        <ProfilePanel showPix showPhoto={isStaff} pixLabel="Chave Pix (para receber prêmios e reembolsos)" onSaved={() => void load()} />
+        {address && <AddressCard address={address} onSaved={() => void load()} />}
       </Row>
+      <Row title="Minha carteira" icon="receipt"><p className="muted">Saldo de {wallet ? brl(wallet.saldoCentavos) : '—'}.</p><button type="button" className="button button-secondary" onClick={() => selectTab('carteira')}>Abrir carteira e extrato</button></Row>
       <Row title="Avisos no celular" icon="bell"><PushToggle /></Row>
       <Row title="Avise-me de novos bolões" icon="bell"><ModalityAlertsCard /></Row>
       <Row title="Limite de gastos" icon="gauge"><ResponsiblePlayCard /></Row>

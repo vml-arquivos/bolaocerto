@@ -25,6 +25,7 @@ export function HealthPanel() {
     { ok: Boolean(data.pagamentos?.habilitado), title: 'Pagamentos', text: data.pagamentos?.habilitado ? 'ligados' : 'desligados — ninguém consegue reservar' },
     { ok: Boolean(data.email?.configurado), title: 'E-mail', text: data.email?.configurado ? 'funcionando' : 'não configurado — os avisos aparecem só dentro da conta' },
     { ok: Boolean(data.alertas?.configurado), title: 'Alertas no celular', text: data.alertas?.configurado ? 'ligados' : 'desligados — peça ao suporte técnico para ligar' },
+    { ok: Boolean(data.google?.configurado), title: 'Entrar com Google', text: data.google?.configurado ? 'ligado — o botão aparece no login e no cadastro' : 'desligado — o botão não aparece. Falta o GOOGLE_CLIENT_ID no ambiente' },
   ];
   return <Panel title="Está tudo funcionando?" description={data.ok ? 'Sim, tudo certo.' : 'Alguns itens pedem atenção.'} action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => void load()}>Atualizar</button>}>
     <ul className="health-list">{items.map((item) => <li key={item.title} className={item.ok ? 'is-ok' : 'is-warn'}><span aria-hidden="true">{item.ok ? '✓' : '!'}</span><div><strong>{item.title}</strong><small>{item.text}</small></div></li>)}</ul>

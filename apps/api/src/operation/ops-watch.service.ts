@@ -96,6 +96,7 @@ export class OpsWatchService {
       pagamentos: { provedor: this.config.get<string>('PAYMENT_PROVIDER') ?? null, habilitado: this.config.get<string>('PAYMENTS_ENABLED') === 'true' || this.config.get<string>('PLATFORM_PAYMENTS_ENABLED') === 'true' },
       email: { configurado: Boolean(this.config.get<string>('SMTP_HOST')?.trim()) },
       alertas: { configurado: this.alerts.isConfigured() },
+      google: { configurado: Boolean(this.config.get<string>('GOOGLE_CLIENT_ID')?.trim()) },
       pendencias: { apostasNaoRegistradas: unregistered, apuracoesAtrasadas: overdue, faixasEspeciais: special, pagamentosFalhos: failed, premiosSemAviso: unnoticed },
       ok: sync.ok && unregistered.length === 0 && overdue.length === 0 && special.length === 0 && unnoticed.length === 0,
     };

@@ -38,8 +38,8 @@
   .aff-tabs { display: none; }
   .aff-logout { display: none; }
   .aff-app { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
-  .aff-bottomnav { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 100; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border-strong); box-shadow: 0 -6px 24px rgba(2, 5, 18, .18); }
-  .aff-bottomnav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 48px; font-size: 11px; color: var(--text-muted); text-decoration: none; border-radius: 10px; }
+  .aff-bottomnav { display: grid; grid-template-columns: repeat(6, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 100; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border-strong); box-shadow: 0 -6px 24px rgba(2, 5, 18, .18); }
+  .aff-bottomnav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 48px; font-size: 10px; color: var(--text-muted); text-decoration: none; border-radius: 10px; }
   .aff-bottomnav a > span:first-child { font-size: 19px; line-height: 1; }
   .aff-bottomnav a[aria-current="page"] { color: var(--text-primary); font-weight: 700; background: var(--aff-accent-soft); box-shadow: inset 0 3px 0 var(--aff-accent); }
   .aff-quota-list { grid-template-columns: 1fr; }

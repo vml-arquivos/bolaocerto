@@ -10,6 +10,29 @@ import { AttachmentsPanel } from './admin-attachments';
 
 const SEGMENTS: Array<[string, string]> = [['', 'Todos'], ['vip', 'Clientes maiores (VIP)'], ['recorrente', 'Recorrentes'], ['novo', 'Novos'], ['inativo', 'Inativos'], ['inadimplente', 'Com pendência'], ['sem_compra', 'Ainda não compraram']];
 const LEVEL_CLASS: Record<string, string> = { diamante: 'status-chip status-info', ouro: 'status-chip status-warning', prata: 'status-chip', bronze: 'status-chip', sem_compra: 'status-chip' };
+export const StageChip = ({ etapa, nome }: { etapa: string; nome?: string }) => <span className={`crm-stage is-${etapa}`}>{nome ?? etapa}</span>;
+
+/** Funil de vendas: uma linha por etapa, com a barra de quanto do total está ali e a ação sugerida. */
+export function FunnelBoard({ funnel, selected, onSelect }: { funnel?: Rec; selected?: string; onSelect?: (key: string) => void }) {
+  const stages: Rec[] = funnel?.etapas ?? [];
+  const totals: Rec = funnel?.totais ?? {};
+  const max = Math.max(1, ...stages.map((stage) => Number(stage.clientes) || 0));
+  if (!funnel) return null;
+  return <>
+    <div className="admin-kpi-grid admin-kpi-grid-four">
+      <Kpi label="Cadastraram" value={totals.cadastrados ?? 0} tone="blue" />
+      <Kpi label="Já reservaram" value={totals.jaReservaram ?? 0} hint={`${totals.reservaramPct ?? 0}% dos cadastros`} tone="amber" />
+      <Kpi label="Já pagaram" value={totals.jaPagaram ?? 0} hint={`${totals.pagaramPct ?? 0}% dos cadastros`} tone="green" />
+      <Kpi label="Pagaram de quem reservou" value={`${totals.pagaramDeReservaramPct ?? 0}%`} hint="conversão da reserva" tone="violet" />
+    </div>
+    <div className="crm-funnel">{stages.map((stage) => <button type="button" key={stage.chave} className={`crm-funnel-step ${selected === stage.chave ? 'is-on' : ''}`} onClick={() => onSelect?.(stage.chave)} disabled={!onSelect}>
+      <span>{stage.nome}</span><strong>{stage.clientes}</strong>
+      <span className="crm-funnel-bar" aria-hidden="true"><i style={{ width: `${Math.round(((Number(stage.clientes) || 0) / max) * 100)}%` }} /></span>
+      <small>{stage.acao}</small>
+    </button>)}</div>
+  </>;
+}
+
 const LevelChip = ({ nivel, nome }: { nivel: string; nome?: string }) => <span className={LEVEL_CLASS[nivel] ?? 'status-chip'}>{nome ?? label(nivel)}</span>;
 
 export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify; onEditUser?: (id: string) => void; refreshKey?: number }) {
@@ -17,6 +40,7 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
   const [list, setList] = useState<Rec | null>(null);
   const [segment, setSegment] = useState('');
   const [level, setLevel] = useState('');
+  const [stage, setStage] = useState('');
   const [order, setOrder] = useState('gasto');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
@@ -28,9 +52,10 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
     const entries: Record<string, string> = { ordenar: order };
     if (segment) entries.segmento = segment;
     if (level) entries.nivel = level;
+    if (stage) entries.etapa = stage;
     if (term) entries.busca = term;
     return entries;
-  }, [segment, level, order, term]);
+  }, [segment, level, stage, order, term]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +85,10 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
       <Kpi label="Reativar (VIP inativos)" value={(overview?.reativar ?? []).length} hint="clientes maiores sem comprar" tone="rose" />
     </div>
 
+    <Panel title="Funil de vendas" description="Onde cada cliente está entre o cadastro e a compra. Clique em uma etapa para ver só essas pessoas na lista abaixo.">
+      <FunnelBoard funnel={overview?.funil} selected={stage} onSelect={(key) => { setStage(key === stage ? '' : key); setPage(1); }} />
+    </Panel>
+
     <Panel title="Níveis de cliente" description="O nível é definido pelo total já investido em cotas pagas.">
       <div className="admin-kpi-grid admin-kpi-grid-four">{(overview?.niveis ?? []).map((tier: Rec) => <Kpi key={tier.nivel} label={tier.nome} value={tier.clientes} hint={`${brl(tier.valor)} investidos`} tone={tier.nivel === 'diamante' ? 'violet' : tier.nivel === 'ouro' ? 'amber' : tier.nivel === 'prata' ? 'blue' : 'green'} />)}</div>
       <p className="admin-help">Critérios atuais: <strong>Prata</strong> a partir de {brl(criteria.prata)} · <strong>Ouro</strong> a partir de {brl(criteria.ouro)} · <strong>Diamante</strong> a partir de {brl(criteria.diamante)}. <strong>Inativo</strong>: sem comprar há mais de {criteria.inativoDias} dias · <strong>Recorrente</strong>: {criteria.recorrenteMinBoloes}+ bolões diferentes · <strong>Novo</strong>: primeira compra nos últimos {criteria.novoDias} dias. Um cliente pode estar em vários segmentos ao mesmo tempo.</p>
@@ -78,6 +107,7 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
     </div>
 
     <Panel title="Todos os clientes" description="Filtre por segmento, nível ou busque por nome, e-mail ou CPF. A planilha traz o CPF completo; o PDF e a tela mostram o CPF protegido." action={<ExportBar path="/api/v1/admin/crm/apostadores" params={params()} id="clientes" onError={(text) => notify('error', text)} />}>
+      {stage && <p className="admin-help">Filtrando pela etapa do funil. <button type="button" className="admin-link-button" onClick={() => { setStage(''); setPage(1); }}>Limpar filtro</button></p>}
       <div className="admin-chip-row" role="tablist" aria-label="Segmentos">{SEGMENTS.map(([key, title]) => { const count = key ? (overview?.segmentos ?? []).find((item: Rec) => item.chave === key)?.clientes : totals.cadastrados; return <button key={key || 'todos'} role="tab" aria-selected={segment === key} className={`admin-chip-button ${segment === key ? 'is-current' : ''}`} onClick={() => { setSegment(key); setPage(1); }}>{title}<strong>{count ?? 0}</strong></button>; })}</div>
       <form className="admin-toolbar-filters" style={{ marginBottom: 14 }} onSubmit={(event: FormEvent) => { event.preventDefault(); setTerm(search.trim()); setPage(1); }}>
         <label className="admin-field"><span>Buscar</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome, e-mail, CPF ou etiqueta" /></label>
@@ -86,7 +116,7 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
         <button className="admin-button admin-button-primary" type="submit">Buscar</button>
       </form>
       {loading && <div className="admin-spinner" aria-label="Carregando" />}
-      <Table minWidth={1180}><thead><tr><th>Cliente</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td>{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => onEditUser(row.id)}>Editar / excluir</button>}</div></td></tr>)}</tbody></Table>
+      <Table minWidth={1320}><thead><tr><th>Cliente</th><th>Etapa do funil</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><StageChip etapa={row.etapa} nome={row.etapaNome} /><small>{row.proximaAcao}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td>{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => onEditUser(row.id)}>Editar / excluir</button>}</div></td></tr>)}</tbody></Table>
       {!loading && !(list?.items ?? []).length && <Empty text="Nenhum cliente encontrado" hint="Ajuste os filtros ou a busca." />}
       {(list?.paginas ?? 1) > 1 && <div className="admin-row-actions" style={{ marginTop: 14 }}><button className="admin-button admin-button-small admin-button-ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span className="admin-help" style={{ margin: 0 }}>Página {list?.pagina} de {list?.paginas} · {list?.total} clientes</span><button className="admin-button admin-button-small admin-button-ghost" disabled={page >= (list?.paginas ?? 1)} onClick={() => setPage((value) => value + 1)}>Próxima →</button></div>}
     </Panel>
@@ -144,6 +174,7 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
       <Kpi label="Última compra" value={metrics.ultimaCompraEm ? dateOnly(metrics.ultimaCompraEm) : '—'} hint={metrics.diasSemComprar != null ? `há ${metrics.diasSemComprar} dia(s)` : 'nunca comprou'} tone="amber" />
       <Kpi label="Pendente" value={brl(metrics.valorPendente)} hint={`${metrics.cotasPendentes ?? 0} cota(s) aguardando`} tone="rose" />
     </div>
+    {metrics.etapa && <p className="admin-help"><strong>Etapa do funil:</strong> <StageChip etapa={metrics.etapa} nome={metrics.etapaNome} /> · próximo passo: {metrics.proximaAcao}</p>}
     <p className="admin-help">Cadastrado em {dateOnly(profile.cadastradoEm)}{profile.afiliadoOrigem ? ` · indicado por ${profile.afiliadoOrigem.nome} (${profile.afiliadoOrigem.codigo})` : ' · cadastro direto'} · Verificação: {label(profile.statusKyc)}{Number(metrics.premiosGanhos) > 0 ? ` · prêmios: ${brl(metrics.premiosGanhos)}` : ''}</p>
     {profile.exclusaoSolicitadaEm && <div className="admin-callout admin-callout-warning"><strong>Pediu a exclusão da conta (LGPD)</strong> em {dateOnly(profile.exclusaoSolicitadaEm)}. Analise o pedido: cotas em andamento e dados fiscais precisam ser mantidos pelo prazo legal.</div>}
     <div className="admin-row-actions" style={{ margin: '4px 0 12px' }}><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void generateResetLink()}>Gerar link de redefinição de senha</button><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void resetTwoFactor()}>Redefinir 2FA</button></div>

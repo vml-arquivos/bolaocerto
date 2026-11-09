@@ -1,12 +1,14 @@
 import { Transform } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
+export const ETAPAS_FUNIL = ['cadastrado', 'reservou', 'reserva_vencida', 'pagou', 'recorrente', 'inativo'] as const;
 export const SEGMENTS = ['vip', 'recorrente', 'novo', 'inativo', 'sem_compra', 'inadimplente'] as const;
 
 export class CrmListQueryDto {
   @IsOptional() @IsString() @MaxLength(80) busca?: string;
   @IsOptional() @IsIn(SEGMENTS) segmento?: (typeof SEGMENTS)[number];
   @IsOptional() @IsIn(['diamante', 'ouro', 'prata', 'bronze']) nivel?: string;
+  @IsOptional() @IsIn(ETAPAS_FUNIL) etapa?: (typeof ETAPAS_FUNIL)[number];
   @IsOptional() @IsIn(['gasto', 'cotas', 'ultima', 'boloes', 'nome']) ordenar?: 'gasto' | 'cotas' | 'ultima' | 'boloes' | 'nome';
   @IsOptional() @Transform(({ value }) => (value === undefined ? undefined : Number(value))) @IsInt() @Min(1) pagina?: number;
   @IsOptional() @Transform(({ value }) => (value === undefined ? undefined : Number(value))) @IsInt() @Min(1) @Max(100) porPagina?: number;
@@ -24,4 +26,11 @@ export class CrmProfileDto {
 
 export class CrmIdParam {
   @IsUUID() id!: string;
+}
+
+/** Anotações do afiliado sobre um cliente dele (separadas do CRM da administração). */
+export class AffiliateCrmProfileDto {
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) @MaxLength(30, { each: true }) etiquetas?: string[];
+  @IsOptional() @ValidateIf((_dto: AffiliateCrmProfileDto, value: unknown) => value !== null) @IsString() @MaxLength(2000) nota?: string | null;
+  @IsOptional() @ValidateIf((_dto: AffiliateCrmProfileDto, value: unknown) => value !== null) @IsDateString() proximoContatoEm?: string | null;
 }

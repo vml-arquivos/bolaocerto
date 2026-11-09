@@ -723,6 +723,65 @@ export class AdminService {
     return { codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, cadastrosAtribuidos: affiliate._count.usuariosIndicados, participantes: participants.length, cotas: affiliate._count.cotasReferenciadas, volume: Number(volume._sum.valorPago ?? 0).toFixed(2), comissaoPendente: pending.toFixed(2), comissaoPaga: paid.toFixed(2), totalComissoes: affiliate._count.comissoes };
   }
 
+  /**
+   * Painel do afiliado: cada bolão dele com quem comprou, quem já pagou, quanto foi vendido e quantas cotas faltam,
+   * mais os totais (receita de comissão, clientes e grupos). O comprador aparece só pelo nome (sem CPF/e-mail).
+   */
+  async affiliatePanel(user: AuthUser) {
+    const affiliate = await this.requireApprovedAffiliate(user);
+    const paidStatuses: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
+    const [pools, groupCount, memberCount, referred, commissionSums] = await Promise.all([
+      // Bolões que ele criou + bolões (inclusive da administração) em que vendeu pelo link dele.
+      this.prisma.bolao.findMany({ where: { OR: [{ criadoPor: user.id }, { cotas: { some: { afiliadoReferenciaId: affiliate.id } } }] }, orderBy: { criadoEm: 'desc' }, take: 100, select: { id: true, criadoPor: true, status: true, valorCota: true, totalCotas: true, cotasIlimitadas: true, cotasVendidas: true, criadoEm: true, grupo: { select: { nome: true } }, concurso: { select: { modalidade: true, numeroConcurso: true, dataSorteio: true } } } }),
+      this.prisma.grupo.count({ where: { afiliadoId: affiliate.id } }),
+      this.prisma.grupoMembro.findMany({ where: { grupo: { afiliadoId: affiliate.id } }, select: { usuarioId: true }, distinct: ['usuarioId'] }),
+      this.prisma.usuario.findMany({ where: { indicadoPorAfiliadoId: affiliate.id }, select: { id: true } }),
+      this.prisma.comissao.groupBy({ by: ['status'], where: { afiliadoId: affiliate.id }, _sum: { valor: true } }),
+    ]);
+    const poolIds = pools.map((pool) => pool.id);
+    const shares = poolIds.length
+      ? await this.prisma.cota.findMany({ where: { bolaoId: { in: poolIds }, status: { notIn: [StatusCota.cancelada, StatusCota.estornada] }, OR: [{ afiliadoReferenciaId: affiliate.id }, { bolao: { criadoPor: user.id } }] }, select: { bolaoId: true, compradorId: true, quantidade: true, valorPago: true, status: true, criadoEm: true, titularNome: true }, orderBy: { criadoEm: 'desc' }, take: 5000 })
+      : [];
+    const firstName = (name: string | null) => { const [first = '', ...rest] = String(name ?? '').trim().split(/\s+/); return `${first}${rest.length ? ` ${rest[rest.length - 1]!.charAt(0).toUpperCase()}.` : ''}`.trim() || 'Cotista'; };
+    const items = pools.map((pool) => {
+      const mine = shares.filter((share) => share.bolaoId === pool.id);
+      const paid = mine.filter((share) => paidStatuses.includes(share.status));
+      const reserved = mine.filter((share) => share.status === StatusCota.reservada);
+      const sum = (list: typeof mine, key: 'quantidade') => list.reduce((total, share) => total + share[key], 0);
+      const revenue = paid.reduce((total, share) => total + Number(share.valorPago ?? Number(pool.valorCota) * share.quantidade), 0);
+      const buyers = new Map<string, { nome: string; cotasPagas: number; cotasReservadas: number; valorPago: number }>();
+      for (const share of mine) {
+        const entry = buyers.get(share.compradorId) ?? { nome: firstName(share.titularNome), cotasPagas: 0, cotasReservadas: 0, valorPago: 0 };
+        if (paidStatuses.includes(share.status)) { entry.cotasPagas += share.quantidade; entry.valorPago += Number(share.valorPago ?? Number(pool.valorCota) * share.quantidade); }
+        else if (share.status === StatusCota.reservada) entry.cotasReservadas += share.quantidade;
+        buyers.set(share.compradorId, entry);
+      }
+      const total = pool.cotasIlimitadas ? null : pool.totalCotas ?? 0;
+      return {
+        bolaoId: pool.id, proprio: pool.criadoPor === user.id, grupo: pool.grupo?.nome ?? null, modalidade: pool.concurso?.modalidade ?? null, concurso: pool.concurso?.numeroConcurso ?? null, sorteio: pool.concurso?.dataSorteio ?? null, status: pool.status,
+        totalCotas: total, cotasVendidas: sum(paid, 'quantidade'), cotasReservadas: sum(reserved, 'quantidade'), cotasRestantes: total === null ? null : Math.max(total - pool.cotasVendidas, 0),
+        valorVendido: revenue.toFixed(2), compradores: buyers.size, pagantes: [...buyers.values()].filter((buyer) => buyer.cotasPagas > 0).length,
+        quemComprou: [...buyers.values()].sort((a, b) => b.valorPago - a.valorPago || b.cotasReservadas - a.cotasReservadas).slice(0, 50).map((buyer) => ({ nome: buyer.nome, cotasPagas: buyer.cotasPagas, cotasReservadas: buyer.cotasReservadas, valorPago: buyer.valorPago.toFixed(2), pagou: buyer.cotasPagas > 0 })),
+        link: `/r/${affiliate.codigoAfiliado}?bolao=${pool.id}`,
+      };
+    });
+    const sumOf = (status: StatusComissao) => Number(commissionSums.find((row) => row.status === status)?._sum.valor ?? 0);
+    const clientIds = new Set<string>([...memberCount.map((member) => member.usuarioId), ...referred.map((client) => client.id), ...shares.map((share) => share.compradorId)]);
+    const payingIds = new Set(shares.filter((share) => paidStatuses.includes(share.status)).map((share) => share.compradorId));
+    return {
+      codigoAfiliado: affiliate.codigoAfiliado,
+      totais: {
+        boloes: items.length, boloesAbertos: items.filter((item) => item.status === 'aberto').length,
+        cotasVendidas: items.reduce((total, item) => total + item.cotasVendidas, 0), cotasReservadas: items.reduce((total, item) => total + item.cotasReservadas, 0),
+        cotasRestantes: items.reduce((total, item) => total + (item.cotasRestantes ?? 0), 0),
+        valorVendido: items.reduce((total, item) => total + Number(item.valorVendido), 0).toFixed(2),
+        clientes: clientIds.size, clientesPagantes: payingIds.size, grupos: groupCount,
+        comissaoPendente: sumOf(StatusComissao.pendente).toFixed(2), comissaoPaga: sumOf(StatusComissao.paga).toFixed(2),
+      },
+      boloes: items,
+    };
+  }
+
   /** Vendas do afiliado por bolão: quantas cotas foram vendidas pelo link dele (e quantas ainda estão reservadas). */
   async affiliateSalesByPool(user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true, codigoAfiliado: true } });

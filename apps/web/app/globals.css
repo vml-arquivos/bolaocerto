@@ -9,3 +9,4 @@
 @import './styles/08-checkout.css'; /* Checkout: pagamento por Pix, boleto ou cartão com confirmação automática */
 @import './styles/09-afiliado-app.css'; /* Aplicativo do afiliado: barra de cima, abas e barra de baixo */
 @import './styles/10-app-cliente.css'; /* Aplicativo do cliente: carrossel, abas, linhas recolhíveis e compra enxuta */
+@import './styles/11-conta-carteira.css'; /* Carteira, indicação, Meus dados completos, revisão da compra e CRM */

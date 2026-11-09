@@ -10,7 +10,7 @@ describe('AuthService referral attribution', () => {
     const prisma: any = {
       usuario: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue({ nome: 'Pessoa Nova' }),
+        findUnique: jest.fn().mockImplementation(async (args: any) => (args?.where?.codigoIndicacao ? null : { nome: 'Pessoa Nova' })),
         create: jest.fn().mockResolvedValue({ id: 'user-1', email: 'novo@example.com', papel: 'cotista' }),
       },
       afiliado: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -162,3 +162,46 @@ describe('AuthService referral attribution', () => {
     expect(prisma.usuario.create).not.toHaveBeenCalled();
   });
 });
+
+describe('AuthService indicação entre clientes', () => {
+  const base = { nome: 'Pessoa Nova', cpf: '52998224725', email: 'novo@example.com', telefone: '11912345678', maiorDeIdade: true, senha: 'Senha1234', confirmarSenha: 'Senha1234', aceiteTermos: true, aceitePrivacidade: true };
+  function make(referrer: unknown) {
+    const prisma: any = {
+      usuario: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn().mockImplementation(async (args: any) => (args?.where?.codigoIndicacao ? referrer : null)), create: jest.fn().mockResolvedValue({ id: 'u9', email: 'novo@example.com', papel: 'cotista' }) },
+      afiliado: { findUnique: jest.fn().mockResolvedValue(null) },
+      convite: { findFirst: jest.fn().mockResolvedValue(null), updateMany: jest.fn() },
+      aceiteLegal: { upsert: jest.fn().mockResolvedValue({}) },
+      notificacao: { create: jest.fn() },
+      grupoMembro: { upsert: jest.fn() },
+    };
+    prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+    const jwt = { signAsync: jest.fn().mockResolvedValueOnce('a').mockResolvedValueOnce('r') };
+    const config = { getOrThrow: () => 'x', get: (_k: string, f: string) => f };
+    return { service: new AuthService(prisma, jwt as any, config as any), prisma };
+  }
+  it('código de outro cliente vira vínculo de indicação (sem diferenciar maiúscula)', async () => {
+    const { service, prisma } = make({ id: 'indicador', desativadoEm: null });
+    await service.register({ ...base, codigoAfiliado: 'abcd2345' } as any);
+    expect(prisma.usuario.findUnique.mock.calls[0][0].where).toEqual({ codigoIndicacao: 'ABCD2345' });
+    expect(prisma.usuario.create.mock.calls[0][0].data.indicadoPorUsuarioId).toBe('indicador');
+  });
+  it('código que ninguém tem continua sendo recusado', async () => {
+    const { service, prisma } = make(null);
+    await expect(service.register({ ...base, codigoAfiliado: 'ZZZZ9999' } as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.usuario.create).not.toHaveBeenCalled();
+  });
+  it('chave Pix válida é guardada padronizada e inválida é recusada', async () => {
+    const ok = make(null);
+    await ok.service.register({ ...base, chavePix: '(11) 91234-5678' } as any);
+    expect(ok.prisma.usuario.create.mock.calls[0][0].data.chavePixRecebimento).toBe('+5511912345678');
+    const bad = make(null);
+    await expect(bad.service.register({ ...base, chavePix: 'abc' } as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(bad.prisma.usuario.create).not.toHaveBeenCalled();
+  });
+  it('cadastro sem Pix continua funcionando (a API não exige)', async () => {
+    const { service, prisma } = make(null);
+    await service.register(base as any);
+    expect(prisma.usuario.create.mock.calls[0][0].data.chavePixRecebimento).toBeUndefined();
+  });
+});
+

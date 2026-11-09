@@ -1,3 +1,4 @@
+import { normalizePixKey, PIX_KEY_MESSAGE } from './pix-key';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -41,7 +42,10 @@ export class AccountService {
     const nome = dto.nome?.trim();
     if (dto.nome !== undefined && (!nome || nome.length < 2)) throw new BadRequestException('Informe o nome completo.');
     const telefone = dto.telefone !== undefined ? dto.telefone.replace(/\D/g, '') : undefined;
-    const pix = dto.chavePix !== undefined ? (dto.chavePix.trim() || null) : undefined;
+    const pixInput = dto.chavePix !== undefined ? dto.chavePix.trim() : undefined;
+    const pixChecked = pixInput ? normalizePixKey(pixInput) : null;
+    if (pixInput && !pixChecked) throw new BadRequestException(PIX_KEY_MESSAGE);
+    const pix = pixInput === undefined ? undefined : (pixChecked?.valor ?? null);
     await this.prisma.$transaction(async (tx) => {
       await tx.usuario.update({ where: { id: userId }, data: { ...(nome ? { nome } : {}), ...(telefone !== undefined ? { telefone } : {}), ...(pix !== undefined ? { chavePixRecebimento: pix } : {}) } });
       if (pix !== undefined && before.afiliado) await tx.afiliado.update({ where: { id: before.afiliado.id }, data: { chavePixRepasse: pix } });

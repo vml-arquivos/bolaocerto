@@ -1,6 +1,6 @@
 import { Prisma, StatusCota } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
-import { classify, DEFAULT_CRM_CONFIG, EMPTY_METRICS, levelFor } from './crm.segments';
+import { buildFunnel, classify, DEFAULT_CRM_CONFIG, EMPTY_METRICS, etapaFunil, levelFor } from './crm.segments';
 import { CrmService } from './crm.service';
 
 const NOW = new Date('2026-10-18T12:00:00Z');
@@ -46,7 +46,7 @@ function build() {
   const pending = [{ compradorId: 'u2', quantidade: 2, expiraReservaEm: daysAgo(1), bolao: { valorCota: new Prisma.Decimal(25) } }];
   const prisma = {
     usuario: { findMany: jest.fn().mockResolvedValue(users), findUnique: jest.fn().mockResolvedValue({ id: 'u1' }) },
-    cota: { findMany: jest.fn().mockImplementation(async ({ where }: any) => (where.status === StatusCota.reservada ? pending : paid)) },
+    cota: { findMany: jest.fn().mockImplementation(async ({ where }: any) => (where.status === StatusCota.reservada ? pending : paid)), groupBy: jest.fn().mockResolvedValue([]) },
     crmNota: { create: jest.fn().mockResolvedValue({ id: 'n1', texto: 'Ligar', criadoEm: NOW }) },
     crmPerfil: { upsert: jest.fn().mockImplementation(async ({ create }: any) => ({ etiquetas: create.etiquetas ?? [], proximoContatoEm: create.proximoContatoEm ?? null })) },
   };
@@ -66,6 +66,16 @@ describe('CrmService', () => {
     expect(result.items[0]!.segmentos).toEqual(expect.arrayContaining(['vip', 'recorrente']));
     expect(result.items[1]).toMatchObject({ nome: 'Bruno Pequeno', valorPendente: 50, reservasVencidas: 1 });
     expect(result.items[1]!.segmentos).toEqual(expect.arrayContaining(['novo', 'inadimplente']));
+    expect(result.items[0]).toMatchObject({ etapa: 'recorrente' });
+    expect(result.items[1]).toMatchObject({ etapa: 'pagou' });
+  });
+
+  it('filtra por etapa do funil e traz o resumo do funil na visão geral', async () => {
+    const { service } = build();
+    const rec = await service.list({ etapa: 'recorrente' }, admin) as { items: Array<{ nome: string }> };
+    expect(rec.items.map((item) => item.nome)).toEqual(['Ana Grande']);
+    const overview = await service.overview();
+    expect(overview.funil.totais).toMatchObject({ cadastrados: 2, jaPagaram: 2 });
   });
 
   it('filtra por segmento e por busca', async () => {
@@ -103,5 +113,28 @@ describe('CrmService', () => {
     expect(prisma.crmNota.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ texto: 'Ligar na segunda', autorId: 'admin-1' }) }));
     const profile = await service.updateProfile('u1', { etiquetas: [' VIP ', 'vip', 'Bolão Grande'] }, admin);
     expect(profile.etiquetas).toEqual(['vip', 'bolão grande']);
+  });
+});
+
+describe('esteira de venda (funil)', () => {
+  it('coloca cada cliente na etapa certa', () => {
+    expect(etapaFunil(EMPTY_METRICS, NOW)).toBe('cadastrado');
+    expect(etapaFunil({ ...EMPTY_METRICS, cotasPendentes: 1 }, NOW)).toBe('reservou');
+    expect(etapaFunil({ ...EMPTY_METRICS, cotasPendentes: 1, reservasVencidas: 1 }, NOW)).toBe('reserva_vencida');
+    expect(etapaFunil({ ...EMPTY_METRICS, reservasCanceladas: 2 }, NOW)).toBe('reserva_vencida');
+    expect(etapaFunil({ ...EMPTY_METRICS, compras: 1, boloesDistintos: 1, totalGasto: 30, ultimaCompraEm: daysAgo(5) }, NOW)).toBe('pagou');
+    expect(etapaFunil({ ...EMPTY_METRICS, compras: 4, boloesDistintos: 3, totalGasto: 300, ultimaCompraEm: daysAgo(5) }, NOW)).toBe('recorrente');
+    expect(etapaFunil({ ...EMPTY_METRICS, compras: 4, boloesDistintos: 3, totalGasto: 300, ultimaCompraEm: daysAgo(200) }, NOW)).toBe('inativo');
+  });
+
+  it('resume o funil com as taxas de avanço', () => {
+    const base = { compras: 0, cotasPendentes: 0, reservasVencidas: 0 };
+    const funnel = buildFunnel([
+      { ...base, etapa: 'cadastrado' }, { ...base, etapa: 'cadastrado' },
+      { ...base, etapa: 'reservou', cotasPendentes: 1 }, { ...base, etapa: 'pagou', compras: 1 },
+    ]);
+    expect(funnel.totais).toMatchObject({ cadastrados: 4, jaReservaram: 2, jaPagaram: 1, reservaramPct: 50, pagaramPct: 25, pagaramDeReservaramPct: 50 });
+    expect(funnel.etapas.find((stage) => stage.chave === 'cadastrado')?.clientes).toBe(2);
+    expect(funnel.etapas).toHaveLength(6);
   });
 });

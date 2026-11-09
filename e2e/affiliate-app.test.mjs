@@ -80,7 +80,7 @@ test('app do afiliado: entrada, manifesto, abas pela URL, aba Cotas e bloqueio d
     await page.waitForSelector('.aff-bottomnav', { timeout: 30000 });
     assert.equal(await page.getAttribute('link[rel=manifest]', 'href'), '/afiliado/manifest.webmanifest');
     assert.ok(!(await page.isVisible('.client-app-nav')), 'a barra do app do cliente não aparece no app do afiliado');
-    assert.equal(await page.locator('.aff-bottomnav a').count(), 5);
+    assert.equal(await page.locator('.aff-bottomnav a').count(), 6);
     await page.waitForSelector('.affiliate-kpis', { timeout: 30000 });
 
     // Aba Cotas pela barra de baixo: a cota do link, só com nome e inicial, sem CPF.
@@ -98,6 +98,22 @@ test('app do afiliado: entrada, manifesto, abas pela URL, aba Cotas e bloqueio d
     // Vendas, Mais → Grupos e voltar do navegador respeitam a URL.
     await page.click('.aff-bottomnav a[href="/afiliado?aba=vendas"]');
     await page.waitForSelector('text=Vendas por bolão', { timeout: 20000 });
+    // Clientes (CRM): o comprador do link aparece no funil como "reservou", sem CPF.
+    await page.click('.aff-bottomnav a[href="/afiliado?aba=clientes"]');
+    await page.waitForSelector('.crm-funnel', { timeout: 30000 });
+    await page.waitForSelector('text=Cliente Silva Souza', { timeout: 30000 });
+    const crmText = await page.textContent('.affiliate-crm');
+    assert.ok(!crmText.includes(buyerCpf), 'CRM do afiliado não mostra CPF'); assert.ok(!crmText.includes(buyerEmail), 'e-mail aparece mascarado');
+    assert.match(crmText, /Reservou/);
+    await page.click('.crm-funnel-step:has-text("Reservou")');
+    await page.waitForSelector('.affiliate-crm table tbody tr', { timeout: 15000 });
+    await page.click('.affiliate-crm table tbody tr button:has-text("Ficha")');
+    await page.fill('.affiliate-crm .affiliate-form textarea', 'Prefere pagar à noite');
+    await page.click('.affiliate-crm .affiliate-form button.button-primary');
+    await page.waitForSelector('text=Ficha salva.', { timeout: 15000 });
+    // Painel de vendas na Início: bolão com quem comprou.
+    await page.click('.aff-bottomnav a[href="/afiliado"]');
+    await page.waitForSelector('[aria-label="Painel de vendas"] table', { timeout: 30000 });
     await page.click('.aff-bottomnav a[href="/afiliado?aba=mais"]');
     await page.click('.aff-more-links a[href="/afiliado?aba=grupos"]');
     await page.waitForSelector('text=Criar grupo próprio', { timeout: 20000 });

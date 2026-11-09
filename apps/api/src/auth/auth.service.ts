@@ -11,6 +11,7 @@ import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
 import { RegisterDto, LoginDto, GoogleSignupDto } from './auth.dto';
 import { assertAdult, AuthUser, isValidCpf, normalizeCpf } from './auth.utils';
+import { normalizePixKey, PIX_KEY_MESSAGE } from '../account/pix-key';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from './password-policy';
 import { GOOGLE_LOGIN_ROLES, GoogleIdentity, verifyGoogleIdToken } from './google';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, openSecret, otpauthUrl, sealSecret, verifyTotp } from './totp';
@@ -51,6 +52,8 @@ export class AuthService {
     }
     if (!isValidNewPassword(dto.senha)) throw new ConflictException(NEW_PASSWORD_MESSAGE);
     if (dto.confirmarSenha !== dto.senha) throw new ConflictException('As senhas não são iguais. Digite a mesma senha nos dois campos.');
+    const pix = dto.chavePix?.trim() ? normalizePixKey(dto.chavePix) : null;
+    if (dto.chavePix?.trim() && !pix) throw new ConflictException(PIX_KEY_MESSAGE);
     const email = dto.email.toLowerCase().trim();
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
@@ -64,7 +67,11 @@ export class AuthService {
     const directAffiliate = !invite && code
       ? await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: code }, select: { id: true, statusAprovacao: true } })
       : null;
-    if (code && !invite && (!directAffiliate || directAffiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
+    // Código de indicação de outro cliente (link "Indicar amigos"): vale só como vínculo de quem indicou.
+    const clientReferrer = code && !invite && !directAffiliate
+      ? await this.prisma.usuario.findUnique({ where: { codigoIndicacao: code.toUpperCase() }, select: { id: true, desativadoEm: true } })
+      : null;
+    if (code && !invite && !clientReferrer && (!directAffiliate || directAffiliate.statusAprovacao !== 'aprovado')) throw new ConflictException('Código de indicação inválido ou inativo.');
     // Afiliado só entra por convite feito pelo administrador do BL. Convite de afiliado vindo de outra origem não vale.
     if (invite?.tipo === 'afiliado' && invite.criadoPorUsuario?.papel !== 'admin') throw new ConflictException('Este convite de afiliado não é válido. Peça um novo convite ao administrador do BL.');
     // Link da equipe (operação ou administrador): só vale se quem gerou ainda é administrador ativo com direito de conceder o papel.
@@ -85,9 +92,11 @@ export class AuthService {
           email,
           telefone: dto.telefone.replace(/\D/g, ''),
           dataNascimento,
+          ...(pix ? { chavePixRecebimento: pix.valor } : {}),
           senhaHash: passwordHash,
           papel,
           indicadoPorAfiliadoId: originAffiliateId ?? undefined,
+          ...(clientReferrer && !clientReferrer.desativadoEm && papel === 'cotista' ? { indicadoPorUsuarioId: clientReferrer.id } : {}),
         },
         select: { id: true, email: true, papel: true },
       });
@@ -168,6 +177,8 @@ export class AuthService {
     }
     const affiliate = await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: code }, select: { statusAprovacao: true, usuario: { select: { nome: true } } } });
     if (affiliate?.statusAprovacao === 'aprovado') return { valido: true as const, tipo: 'indicacao' as const, convidadoPor: firstName(affiliate.usuario.nome), email: null, grupo: null };
+    const referrer = await this.prisma.usuario.findUnique({ where: { codigoIndicacao: code.toUpperCase() }, select: { nome: true, desativadoEm: true } });
+    if (referrer && !referrer.desativadoEm) return { valido: true as const, tipo: 'indicacao' as const, convidadoPor: firstName(referrer.nome), email: null, grupo: null };
     return invalid;
   }
 
@@ -246,7 +257,7 @@ export class AuthService {
     }
     // Senha aleatória forte (a pessoa entra pelo Google; se quiser senha própria, usa "Esqueci minha senha").
     const randomPassword = `Gg1${randomBytes(18).toString('hex')}`;
-    const result = await this.register({ nome: (payload.nome ?? payload.email.split('@')[0]!).slice(0, 150), cpf: dto.cpf, email: payload.email, telefone: dto.telefone, maiorDeIdade: dto.maiorDeIdade, senha: randomPassword, confirmarSenha: randomPassword, aceiteTermos: dto.aceiteTermos, aceitePrivacidade: dto.aceitePrivacidade, ...(code ? { codigoAfiliado: code } : {}) } as RegisterDto, meta);
+    const result = await this.register({ nome: (payload.nome ?? payload.email.split('@')[0]!).slice(0, 150), cpf: dto.cpf, email: payload.email, telefone: dto.telefone, maiorDeIdade: dto.maiorDeIdade, senha: randomPassword, confirmarSenha: randomPassword, aceiteTermos: dto.aceiteTermos, aceitePrivacidade: dto.aceitePrivacidade, ...(code ? { codigoAfiliado: code } : {}), ...(dto.chavePix ? { chavePix: dto.chavePix } : {}) } as RegisterDto, meta);
     await this.prisma.usuario.update({ where: { id: result.user.id }, data: { googleSub: payload.gsub } });
     await this.audit?.record(this.prisma, { entidade: 'usuario', entidadeId: result.user.id, evento: 'auth.cadastro_google', atorId: result.user.id }).catch(() => undefined);
     return result;

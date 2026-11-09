@@ -412,3 +412,78 @@ test('telas administrativas com dados reais respondem sem erro interno', async (
     assert.ok(result.status < 500, `${path}: HTTP ${result.status} ${JSON.stringify(result.data).slice(0, 200)}`);
   }
 });
+
+test('carteira, indicação entre clientes, Pix no cadastro e CRM com funil', async () => {
+  const stamp = Date.now();
+  const cpf = () => { const d = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10)); const dv = (arr) => { const sum = arr.reduce((acc, n, i) => acc + n * (arr.length + 1 - i), 0); const r = (sum * 10) % 11; return r === 10 ? 0 : r; }; d.push(dv(d)); d.push(dv(d)); return d.join(''); };
+  const body = (name, extra = {}) => ({ nome: name, cpf: cpf(), email: `${name.split(' ')[0].toLowerCase()}.${stamp}@teste.local`, telefone: '11912345678', maiorDeIdade: true, aceiteTermos: true, aceitePrivacidade: true, senha: 'Senha123', confirmarSenha: 'Senha123', ...extra });
+
+  // Pix inválido é recusado; Pix válido é guardado.
+  const bad = await call('POST', '/auth/registrar', body('Indicador Silva', { chavePix: '###' }), {}, { cookie: '' });
+  assert.equal(bad.status, 409, 'chave Pix inválida');
+  const referrerBody = body('Indicador Silva', { chavePix: 'indicador@teste.local' });
+  const referrer = { cookie: '' };
+  ok(await call('POST', '/auth/registrar', referrerBody, {}, referrer), 'cadastro do indicador');
+  const profile = await call('GET', '/usuarios/me/perfil', undefined, {}, referrer);
+  assert.equal(profile.data.chavePix, 'indicador@teste.local');
+
+  // Link de indicação do cliente e carteira vazia.
+  const referral = await call('GET', '/usuarios/me/indicacao', undefined, {}, referrer);
+  ok(referral, 'link de indicação');
+  assert.match(referral.data.codigo, /^[A-Z2-9]{8}$/);
+  const wallet = await call('GET', '/usuarios/me/carteira', undefined, {}, referrer);
+  ok(wallet, 'carteira'); assert.equal(wallet.data.saldoCentavos, 0);
+
+  // Amigo entra pelo link e aparece como indicado.
+  const friend = { cookie: '' };
+  const friendBody = body('Amigo Souza', { codigoAfiliado: referral.data.codigo, chavePix: '11912345678' });
+  ok(await call('POST', '/auth/registrar', friendBody, {}, friend), 'cadastro do amigo');
+  const after = await call('GET', '/usuarios/me/indicacao', undefined, {}, referrer);
+  assert.equal(after.data.totalIndicados, 1);
+
+  // Administração: liga o cashback e credita um reembolso em saldo; o cliente vê no extrato.
+  ok(await call('PUT', '/admin/carteira/cashback', { percentual: 50 }), 'ligar cashback');
+  const credit = await call('POST', '/admin/carteira/ajuste', { email: referrerBody.email, valorCentavos: 5000, motivo: 'Devolução de teste', tipo: 'reembolso' });
+  ok(credit, 'reembolso em crédito'); assert.equal(credit.data.saldoCentavos, 5000);
+  const extract = await call('GET', '/usuarios/me/carteira', undefined, {}, referrer);
+  assert.equal(extract.data.saldoCentavos, 5000); assert.equal(extract.data.movimentos[0].nome, 'Reembolso em crédito');
+  const tooMuch = await call('POST', '/admin/carteira/ajuste', { email: referrerBody.email, valorCentavos: -999999, motivo: 'Desconto grande demais' });
+  assert.equal(tooMuch.status, 400, 'não deixa o saldo ficar negativo');
+  const asClient = await call('GET', '/admin/carteira', undefined, {}, referrer);
+  assert.ok([401, 403].includes(asClient.status), 'cliente não abre a carteira do admin');
+
+  // Bolão novo: o indicador paga a cota com o saldo (R$ 20 + taxa cabem nos R$ 50).
+  const number = 70000 + Math.floor(Math.random() * 20000);
+  const contest = await call('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: number, dataSorteio: future(14) });
+  ok(contest, 'concurso');
+  const nums = [3, 14, 25, 36, 47, 58];
+  const pool = await call('POST', '/admin/boloes', { concursoId: contest.data.id, grupoId: state.groupId, numerosApostados: nums, jogos: [{ ordem: 1, numeros: nums, quantidadeDezenas: 6, custo: 6 }], cotasIlimitadas: false, totalCotas: 10, valorCota: 20, taxaAdministracaoPct: 10, modeloOperacional: 'mandato' });
+  ok(pool, 'bolão do teste');
+  ok(await call('POST', `/admin/boloes/${pool.data.id}/publicar`), 'publicar');
+  const terms = await call('GET', '/config/mandato', undefined, {}, referrer);
+  const reserved = await call('POST', '/cotas/reservar', { aceitoTermos: true, bolaoId: pool.data.id, quantidade: 1, titularCpf: referrerBody.cpf, titularNome: referrerBody.nome, termoMandatoHash: terms.data.hash }, {}, referrer);
+  ok(reserved, 'reserva do indicador');
+  const paid = await call('POST', `/cotas/${reserved.data.id}/pagar-com-saldo`, undefined, {}, referrer);
+  ok(paid, 'pagar com saldo'); assert.equal(paid.data.status, 'confirmado');
+  const afterPay = await call('GET', '/usuarios/me/carteira', undefined, {}, referrer);
+  assert.equal(afterPay.data.saldoCentavos, 5000 - Math.round(Number(paid.data.valorBruto) * 100), 'saldo debitado pelo valor da cota');
+  const again = await call('POST', `/cotas/${reserved.data.id}/pagar-com-saldo`, undefined, {}, referrer);
+  assert.equal(again.status, 409, 'não paga duas vezes');
+
+  // Amigo reserva e o admin dá baixa: o indicador recebe cashback (50% da taxa), uma vez só.
+  const friendTerms = await call('GET', '/config/mandato', undefined, {}, friend);
+  const friendShare = await call('POST', '/cotas/reservar', { aceitoTermos: true, bolaoId: pool.data.id, quantidade: 1, titularCpf: friendBody.cpf, titularNome: friendBody.nome, termoMandatoHash: friendTerms.data.hash }, {}, friend);
+  ok(friendShare, 'reserva do amigo');
+  ok(await call('POST', `/admin/cotas/${friendShare.data.id}/baixa`, { forma: 'pix_direto' }), 'baixa manual');
+  const withCashback = await call('GET', '/usuarios/me/carteira', undefined, {}, referrer);
+  assert.ok(withCashback.data.totalCashbackCentavos > 0, 'cashback creditado ao indicador');
+  const friends = await call('GET', '/usuarios/me/indicacao', undefined, {}, referrer);
+  assert.equal(friends.data.totalCompraram, 1);
+  ok(await call('PUT', '/admin/carteira/cashback', { percentual: 0 }), 'desligar cashback');
+
+  // CRM do admin traz o funil e filtra por etapa.
+  const overview = await call('GET', '/admin/crm/resumo');
+  ok(overview, 'resumo do CRM'); assert.equal(overview.data.funil.etapas.length, 6);
+  const paidStage = await call('GET', '/admin/crm/apostadores?etapa=pagou&porPagina=100');
+  ok(paidStage, 'filtro por etapa'); assert.ok(paidStage.data.items.every((row) => row.etapa === 'pagou'));
+});

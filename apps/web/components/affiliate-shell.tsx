@@ -11,6 +11,7 @@ export const AFFILIATE_TABS = [
   ['visao', 'Início', '⌂'],
   ['cotas', 'Cotas', '◉'],
   ['vendas', 'Vendas', '↗'],
+  ['clientes', 'Clientes', '☰'],
   ['boloes', 'Bolões', '▦'],
   ['grupos', 'Grupos', '☺'],
   ['comissoes', 'Comissões', '$'],
@@ -22,7 +23,7 @@ export function parseAffiliateTab(value: string | null | undefined): AffiliateTa
 }
 
 /** Barra de baixo do celular: as quatro telas do dia a dia e "Mais" (grupos, comissões e conta). */
-const BOTTOM = [['visao', 'Início', '⌂'], ['cotas', 'Cotas', '◉'], ['vendas', 'Vendas', '↗'], ['boloes', 'Bolões', '▦'], ['mais', 'Mais', '•••']] as const;
+const BOTTOM = [['visao', 'Início', '⌂'], ['cotas', 'Cotas', '◉'], ['vendas', 'Vendas', '↗'], ['clientes', 'Clientes', '☰'], ['boloes', 'Bolões', '▦'], ['mais', 'Mais', '•••']] as const;
 const href = (tab: string) => (tab === 'visao' ? '/afiliado' : `/afiliado?aba=${tab}`);
 
 async function logout() {

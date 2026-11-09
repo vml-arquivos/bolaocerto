@@ -120,6 +120,12 @@ model Usuario {
   totpSecret            String?       @map("totp_secret")
   totpAtivo             Boolean       @default(false) @map("totp_ativo")
   googleSub             String?       @unique @map("google_sub") @db.VarChar(64)
+  /// Código do link de indicação do cliente (criado na primeira vez que ele abre "Indicar amigos").
+  codigoIndicacao       String?       @unique @map("codigo_indicacao") @db.VarChar(12)
+  indicadoPorUsuarioId  String?       @map("indicado_por_usuario_id") @db.Uuid
+  indicadoPor           Usuario?      @relation("indicacao_cliente", fields: [indicadoPorUsuarioId], references: [id], onDelete: SetNull)
+  indicados             Usuario[]     @relation("indicacao_cliente")
+  carteiraMovimentos    CarteiraMovimento[]
   totpRecuperacao       String[]      @default([]) @map("totp_recuperacao")
   criadoEm              DateTime      @default(now()) @map("criado_em")
   atualizadoEm          DateTime      @updatedAt @map("atualizado_em")
@@ -147,6 +153,7 @@ model Usuario {
   crmPerfil             CrmPerfil?
   crmNotas              CrmNota[]    @relation("crm_nota_usuario")
   crmNotasEscritas      CrmNota[]    @relation("crm_nota_autor")
+  crmAfiliadoPerfis     CrmAfiliadoPerfil[]
   exclusaoSolicitadaEm  DateTime?    @map("exclusao_solicitada_em")
   pausaAte              DateTime?    @map("pausa_ate")
   pausaPermanente       Boolean      @default(false) @map("pausa_permanente")
@@ -573,6 +580,21 @@ model AuditoriaEvento {
 }
 
 /// CRM: etiquetas e acompanhamento comercial de cada apostador.
+/// CRM do afiliado: anotações e próximo contato do afiliado sobre os clientes DELE (separado do CRM da administração).
+model CrmAfiliadoPerfil {
+  afiliadoId       String    @map("afiliado_id") @db.Uuid
+  usuarioId        String    @map("usuario_id") @db.Uuid
+  etiquetas        String[]  @default([])
+  nota             String?
+  proximoContatoEm DateTime? @map("proximo_contato_em")
+  atualizadoEm     DateTime  @default(now()) @updatedAt @map("atualizado_em")
+  usuario          Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([afiliadoId, usuarioId])
+  @@index([afiliadoId, proximoContatoEm])
+  @@map("crm_afiliado_perfis")
+}
+
 model CrmPerfil {
   usuarioId        String    @id @map("usuario_id") @db.Uuid
   etiquetas        String[]  @default([])
@@ -794,4 +816,22 @@ model AlertaModalidade {
   @@id([usuarioId, modalidade])
   @@index([modalidade])
   @@map("alertas_modalidade")
+}
+
+/// Carteira (crédito BL): livro-razão com valores em centavos, positivo = crédito, negativo = uso. O saldo é a soma.
+/// Crédito de cashback/reembolso só vale para comprar cotas aqui; não é conta de pagamento nem pode ser sacado.
+model CarteiraMovimento {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId    String   @map("usuario_id") @db.Uuid
+  tipo         String   @db.VarChar(30)
+  valorCentavos Int     @map("valor_centavos")
+  descricao    String   @db.VarChar(200)
+  /// Impede lançar duas vezes a mesma coisa (ex.: "cashback:<pagamento>").
+  chave        String?  @unique @db.VarChar(80)
+  criadoPor    String?  @map("criado_por") @db.Uuid
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, criadoEm])
+  @@map("carteira_movimentos")
 }

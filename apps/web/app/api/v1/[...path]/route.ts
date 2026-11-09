@@ -12,7 +12,8 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     const raw = await request.arrayBuffer();
     const isReservation = request.method === 'POST' && path.at(-2) === 'cotas' && path.at(-1) === 'reservar';
     const isRegistration = request.method === 'POST' && path.at(-2) === 'auth' && path.at(-1) === 'registrar';
-    if ((isReservation || isRegistration) && raw.byteLength > 0) {
+    const isGoogleSignup = request.method === 'POST' && path.at(-2) === 'google' && path.at(-1) === 'cadastro';
+    if ((isReservation || isRegistration || isGoogleSignup) && raw.byteLength > 0) {
       try {
         const payload = JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>;
         const referral = request.cookies.get('bl_ref')?.value;

@@ -258,6 +258,12 @@ export class AdminController {
     return this.admin.affiliateDashboard(user);
   }
 
+  @Get('afiliados/me/painel')
+  @Roles('afiliado')
+  affiliatePanel(@CurrentUser() user: AuthUser) {
+    return this.admin.affiliatePanel(user);
+  }
+
   @Get('afiliados/me/vendas')
   @Roles('afiliado')
   affiliateSales(@CurrentUser() user: AuthUser) {

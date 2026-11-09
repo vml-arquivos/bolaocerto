@@ -19,7 +19,7 @@ async function shrink(file: File): Promise<Blob> {
 function initials(name: string) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join('') || 'BL'; }
 
 /** Dados da própria conta: nome, telefone, chave Pix e foto. CPF e e-mail aparecem, mas só mudam pelo suporte. */
-export function ProfilePanel({ pixLabel = 'Chave Pix', showPix = true, showPhoto = true }: { pixLabel?: string; showPix?: boolean; showPhoto?: boolean }) {
+export function ProfilePanel({ pixLabel = 'Chave Pix', showPix = true, showPhoto = true, onSaved }: { pixLabel?: string; showPix?: boolean; showPhoto?: boolean; onSaved?: () => void }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [form, setForm] = useState({ nome: '', telefone: '', chavePix: '' });
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -39,7 +39,7 @@ export function ProfilePanel({ pixLabel = 'Chave Pix', showPix = true, showPhoto
       const response = await authenticatedFetch('/api/v1/usuarios/me', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: form.nome, ...(form.telefone ? { telefone: form.telefone } : {}), ...(showPix ? { chavePix: form.chavePix } : {}) }) });
       const result = await response.json().catch(() => ({})) as Profile & { message?: string | string[] };
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || 'Não foi possível salvar.');
-      apply(result); setMessage({ ok: true, text: 'Dados salvos.' });
+      apply(result); setMessage({ ok: true, text: 'Dados salvos.' }); onSaved?.();
     } catch (error) { setMessage({ ok: false, text: error instanceof Error ? error.message : 'Não foi possível salvar.' }); } finally { setBusy(false); }
   }
 
@@ -71,7 +71,7 @@ export function ProfilePanel({ pixLabel = 'Chave Pix', showPix = true, showPhoto
     <form className="profile-form" onSubmit={save}>
       <label>Nome completo<input required minLength={2} maxLength={150} value={form.nome} onChange={(event) => setForm({ ...form, nome: event.target.value })} /></label>
       <label>Telefone com DDD<input type="tel" inputMode="tel" value={form.telefone} onChange={(event) => setForm({ ...form, telefone: event.target.value })} placeholder="(11) 91234-5678" /></label>
-      {showPix && <label>{pixLabel}<input maxLength={140} value={form.chavePix} onChange={(event) => setForm({ ...form, chavePix: event.target.value })} placeholder="CPF, e-mail, telefone ou chave aleatória" /></label>}
+      {showPix && <label>{pixLabel}<input maxLength={140} value={form.chavePix} onChange={(event) => setForm({ ...form, chavePix: event.target.value })} placeholder="CPF, e-mail, telefone ou chave aleatória" /><small className="muted">É por esta chave que o BL paga prêmios e devolve valores. Confira com cuidado.</small></label>}
       <div className="profile-fixed"><span>CPF</span><strong>{profile.cpf}</strong><span>E-mail de acesso</span><strong>{profile.email}</strong><small className="muted">CPF e e-mail não mudam por aqui. Para trocar, fale com o suporte.</small></div>
       {message && <div className={`form-message ${message.ok ? 'form-success' : 'form-error'}`} role="status">{message.text}</div>}
       <button className="button button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar dados'}</button>

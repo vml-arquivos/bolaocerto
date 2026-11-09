@@ -53,6 +53,8 @@ test('compra pelo site: checkout com QR Code, confirmação automática e volta 
     assert.equal(await page.locator('#titularCpf').count(), 0);
     await page.check('.purchase-card form input[type=checkbox]');
     await page.click('.purchase-card form button.button-primary');
+    await page.waitForSelector('.purchase-review');
+    await page.click('.purchase-review button.button-primary');
 
     // Vai para o checkout, com QR Code e código para copiar.
     await page.waitForURL((url) => url.pathname.startsWith('/checkout/'), { timeout: 60000 });

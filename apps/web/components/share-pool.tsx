@@ -6,20 +6,30 @@ type Props = { poolId: string; title: string; detail: string; price: string };
 
 /**
  * Compartilhar o bolão. Afiliado aprovado leva o link com o próprio código (vendas aparecem no painel dele);
- * qualquer outra pessoa compartilha o link simples do bolão.
+ * cliente logado leva o link com o próprio código de indicação; sem login, o link simples do bolão.
  */
 export function SharePool({ poolId, title, detail, price }: Props) {
   const [code, setCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
     let off = false;
-    void authenticatedFetch('/api/v1/afiliados/me/dashboard').then(async (response) => {
-      if (!response.ok) return;
-      const data = await response.json().catch(() => null) as { codigoAfiliado?: string; statusAprovacao?: string } | null;
-      if (!off && data?.codigoAfiliado && data.statusAprovacao === 'aprovado') setCode(data.codigoAfiliado);
-    }).catch(() => undefined);
+    void (async () => {
+      try {
+        const response = await authenticatedFetch('/api/v1/afiliados/me/dashboard');
+        if (response.ok) {
+          const data = await response.json().catch(() => null) as { codigoAfiliado?: string; statusAprovacao?: string } | null;
+          if (!off && data?.codigoAfiliado && data.statusAprovacao === 'aprovado') { setCode(data.codigoAfiliado); return; }
+        }
+        // Cliente comum: usa o código de indicação dele (cashback quando o BL ligar).
+        const mine = await authenticatedFetch('/api/v1/usuarios/me/indicacao', { cache: 'no-store' });
+        if (!mine.ok) return;
+        const referral = await mine.json().catch(() => null) as { codigo?: string } | null;
+        if (!off && referral?.codigo) { setCode(referral.codigo); setIsClient(true); }
+      } catch { /* sem login: link simples */ }
+    })();
     return () => { off = true; };
   }, []);
 
@@ -43,8 +53,10 @@ export function SharePool({ poolId, title, detail, price }: Props) {
       <a className="button button-secondary" href={`https://wa.me/?text=${encodeURIComponent(`${text} ${link}`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
       <button type="button" className="button button-secondary" onClick={() => void copy()}>{copied ? 'Link copiado!' : 'Copiar link'}</button>
     </div>}
-    <small className="muted share-pool-note">{code
-      ? <>Este link leva o seu código de afiliado (<strong>{code}</strong>). As cotas vendidas por ele aparecem no seu painel.</>
-      : 'Link simples do bolão. Para ter um link com o seu código e acompanhar as cotas vendidas, seja afiliado.'}</small>
+    <small className="muted share-pool-note">{code && isClient
+      ? <>Este link leva o seu código de indicação. Quem entrar por ele fica na sua lista de amigos em Minha conta.</>
+      : code
+        ? <>Este link leva o seu código de afiliado (<strong>{code}</strong>). As cotas vendidas por ele aparecem no seu painel.</>
+        : 'Link simples do bolão. Entre na sua conta para compartilhar com o seu link de indicação.'}</small>
   </div>;
 }
