@@ -98,7 +98,7 @@ export function AttachmentsPanel({ poolId, shares = [], forceShareId, defaultTyp
         <small>PDF, PNG, JPG ou WEBP · até 10 MB cada</small>
       </label>
     </div>
-    {loading ? <p className="admin-help">Carregando arquivos…</p> : files.length === 0 ? <Empty text="Nenhum arquivo ainda" hint="Envie o comprovante da aposta feita na lotérica." /> : <ul className="attach-list">
+    {loading ? <p className="admin-help">Carregando arquivos…</p> : files.length === 0 ? <Empty text="Nenhum arquivo ainda" /> : <ul className="attach-list">
       {files.map((file) => <li key={file.id}>
         <div className="attach-info"><strong>{file.nome}</strong>
           <small>{ATTACHMENT_LABELS[file.tipo] ?? file.tipo}{file.titular ? ` · ${file.titular}` : ''} · {fileSize(file.tamanho)} · {dateTime(file.enviadoEm)}{file.enviadoPor ? ` · ${file.enviadoPor}` : ''}</small>
@@ -166,14 +166,14 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
   const special = pool.nomeEspecial ?? contest?.nomeEspecial;
   const name = `${modalityNames[modalidade] ?? modalidade ?? 'Bolão'}${special ? ` · ${special}` : ''} ${Number(numero) > 0 ? `#${numero}` : '(número a definir)'}`;
   return <AdminModal title={`Comprovantes · ${name}`} onClose={onClose}>
-    <p className="admin-help">{isDraft ? 'Bolão criado como rascunho. Registre o jogo na lotérica e envie agora a foto ou o PDF do comprovante: é a prova que os cotistas vão ver. Com o comprovante enviado, você publica e abre as vendas.' : 'Envie a foto ou o PDF do comprovante que a lotérica entregou, com os jogos apostados. É a prova que o cotista recebe junto com o comprovante da compra. Cotistas pagos são avisados por e-mail e pela conta.'}</p>
+    
     <AttachmentsPanel poolId={pool.id} shares={shares} notify={notify} onChange={setCount} />
     {isDraft && <div className="attach-confirm">
       <h3>Abrir as vendas</h3>
       <button type="button" className="admin-button admin-button-primary" disabled={busy || count === 0} onClick={() => void publish()}>{busy ? 'Publicando…' : 'Publicar bolão e abrir vendas'}</button>
       <p className="admin-help">{count === 0 ? 'Envie o comprovante para liberar a publicação. Se este bolão é de pré-venda, publique pela lista de bolões.' : 'Comprovante enviado. Pode publicar.'}</p>
     </div>}
-    {pool.status === 'aberto' && <p className="admin-help">Com o bolão aberto, os arquivos enviados já ficam visíveis para quem participa. Para registrar a aposta, feche o bolão primeiro.</p>}
+    
     {['fechado', 'registrado'].includes(pool.status) && <div className="attach-confirm">
       <h3>{alreadyDone ? 'Atualizar dados da aposta' : 'Confirmar que a aposta foi feita'}</h3>
       <div className="admin-form-grid">

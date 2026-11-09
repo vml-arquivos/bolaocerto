@@ -11,7 +11,7 @@ export function HealthPanel() {
   }, []);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 120_000); return () => window.clearInterval(timer); }, [load]);
 
-  if (failed) return <Panel title="Está tudo funcionando?" description="Não deu para consultar agora."><p className="admin-help">Recarregue a página. Se continuar, avise o suporte técnico.</p></Panel>;
+  if (failed) return <Panel title="Está tudo funcionando?"><p className="admin-help">Recarregue a página. Se continuar, avise o suporte técnico.</p></Panel>;
   if (!data) return null;
   const pending = data.pendencias ?? {};
   const unregistered: Rec[] = pending.apostasNaoRegistradas ?? [];

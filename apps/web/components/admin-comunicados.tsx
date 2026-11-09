@@ -63,9 +63,9 @@ export function ComunicadosView({ notify }: { notify: Notify }) {
   }
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Clientes</span><h1>Mensagens para clientes</h1><p>Escreva um aviso e escolha quem recebe. Ele aparece na conta da pessoa e chega no celular de quem ligou os avisos.</p></div></div>
+    <div className="admin-page-heading"><div><h1>Mensagens para clientes</h1></div></div>
     <div className="admin-mini-stats"><span>Pessoas com aviso no celular <strong>{devices?.pessoas ?? 0}</strong></span><span>Aparelhos <strong>{devices?.aparelhos ?? 0}</strong></span></div>
-    <Panel title="Nova mensagem" description="Antes de enviar, o sistema mostra quantas pessoas vão receber.">
+    <Panel title="Nova mensagem">
       <form className="admin-form-grid" onSubmit={submit}>
         <label className="admin-field"><span>Quem recebe</span><select value={audience} onChange={(event) => setAudience(event.target.value)}>{AUDIENCES.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
         {audience === 'bolao' && <label className="admin-field"><span>Bolão</span><select value={poolId} onChange={(event) => setPoolId(event.target.value)}><option value="">Escolha…</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{(pool.grupo?.nome ?? 'Bolão')} · {pool.concurso?.nomeEspecial ? `${pool.concurso.nomeEspecial} · ` : ''}{pool.concurso?.numeroConcurso > 0 ? `concurso ${pool.concurso.numeroConcurso}` : 'concurso a definir'}</option>)}</select></label>}
@@ -73,7 +73,7 @@ export function ComunicadosView({ notify }: { notify: Notify }) {
         <label className="admin-field admin-field-wide"><span>Título (aparece em destaque)</span><input required minLength={3} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Seu jogo foi registrado!" /></label>
         <label className="admin-field admin-field-wide"><span>Mensagem</span><textarea required minLength={3} maxLength={600} rows={4} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ex.: O comprovante do bolão já está na sua conta. Boa sorte!" /><small>{message.length}/600</small></label>
         <label className="admin-field"><span>Abrir esta página ao tocar</span><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="/minha-conta" /></label>
-        <label className="admin-toggle-row admin-field-wide"><input type="checkbox" checked={email} onChange={(event) => setEmail(event.target.checked)} /><span><strong>Mandar também por e-mail</strong><small>Use com moderação: o serviço de e-mail tem limite diário de envios. Sem marcar, vai só para a conta e o celular.</small></span></label>
+        <label className="admin-toggle-row admin-field-wide"><input type="checkbox" checked={email} onChange={(event) => setEmail(event.target.checked)} /><span><strong>Mandar também por e-mail</strong></span></label>
         <div className="admin-callout admin-field-wide" role="status">{preview ? <>Vai para <strong>{preview.total}</strong> {preview.total === 1 ? 'pessoa' : 'pessoas'}; <strong>{preview.comAvisoNoCelular}</strong> {preview.comAvisoNoCelular === 1 ? 'tem' : 'têm'} o aviso no celular ligado. Os demais veem na conta{email ? ' e recebem o e-mail' : ''}.</> : 'Escolha o público para ver quantas pessoas recebem.'}</div>
         <div className="wizard-actions admin-field-wide"><button className="admin-button admin-button-primary" disabled={busy || !preview || preview.total === 0}>{busy ? 'Enviando…' : 'Enviar mensagem'}</button></div>
       </form>

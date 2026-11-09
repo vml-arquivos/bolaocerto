@@ -118,7 +118,7 @@ export function ReportsView() {
   const rows: Rec[] = tab === 'vendas' || tab === 'nao-pagos' || tab === 'comissoes' || tab === 'pagamentos' || tab === 'notas-fiscais' ? (data?.linhas ?? []) : [];
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Relatórios</h1><small>Atualização automática a cada 15 s · {updatedAt ? updatedAt.toLocaleTimeString('pt-BR') : 'consultando…'}</small><p>Receita, comissões, inadimplência e planilhas completas para conferência e prestação de contas.</p></div></div>
+    <div className="admin-page-heading"><div><h1>Relatórios</h1></div></div>
     <div className="admin-toolbar"><div className="admin-toolbar-filters">
       <label className="admin-field"><span>De</span><input type="date" value={de} onChange={(event) => setDe(event.target.value)} /></label>
       <label className="admin-field"><span>Até</span><input type="date" value={ate} onChange={(event) => setAte(event.target.value)} /></label>
@@ -130,17 +130,17 @@ export function ReportsView() {
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
 
     {!loading && summary && <>
-      <Panel title="Resumo executivo" description="Receita, o que fica com a plataforma, comissões e valores a receber. Baixe o resumo para prestar contas." action={<ExportButtons path="/api/v1/admin/relatorios/resumo" id="resumo" />}><p className="muted" style={{ margin: 0 }}>Use o filtro de datas acima para escolher o período do relatório.</p></Panel>
+      <Panel title="Resumo executivo" action={<ExportButtons path="/api/v1/admin/relatorios/resumo" id="resumo" />}>{null}</Panel>
       {Number(summary.pagamentosSemCotaParaEstorno) > 0 && <div className="admin-toast admin-toast-error" role="alert"><strong>{summary.pagamentosSemCotaParaEstorno} pagamento(s) recebido(s) sem cota</strong> (reserva expirou e o bolão lotou). Devolva o valor ao participante e registre o estorno em “Quem não pagou”.</div>}
       <div className="admin-kpi-grid">
         <Kpi label="Receita bruta" value={brl(summary.receitaBruta)} hint={`${summary.pagamentosConfirmados} pagamentos confirmados`} tone="green" />
-        <Kpi label="Custo dos jogos" value={brl(summary.custoJogos)} hint="valor destinado às apostas" tone="blue" />
+        <Kpi label="Custo dos jogos" value={brl(summary.custoJogos)} tone="blue" />
         <Kpi label="Taxa de administração" value={brl(summary.taxaAdministracao)} tone="violet" />
         <Kpi label="Comissões (total)" value={brl(summary.comissoes?.total)} hint={`${brl(summary.comissoes?.pendente)} a pagar · ${brl(summary.comissoes?.paga)} pagas`} tone="amber" />
-        <Kpi label="Resultado da plataforma" value={brl(summary.resultadoLiquidoPlataforma)} hint="taxa − comissões" tone="green" />
+        <Kpi label="Resultado da plataforma" value={brl(summary.resultadoLiquidoPlataforma)} tone="green" />
         <Kpi label="Ticket médio" value={brl(summary.ticketMedio)} tone="blue" />
-        <Kpi label="A receber (no prazo)" value={brl(summary.aReceber?.valorAguardando)} hint="reservas aguardando pagamento" tone="amber" />
-        <Kpi label="Vencido sem pagar" value={brl(summary.aReceber?.valorVencido)} hint="reservas com prazo expirado" tone="rose" />
+        <Kpi label="A receber (no prazo)" value={brl(summary.aReceber?.valorAguardando)} tone="amber" />
+        <Kpi label="Vencido sem pagar" value={brl(summary.aReceber?.valorVencido)} tone="rose" />
       </div>
       <div className="admin-dashboard-grid">
         <Panel title="Recebimentos por forma de pagamento"><Table minWidth={420}><thead><tr><th>Forma</th><th>Pagamentos</th><th>Valor</th></tr></thead><tbody>{(summary.porMetodo ?? []).map((row: Rec) => <tr key={row.metodo}><td>{label(row.metodo)}</td><td>{row.pagamentos}</td><td>{brl(row.valor)}</td></tr>)}</tbody></Table>{!(summary.porMetodo ?? []).length && <Empty text="Nenhum pagamento confirmado no período" />}</Panel>
@@ -148,37 +148,37 @@ export function ReportsView() {
       </div>
     </>}
 
-    {!loading && tab === 'vendas' && <Panel title="Vendas de cotas" description={`${data?.total ?? 0} registros (a planilha traz todos os campos, inclusive CPF completo)`} action={<ExportButtons path="/api/v1/admin/relatorios/vendas" id="vendas" />}>
+    {!loading && tab === 'vendas' && <Panel title="Vendas de cotas" action={<ExportButtons path="/api/v1/admin/relatorios/vendas" id="vendas" />}>
       <Table minWidth={1240}><thead><tr><th>Data</th><th>Participante</th><th>CPF</th><th>Bolão</th><th>Qtd.</th><th>Total</th><th>Cota</th><th>Pagamento</th><th>Forma</th><th>Pago em</th><th>Afiliado</th><th>Comissão</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{row.cpf}</td><td>{label(row.modalidade)} #{row.concurso}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td>{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td><span className={chip(row.statusPagamento)}>{label(row.statusPagamento)}</span></td><td>{label(row.metodo)} <small>{row.origem}</small></td><td>{dateTime(row.pagoEm)}</td><td>{row.afiliado ?? 'Orgânico'}</td><td>{row.comissao === null || row.comissao === undefined ? '—' : brl(row.comissao)}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma venda no período" />}
     </Panel>}
 
     {!loading && tab === 'nao-pagos' && <>
-      <Panel title="Quem não pagou" description={`${data?.total ?? 0} cotas aguardando pagamento ou com reserva vencida`} action={<ExportButtons path="/api/v1/admin/relatorios/nao-pagos" id="nao-pagos" />}>
+      <Panel title="Quem não pagou" action={<ExportButtons path="/api/v1/admin/relatorios/nao-pagos" id="nao-pagos" />}>
         <Table minWidth={1080}><thead><tr><th>Reservada em</th><th>Participante</th><th>Contato</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th><th>Vencimento</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong></td><td>{row.email}<small>{row.telefone ?? ''}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{row.quantidade}</td><td>{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td>{dateTime(row.vencimento)}</td></tr>)}</tbody></Table>
         {!rows.length && <Empty text="Ninguém inadimplente no período" />}
       </Panel>
-      {(data?.pagosSemCota ?? []).length > 0 && <Panel title="Pagos sem cota — estornar ao participante" description="Pagamentos confirmados cuja reserva já havia expirado e o bolão lotou.">
+      {(data?.pagosSemCota ?? []).length > 0 && <Panel title="Pagos sem cota — estornar ao participante">
         <Table minWidth={760}><thead><tr><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th></tr></thead><tbody>{(data?.pagosSemCota ?? []).map((row: Rec, index: number) => <tr key={index}><td>{row.participante}<small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{brl(row.valorTotal)}</td><td>{dateTime(row.pagoEm)}</td></tr>)}</tbody></Table>
       </Panel>}
     </>}
 
-    {!loading && tab === 'comissoes' && <Panel title="Comissões por afiliado" description="Base de cálculo = taxa de administração das vendas pagas." action={<ExportButtons path="/api/v1/admin/relatorios/comissoes" id="comissoes" />}>
+    {!loading && tab === 'comissoes' && <Panel title="Comissões por afiliado" action={<ExportButtons path="/api/v1/admin/relatorios/comissoes" id="comissoes" />}>
       <Table minWidth={960}><thead><tr><th>Afiliado</th><th>Código</th><th>Chave Pix</th><th>%</th><th>Vendas</th><th>Base</th><th>A pagar</th><th>Paga</th><th>Cancelada</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td><strong>{row.afiliado}</strong></td><td>{row.codigo}</td><td>{row.chavePix ?? '—'}</td><td>{row.percentual}%</td><td>{row.vendas}</td><td>{brl(row.base)}</td><td>{brl(row.pendente)}</td><td>{brl(row.paga)}</td><td>{brl(row.cancelada)}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma comissão no período" />}
     </Panel>}
 
-    {!loading && tab === 'pagamentos' && <Panel title="Pagamentos" description={`${data?.total ?? 0} pagamentos — custo dos jogos, taxa, comissão e resultado da plataforma por venda (a planilha traz o CPF completo)`} action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
+    {!loading && tab === 'pagamentos' && <Panel title="Pagamentos" action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
       <Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td>{brl(row.valorBruto)}</td><td>{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td>{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td>{row.comissao === null ? '—' : brl(row.comissao)}</td><td>{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhum pagamento no período" />}
     </Panel>}
 
-    {!loading && tab === 'notas-fiscais' && <Panel title="Notas fiscais de serviço" description={`${data?.total ?? 0} notas no período · ${data?.pagamentosSemNota ?? 0} pagamento(s) confirmado(s) ainda sem nota`} action={<ExportButtons path="/api/v1/admin/relatorios/notas-fiscais" id="notas-fiscais" />}>
+    {!loading && tab === 'notas-fiscais' && <Panel title="Notas fiscais de serviço" action={<ExportButtons path="/api/v1/admin/relatorios/notas-fiscais" id="notas-fiscais" />}>
       <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td>{brl(row.valorNota)}</td><td>{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td>{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma nota fiscal no período" />}
     </Panel>}
 
-    {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" description="Baixe a ficha completa de cada bolão (participantes, pagamentos, jogos e totais) ou o quadro geral de todos os bolões. Para ver quem comprou e quem pagou na tela, use Loterias → Controle por bolão." action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
+    {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
       <Table minWidth={1100}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Status</th><th>Cotas pagas</th><th>Aguardando</th><th>Canceladas</th><th>Receita</th><th>Ficha</th></tr></thead><tbody>{list.map((pool) => <tr key={pool.id}><td><strong>{label(pool.modalidade)} #{pool.concurso}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td>{dateTime(pool.sorteio)}</td><td><span className="status-chip">{label(pool.status)}</span></td><td>{pool.cotasPagas}{pool.totalCotas ? ` / ${pool.totalCotas}` : ' (ilimitadas)'}</td><td>{pool.cotasAguardando}</td><td>{pool.cotasCanceladas}</td><td>{brl(pool.receita)}</td><td><ExportButtons path={`/api/v1/admin/relatorios/boloes/${pool.id}`} id={pool.id} /></td></tr>)}</tbody></Table>
       {!list.length && <Empty text="Nenhum bolão no período" />}
     </Panel>}
@@ -254,7 +254,7 @@ export function ManualSaleForm({ onDone, notify }: { onDone: () => Promise<void>
   }
 
   if (!open) return <button className="admin-button admin-button-primary" onClick={() => setOpen(true)}>Registrar venda de balcão</button>;
-  return <Panel title="Venda de balcão" description="Para participantes que pagam em dinheiro, Pix direto ou transferência. O participante precisa ter cadastro (Usuários)." action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
+  return <Panel title="Venda de balcão" action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
     <form onSubmit={submit} className="admin-form-grid" style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
       <label className="admin-field"><span>Bolão aberto</span><select name="bolaoId" required>{pools.map((pool) => <option key={pool.id} value={pool.id}>{label(pool.concurso?.modalidade)} {concursoNo(pool.concurso?.numeroConcurso)} — {brl(pool.valorCota)}/cota</option>)}</select></label>
       <label className="admin-field"><span>Buscar participante (nome, CPF ou e-mail)</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Digite ao menos 2 letras" /></label>
@@ -285,7 +285,7 @@ export function PaymentSettingsPanel({ notify }: { notify: (type: 'success' | 'e
     finally { setBusy(''); }
   }
   if (!settings) return null;
-  return <Panel title="Pagamentos" description="Como estão as cobranças: Pix e boleto pela Cora, cartão pelo Mercado Pago.">
+  return <Panel title="Pagamentos">
     <div className="admin-summary-list">
       <div><span>Pagamentos habilitados</span><strong>{settings.habilitado ? 'Sim' : 'Não'}</strong></div>
       <div><span>Serviço de cobrança</span><strong>{settings.provedor}{settings.ambienteCora ? ` (${settings.ambienteCora === 'production' ? 'produção' : 'teste'})` : ''}</strong></div>
@@ -316,7 +316,7 @@ export function ManualContestForm({ onDone, notify }: { onDone: () => Promise<vo
     finally { setBusy(false); }
   }
   if (!open) return <button className="admin-button" onClick={() => setOpen(true)}>Cadastrar concurso manualmente</button>;
-  return <Panel title="Novo concurso (manual)" description="Use quando a sincronização com a CAIXA estiver indisponível. O horário de corte é calculado pela configuração da modalidade." action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
+  return <Panel title="Novo concurso (manual)" action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
     <form onSubmit={submit} style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
       <label className="admin-field"><span>Modalidade</span><select name="modalidade" required>{['megasena', 'lotofacil', 'quina', 'lotomania', 'duplasena', 'timemania', 'diadesorte', 'supersete', 'loteca'].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label className="admin-field"><span>Número do concurso</span><input name="numeroConcurso" type="number" min={1} required /></label>
@@ -398,20 +398,20 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   const focus = settings?.provedor === 'focus';
   const emissor = focus ? 'Focus NFe' : 'Cora';
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro e controle</span><h1>Notas fiscais</h1><p>{focus ? 'NFS-e emitida pela Focus NFe só sobre a taxa de administração, com registro manual para casos especiais.' : 'Emissão e acompanhamento da NFS-e pela Cora, com registro manual para vendas de balcão.'}</p></div></div>
+    <div className="admin-page-heading"><div><h1>Notas fiscais</h1></div></div>
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
     {!loading && settings && <>
       <div className="admin-kpi-grid">
-        <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto ? 'configuração completa' : off ? 'defina NFSE_MODE no servidor' : focus ? `faltam ${(settings.faltando ?? []).join(', ') || 'dados do emissor'}` : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
-        <Kpi label="Pagamentos sem nota" value={settings.pagamentosSemNota} hint="confirmados e ainda sem nota" tone="amber" />
-        <Kpi label="Serviço a faturar" value={brl(settings.valorServicoSemNota ?? 0)} hint="só a taxa de administração" tone="green" />
-        <Kpi label="Fora da nota (jogos)" value={brl(settings.valorRegistroSemNota ?? 0)} hint="custo do registro na CAIXA" tone="blue" />
+        <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto || off ? undefined : focus ? `faltam ${(settings.faltando ?? []).join(', ') || 'dados do emissor'}` : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
+        <Kpi label="Pagamentos sem nota" value={settings.pagamentosSemNota} tone="amber" />
+        <Kpi label="Serviço a faturar" value={brl(settings.valorServicoSemNota ?? 0)} tone="green" />
+        <Kpi label="Fora da nota (jogos)" value={brl(settings.valorRegistroSemNota ?? 0)} tone="blue" />
         <Kpi label="Emitidas" value={count('emitida')} tone="green" />
-        <Kpi label="Aguardando" value={count('aguardando') + count('aguardando_certificado')} hint="pagamento ou certificado A1" tone="blue" />
-        <Kpi label="Com erro" value={count('erro')} hint="prefeitura recusou" tone="rose" />
+        <Kpi label="Aguardando" value={count('aguardando') + count('aguardando_certificado')} tone="blue" />
+        <Kpi label="Com erro" value={count('erro')} tone="rose" />
       </div>
-      <div className="admin-callout"><strong>Atenção fiscal</strong><p>{settings.aviso}</p></div>
-      <Panel title="Emissor e conexão" description="Parâmetros vêm das variáveis do servidor; nenhum segredo é editável aqui." action={<div className="admin-row-actions">
+      
+      <Panel title="Emissor e conexão" action={<div className="admin-row-actions">
         {superAdmin && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : focus ? 'Conferir configuração' : 'Verificar na Cora'}</button>}
         {superAdmin && !focus && <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>}
         <button className="admin-button admin-button-ghost" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
@@ -438,7 +438,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
         </div>}
       </Panel>
 
-      <Panel title="Pagamentos confirmados sem nota" description={focus ? 'A nota é só da taxa de administração (coluna “Serviço”). O custo dos jogos fica fora. No modo automático a nota sai sozinha quando o pagamento é confirmado.' : 'A nota é só da taxa de administração (coluna “Serviço”). Quando a cobrança inclui o custo dos jogos, emita pelo valor do serviço no app da Cora ou na prefeitura e registre aqui o número e o PDF.'}>
+      <Panel title="Pagamentos confirmados sem nota">
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
           <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
           <td><span className={chip(row.enderecoCompleto || focus ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus ? 'opcional' : 'faltando'}</span></td>
@@ -489,7 +489,7 @@ export function CaixaDiagnosticsPanel() {
   }
   const results: Rec[] = data?.resultados ?? [];
   const okCount = results.filter((row) => row.ok).length;
-  return <Panel title="Conexão com a CAIXA" description="Testa a atualização automática dos concursos sem gravar nada e mostra o motivo exato de cada falha." action={<button className="admin-button" onClick={run} disabled={busy}>{busy ? 'Testando…' : 'Testar conexão com a CAIXA'}</button>}>
+  return <Panel title="Conexão com a CAIXA" action={<button className="admin-button" onClick={run} disabled={busy}>{busy ? 'Testando…' : 'Testar conexão com a CAIXA'}</button>}>
     {error && <div className="admin-toast admin-toast-error" role="alert">{error}</div>}
     {data && <>
       <p style={{ opacity: .75, fontSize: 13 }}>{okCount} de {results.length} modalidades responderam. Tempo limite: {data.timeoutMs} ms. Fontes: {(data.fontes ?? []).map((source: Rec) => `${source.tipo === 'caixa' ? 'CAIXA' : 'Alternativa'} (${source.url})`).join(' · ')}</p>

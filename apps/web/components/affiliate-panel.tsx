@@ -23,7 +23,7 @@ export function AffiliatePanelBoard() {
   const totals: Rec = data.totais ?? {};
   const pools: Rec[] = data.boloes ?? [];
   return <section className="affiliate-table-card" aria-label="Painel de vendas">
-    <div className="affiliate-card-heading"><div><span className="overline">Painel de vendas</span><h2>Seus bolões em números</h2><p>Quanto vendeu, quantas cotas faltam e quem já pagou em cada bolão seu ou vendido pelo seu link.</p></div></div>
+    <div className="affiliate-card-heading"><div><h2>Seus bolões em números</h2><p>Quanto vendeu, quantas cotas faltam e quem já pagou em cada bolão seu ou vendido pelo seu link.</p></div></div>
     <div className="kpi-grid">
       <div><small>Valor vendido</small><strong>{money(totals.valorVendido)}</strong></div>
       <div><small>Minha comissão (a receber + recebida)</small><strong>{money(String(Number(totals.comissaoPendente ?? 0) + Number(totals.comissaoPaga ?? 0)))}</strong></div>

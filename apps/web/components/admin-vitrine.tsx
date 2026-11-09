@@ -107,10 +107,10 @@ export function VitrineView({ notify }: { notify: Notify }) {
 
   const poolById = new Map(pools.map((pool) => [pool.id, pool]));
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Jogos e vendas</span><h1>Página inicial</h1><p>Monte a vitrine do site: o carrossel do topo, os bolões que você quer vender mais e o que aparece na página.</p></div><div className="admin-heading-actions"><Link className="admin-button admin-button-ghost" href="/" target="_blank" rel="noopener noreferrer">Ver o site</Link><button type="button" className="admin-button admin-button-primary" onClick={() => void save()} disabled={busy || loading || !dirty}>{busy ? 'Salvando…' : dirty ? 'Salvar alterações' : 'Tudo salvo'}</button></div></div>
+    <div className="admin-page-heading"><div><h1>Página inicial</h1></div><div className="admin-heading-actions"><Link className="admin-button admin-button-ghost" href="/" target="_blank" rel="noopener noreferrer">Ver o site</Link><button type="button" className="admin-button admin-button-primary" onClick={() => void save()} disabled={busy || loading || !dirty}>{busy ? 'Salvando…' : dirty ? 'Salvar alterações' : 'Tudo salvo'}</button></div></div>
     {loading ? <p role="status">Carregando…</p> : <>
-      <Panel title="Carrossel do topo" description={`Até ${MAX_SLIDES} destaques passando em sequência. Sem nenhum, o site mostra sozinho os concursos de maior prêmio.`} action={<div className="vitrine-add"><button type="button" className="admin-button admin-button-ghost admin-button-small" disabled={slides.length >= MAX_SLIDES} onClick={() => addSlide('bolao')}>+ Bolão</button><button type="button" className="admin-button admin-button-ghost admin-button-small" disabled={slides.length >= MAX_SLIDES} onClick={() => addSlide('livre')}>+ Mensagem livre</button></div>}>
-        {slides.length === 0 ? <div className="admin-callout" role="status">Nenhum destaque criado. Toque em “+ Bolão” e escolha, por exemplo, o bolão da Mega da Virada.</div> : <ol className="vitrine-list">{slides.map((slide, index) => {
+      <Panel title="Carrossel do topo" action={<div className="vitrine-add"><button type="button" className="admin-button admin-button-ghost admin-button-small" disabled={slides.length >= MAX_SLIDES} onClick={() => addSlide('bolao')}>+ Bolão</button><button type="button" className="admin-button admin-button-ghost admin-button-small" disabled={slides.length >= MAX_SLIDES} onClick={() => addSlide('livre')}>+ Mensagem livre</button></div>}>
+        {slides.length === 0 ? <div className="admin-callout" role="status">Nenhum destaque criado.</div> : <ol className="vitrine-list">{slides.map((slide, index) => {
           const pool = slide.bolaoId ? poolById.get(slide.bolaoId) : undefined;
           return <li key={slide.id} className={`vitrine-item ${slide.ativo ? '' : 'is-off'}`}>
             <div className="vitrine-item-head"><strong>{index + 1}. {slide.tipo === 'bolao' ? 'Bolão' : 'Mensagem livre'}</strong>
@@ -132,12 +132,12 @@ export function VitrineView({ notify }: { notify: Notify }) {
         })}</ol>}
       </Panel>
 
-      <Panel title="Bolões em destaque" description={`Aparecem logo abaixo do carrossel, em cartões. Escolha até ${MAX_DESTAQUES} entre os bolões com cotas abertas.`}>
+      <Panel title="Bolões em destaque">
         {featured.length > 0 && <ol className="vitrine-list vitrine-list-compact">{featured.map((id, index) => { const pool = poolById.get(id); return <li key={id} className="vitrine-item"><div className="vitrine-item-head"><strong>{index + 1}. {pool ? poolLabel(pool) : 'Bolão que já não está aberto'}</strong><span className="vitrine-order"><button type="button" aria-label="Subir" disabled={index === 0} onClick={() => moveFeatured(index, -1)}>↑</button><button type="button" aria-label="Descer" disabled={index === featured.length - 1} onClick={() => moveFeatured(index, 1)}>↓</button><button type="button" aria-label="Tirar do destaque" onClick={() => toggleFeatured(id)}>✕</button></span></div></li>; })}</ol>}
         {pools.length === 0 ? <div className="admin-callout">Nenhum bolão com cotas abertas agora.</div> : <div className="vitrine-pick">{pools.filter((pool) => !featured.includes(pool.id)).map((pool) => <button type="button" key={pool.id} className="admin-button admin-button-ghost admin-button-small" disabled={featured.length >= MAX_DESTAQUES} onClick={() => toggleFeatured(pool.id)}>+ {poolLabel(pool)}</button>)}</div>}
       </Panel>
 
-      <Panel title="O que aparece na página" description="Desligue o que não quer mostrar. Seção sem conteúdo some sozinha.">
+      <Panel title="O que aparece na página">
         {sections && <div className="vitrine-sections">{SECTION_LABELS.map(([key, name, hint]) => <label key={key} className="admin-toggle-row"><input type="checkbox" checked={sections[key]} onChange={(event) => { setSections({ ...sections, [key]: event.target.checked }); touch(); }} /><span><strong>{name}</strong><small>{hint}</small></span></label>)}</div>}
       </Panel>
       <div className="wizard-actions"><button type="button" className="admin-button admin-button-primary" onClick={() => void save()} disabled={busy || !dirty}>{busy ? 'Salvando…' : dirty ? 'Salvar alterações' : 'Tudo salvo'}</button></div>

@@ -110,7 +110,7 @@ export function NumbersBank({ notify }: { notify: Notify }) {
   return <>
     <div className="admin-mini-stats"><span>Jogos guardados <strong>{summary.total}</strong></span>{Object.entries(summary.porModalidade).map(([key, count]) => <span key={key}>{modalityNames[key] ?? key} <strong>{count}</strong></span>)}</div>
     <div className="bank-forms">
-      <Panel title="Gerar números" description="Monta jogos pelo histórico da CAIXA e já guarda no banco. Não prevê resultado: todo jogo tem a mesma chance.">
+      <Panel title="Gerar números">
         <form className="admin-form-grid admin-form-grid-three" onSubmit={generate}>
           <label className="admin-field"><span>Jogo</span><select value={gen.modalidade} onChange={(event) => setGen({ ...gen, modalidade: event.target.value })}>{rules.map((item) => <option key={item.modalidade} value={item.modalidade}>{modalityNames[item.modalidade] ?? item.modalidade}</option>)}</select></label>
           <label className="admin-field"><span>Quantos jogos (1 a 100)</span><input type="number" min={1} max={100} inputMode="numeric" value={gen.quantidade} onChange={(event) => setGen({ ...gen, quantidade: event.target.value })} /></label>
@@ -125,7 +125,7 @@ export function NumbersBank({ notify }: { notify: Notify }) {
         {genOut && <div className="bank-result"><strong>{genOut.quantidade} {genOut.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {genOut.dezenas} números · custo na CAIXA {brl(genOut.custoTotalCentavos ?? 0)}</strong><small>{genOut.aviso}</small><ol>{(genOut.jogos as Rec[]).map((game) => <li key={game.ordem}><Balls numbers={game.numeros} /></li>)}</ol></div>}
       </Panel>
 
-      <Panel title="Digitar números" description="Um jogo por linha, separado por espaço ou vírgula. Jogo repetido não é guardado de novo.">
+      <Panel title="Digitar números">
         <form className="admin-form-grid" onSubmit={saveManual}>
           <label className="admin-field"><span>Jogo</span><select value={manual.modalidade} onChange={(event) => setManual({ ...manual, modalidade: event.target.value })}>{rules.map((item) => <option key={item.modalidade} value={item.modalidade}>{modalityNames[item.modalidade] ?? item.modalidade}</option>)}</select></label>
           <label className="admin-field"><span>Nome do lote (opcional)</span><input maxLength={80} value={manual.rotulo} onChange={(event) => setManual({ ...manual, rotulo: event.target.value })} /></label>
@@ -135,7 +135,7 @@ export function NumbersBank({ notify }: { notify: Notify }) {
       </Panel>
     </div>
 
-    <Panel title="Jogos guardados" description="Use no assistente de bolão (“Escolher do banco de números”). O banco também serve de base para cruzar com os resultados.">
+    <Panel title="Jogos guardados">
       <div className="bank-filters">
         <select value={filter.modalidade} onChange={(event) => setFilter({ ...filter, modalidade: event.target.value })} aria-label="Jogo"><option value="">Todos os jogos</option>{rules.map((item) => <option key={item.modalidade} value={item.modalidade}>{modalityNames[item.modalidade] ?? item.modalidade}</option>)}</select>
         <select value={filter.origem} onChange={(event) => setFilter({ ...filter, origem: event.target.value })} aria-label="Origem"><option value="">Qualquer origem</option>{Object.entries(ORIGIN).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select>
@@ -143,7 +143,7 @@ export function NumbersBank({ notify }: { notify: Notify }) {
         <input value={filter.busca} onChange={(event) => setFilter({ ...filter, busca: event.target.value })} placeholder="Tem o número… ou nome do lote" aria-label="Buscar" />
         <label className="vitrine-check"><input type="checkbox" checked={filter.semUso} onChange={(event) => setFilter({ ...filter, semUso: event.target.checked })} /> Só os ainda não usados</label>
       </div>
-      {loading ? <p role="status">Carregando…</p> : list.length === 0 ? <Empty text="Nenhum jogo guardado ainda" hint="Gere ou digite números acima. Os jogos dos bolões que você criar também entram aqui." /> : <div className="admin-table-scroll"><table className="admin-table" style={{ minWidth: 860 }}>
+      {loading ? <p role="status">Carregando…</p> : list.length === 0 ? <Empty text="Nenhum jogo guardado ainda" /> : <div className="admin-table-scroll"><table className="admin-table" style={{ minWidth: 860 }}>
         <thead><tr><th>Números</th><th>Jogo</th><th>Qtd.</th><th>Origem</th><th>Lote</th><th>Usos</th><th>Criado</th><th>Ações</th></tr></thead>
         <tbody>{list.map((item) => <tr key={item.id}><td><Balls numbers={item.numeros} /></td><td>{modalityNames[item.modalidade] ?? item.modalidade}</td><td>{item.quantidadeDezenas}</td><td>{ORIGIN[item.origem] ?? item.origem}{item.estrategia ? <small>{item.estrategia}</small> : null}</td><td>{item.rotulo ?? '—'}</td><td>{item.usos}</td><td>{dateTime(item.criadoEm)}</td><td><div className="admin-row-actions"><button type="button" className="admin-text-button" onClick={() => void copy(item)}>Copiar</button><button type="button" className="admin-text-button admin-danger" onClick={() => void remove(item)}>Excluir</button></div></td></tr>)}</tbody>
       </table></div>}
@@ -184,7 +184,7 @@ export function BankPicker({ modalidade, onUse }: { modalidade: string; onUse: (
     {open && <div className="bank-picker-body">
       <div className="bank-filters"><input type="number" min={1} max={100} value={sizes} onChange={(event) => setSizes(event.target.value)} placeholder="Nº de números por jogo" aria-label="Quantidade de números" /><label className="vitrine-check"><input type="checkbox" checked={onlyNew} onChange={(event) => setOnlyNew(event.target.checked)} /> Só os ainda não usados</label></div>
       {error && <p role="alert" className="form-error">{error}</p>}
-      {loading ? <p role="status">Carregando…</p> : items.length === 0 ? <p className="admin-muted">Nada guardado para {modalityNames[modalidade] ?? modalidade} com esse filtro. Gere ou digite em Jogos e vendas → Apostas → Banco de números.</p> : <ul className="bank-pick-list">
+      {loading ? <p role="status">Carregando…</p> : items.length === 0 ? <p className="admin-muted">Nada guardado para {modalityNames[modalidade] ?? modalidade} com esse filtro.</p> : <ul className="bank-pick-list">
         {items.map((item) => <li key={item.id}><label><input type="checkbox" checked={picked.has(item.id)} onChange={() => toggle(item.id)} /><Balls numbers={item.numeros} /><small>{item.usos ? `usado ${item.usos}x` : 'novo'}{item.rotulo ? ` · ${item.rotulo}` : ''}</small></label></li>)}
       </ul>}
       <div className="bank-picker-actions">

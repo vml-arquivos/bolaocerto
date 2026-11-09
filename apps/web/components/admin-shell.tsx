@@ -168,7 +168,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
       <section className={`admin-content ${collapsed ? 'is-collapsed-content' : ''}`}>
         <header className="admin-topbar">
           <button type="button" className="admin-menu-toggle" onClick={() => setOpen((value) => !value)} aria-label="Abrir menu">Menu</button>
-          <div className="admin-topbar-context"><span className="admin-eyebrow">Painel</span><strong>{viewTitle(current, titles[current] || 'Painel')}</strong></div>
+          <div className="admin-topbar-context"><strong>{viewTitle(current, titles[current] || 'Painel')}</strong></div>
           <div className="admin-topbar-actions">
             <ThemeToggle />
             <Link href="/" className="admin-topbar-link">Ver o site</Link>

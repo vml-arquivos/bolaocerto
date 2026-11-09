@@ -24,28 +24,24 @@ export function FinanceView() {
   const num = (value: unknown) => Number(value ?? 0);
   const platform = num(kpis?.taxasAdministrativas) - num(kpis?.comissoesPendentes) - num(kpis?.comissoesPagas);
   return <>
-    <SectionHeading eyebrow="Financeiro" title="Painel financeiro" description="Tudo do dinheiro num lugar: recebimentos, comissões, repasses e notas." action={<select value={period} onChange={(event) => setPeriod(event.target.value)} aria-label="Período"><option value="hoje">Hoje</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option><option value="mes">Este mês</option></select>} />
+    <SectionHeading title="Painel financeiro" action={<select value={period} onChange={(event) => setPeriod(event.target.value)} aria-label="Período"><option value="hoje">Hoje</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option><option value="mes">Este mês</option></select>} />
     {error && <div className="form-message form-error" role="alert">{error}</div>}
     {kpis && <>
       <div className="admin-kpi-grid">
-        <Kpi label="Entrou (pago pelos clientes)" value={money(kpis.arrecadacao)} hint="pagamentos confirmados no período" tone="green" />
-        <Kpi label="Custo dos jogos" value={money(kpis.custoJogos)} hint="vai para o registro na CAIXA (fora da nota)" tone="blue" />
-        <Kpi label="Taxa de administração" value={money(kpis.taxasAdministrativas)} hint="o serviço da plataforma (base da nota)" tone="violet" />
+        <Kpi label="Entrou (pago pelos clientes)" value={money(kpis.arrecadacao)} tone="green" />
+        <Kpi label="Custo dos jogos" value={money(kpis.custoJogos)} tone="blue" />
+        <Kpi label="Taxa de administração" value={money(kpis.taxasAdministrativas)} tone="violet" />
         <Kpi label="Comissões a pagar" value={money(kpis.comissoesPendentes)} hint={`${money(kpis.comissoesPagas)} já pagas`} tone="amber" />
-        <Kpi label="Fica com a plataforma" value={money(platform)} hint="taxa menos comissões" tone="green" />
+        <Kpi label="Fica com a plataforma" value={money(platform)} tone="green" />
       </div>
       <div className="admin-dashboard-grid">
-        <Panel title="Para fazer agora" description="O que está esperando você">
+        <Panel title="Para fazer agora">
           <div className="admin-summary-list">
             <div><span>Comissões prontas para pagar</span><strong>{money(kpis.comissoesPendentes)}</strong></div>
             <div><span>Pagamentos sem nota fiscal</span><strong>{nfse?.pagamentosSemNota ?? '—'}</strong></div>
             <div><span>Serviço a faturar (só a taxa)</span><strong>{money(nfse?.valorServicoSemNota)}</strong></div>
           </div>
-          <div className="admin-row-actions" style={{ marginTop: 12 }}><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=repasses">Pagar comissões</Link><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=notas-fiscais">Notas fiscais</Link></div>
-        </Panel>
-        <Panel title="Como o valor se divide" description="De cada cota paga">
-          <p className="admin-muted">Do valor pago, uma parte vai para os jogos registrados na CAIXA e outra é a taxa de administração. A comissão do afiliado sai da taxa. A nota fiscal é só da taxa: o custo dos jogos é repasse e não entra na nota.</p>
-          <div className="admin-row-actions"><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=recebimentos">Ver recebimentos</Link><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=comissoes">Ver comissões</Link></div>
+          <div className="admin-row-actions" style={{ marginTop: 12 }}><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=repasses">Pagar comissões</Link><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=notas-fiscais">Notas fiscais</Link><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=recebimentos">Ver recebimentos</Link><Link className="admin-button admin-button-small admin-button-ghost" href="/admin?view=comissoes">Ver comissões</Link></div>
         </Panel>
       </div>
     </>}

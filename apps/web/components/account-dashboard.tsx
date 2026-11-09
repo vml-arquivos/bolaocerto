@@ -73,7 +73,7 @@ function AddressCard({ address, onSaved }: { address: Address; onSaved: () => vo
     } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setSaving(false); }
   }
   return <article className="dashboard-card wide keep-title"><h2>{address.nfseAtiva ? 'Endereço para nota fiscal' : 'Meu endereço'}</h2>
-    <p className="muted">{address.completo ? 'Seu endereço está completo. Você pode atualizá-lo aqui.' : address.nfseAtiva ? 'Informe seu endereço para receber a nota fiscal de serviço das suas participações.' : 'Mantenha seu endereço completo. Ele fica salvo na sua conta e será usado se for preciso emitir documentos.'}</p>
+    
     <form onSubmit={submit} className="admin-form-grid">
       <div className="field"><label htmlFor="end-cep">CEP</label><input id="end-cep" name="cep" inputMode="numeric" maxLength={9} defaultValue={address.cep ?? ''} required /></div>
       <div className="field"><label htmlFor="end-logradouro">Rua / logradouro</label><input id="end-logradouro" name="logradouro" defaultValue={address.logradouro ?? ''} required /></div>
@@ -178,7 +178,7 @@ export function AccountDashboard() {
   const isStaff = user?.papel !== undefined && user.papel !== 'cotista';
   return <div className="account-app">
     <header className="account-top">
-      <div><small>Área do cotista</small><h1>Olá, {user?.nome?.split(' ')[0]}</h1></div>
+      <div><h1>Olá, {user?.nome?.split(' ')[0]}</h1></div>
       <div className="account-top-actions">{user?.papel === 'admin' && <Link className="button button-secondary" href="/admin">Administração</Link>}{user?.papel === 'afiliado' && <Link className="button button-secondary" href="/afiliado">Painel do afiliado</Link>}<button type="button" className="button button-ghost" onClick={() => void logout()}>Sair</button></div>
     </header>
     {error && <p className="notice" role="status">{error} Os dados abaixo são da última consulta concluída.</p>}
@@ -197,8 +197,8 @@ export function AccountDashboard() {
     {tab === 'cotas' ? <div className="account-section">
       <NotificationsCard />
       {shares.length ? <div className="cota-list">{shares.map((share) => <ShareCard key={share.id} share={share} onPaid={() => void load()} />)}</div>
-        : <div className="empty-state compact"><h3>Você ainda não tem cotas</h3><p>Escolha um bolão e participe em poucos toques.</p><Link className="button button-primary" href="/aplicativo">Ver bolões</Link></div>}
-      <p className="account-updated">{updatedAt ? `Atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}</p>
+        : <div className="empty-state compact"><h3>Você ainda não tem cotas</h3><Link className="button button-primary" href="/aplicativo">Ver bolões</Link></div>}
+      
     </div> : tab === 'carteira' ? <WalletTab wallet={wallet} />
     : tab === 'indicar' ? <ReferralTab pixMissing={perfil !== null && !perfil.chavePix} onOpenData={openMyData} />
     : <div className="account-section app-rows">

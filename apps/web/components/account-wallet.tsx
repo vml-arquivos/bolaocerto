@@ -22,7 +22,7 @@ export function WalletTab({ wallet }: { wallet: WalletData | null }) {
     <article className="wallet-balance" aria-label="Saldo da carteira">
       <small>Saldo disponível</small>
       <strong>{brl(wallet.saldoCentavos)}</strong>
-      <p>Crédito do BL para pagar suas próximas cotas. Na hora de pagar, escolha “Pagar com saldo” quando ele cobrir o valor da cota.</p>
+      
       <div className="wallet-actions"><Link className="button button-primary" href="/aplicativo">Usar em um bolão</Link><Link className="button button-secondary" href="/minha-conta?aba=indicar">Ganhar cashback</Link></div>
     </article>
     <div className="wallet-totals">
@@ -31,7 +31,7 @@ export function WalletTab({ wallet }: { wallet: WalletData | null }) {
     </div>
     <article className="dashboard-card keep-title">
       <h2>Extrato</h2>
-      {wallet.movimentos.length === 0 ? <p className="muted">Nada por aqui ainda. Cashback de indicações, reembolsos em crédito e pagamentos com saldo aparecem nesta lista.</p>
+      {wallet.movimentos.length === 0 ? <p className="muted">Nada por aqui ainda.</p>
         : <ul className="wallet-moves">{wallet.movimentos.map((move) => <li key={move.id}>
           <div><strong>{move.nome}</strong><small>{shortDate(move.em)}{move.descricao ? ` · ${move.descricao}` : ''}</small></div>
           <span className={move.valorCentavos >= 0 ? 'is-in' : 'is-out'}>{move.valorCentavos >= 0 ? '+' : '−'} {brl(Math.abs(move.valorCentavos))}</span>
@@ -76,7 +76,7 @@ export function ReferralTab({ pixMissing, onOpenData }: { pixMissing: boolean; o
         <button type="button" className="button button-ghost" onClick={() => void share()}>Compartilhar…</button>
       </div>
       <p className="muted">{data.cashbackPct > 0 ? `Quando quem entrou pelo seu link paga uma cota, você recebe ${String(data.cashbackPct).replace('.', ',')}% da taxa de administração dessa cota como crédito na sua carteira.` : 'Quem entrar pelo seu link fica ligado à sua conta. O cashback por indicação ainda não está ativo; quando o BL ligar, ele cai direto na sua carteira.'}</p>
-      <p className="muted">Para indicar um bolão específico, abra o bolão e use “Compartilhar este bolão”: o link já leva o seu código.</p>
+      
     </article>
     <div className="wallet-totals">
       <div><small>Amigos que entraram</small><strong>{data.totalIndicados}</strong></div>
@@ -85,7 +85,7 @@ export function ReferralTab({ pixMissing, onOpenData }: { pixMissing: boolean; o
     </div>
     {pixMissing && <div className="notice" role="status"><strong>Cadastre sua chave Pix</strong><span>Ela é usada para pagar prêmios e devolver valores. <button type="button" className="text-link" onClick={onOpenData}>Abrir Meus dados</button></span></div>}
     <article className="dashboard-card keep-title"><h2>Quem entrou pelo seu link</h2>
-      {data.indicados.length === 0 ? <p className="muted">Ainda ninguém. Envie o link para amigos e familiares: eles criam a conta e você acompanha por aqui.</p>
+      {data.indicados.length === 0 ? <p className="muted">Ainda ninguém.</p>
         : <ul className="wallet-moves">{data.indicados.map((friend) => <li key={friend.id}><div><strong>{friend.nome}</strong><small>Entrou em {shortDate(friend.desde)}</small></div><span className={friend.comprou ? 'is-in' : 'is-wait'}>{friend.comprou ? 'Já comprou' : 'Ainda não comprou'}</span></li>)}</ul>}
     </article>
   </div>;

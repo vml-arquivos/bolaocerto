@@ -48,19 +48,19 @@ export function WalletAdminView({ notify }: { notify: Notify }) {
   }
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Financeiro</span><h1>Carteira dos clientes</h1><p>Crédito do BL para pagar cotas: cashback de indicação, reembolso em crédito e ajustes. Não é saque: é saldo para usar na plataforma.</p></div></div>
+    <div className="admin-page-heading"><div><h1>Carteira dos clientes</h1></div></div>
     <div className="admin-kpi-grid">
-      <Kpi label="Saldo total dos clientes" value={cents(data?.saldoEmAbertoCentavos)} hint="crédito que ainda pode ser usado" tone="violet" />
-      <Kpi label="Cashback de indicação" value={`${String(data?.cashbackPct ?? 0).replace('.', ',')}%`} hint={Number(data?.cashbackPct) > 0 ? 'da taxa de administração' : 'desligado'} tone={Number(data?.cashbackPct) > 0 ? 'green' : 'amber'} />
+      <Kpi label="Saldo total dos clientes" value={cents(data?.saldoEmAbertoCentavos)} tone="violet" />
+      <Kpi label="Cashback de indicação" value={`${String(data?.cashbackPct ?? 0).replace('.', ',')}%`} tone={Number(data?.cashbackPct) > 0 ? 'green' : 'amber'} />
     </div>
     <div className="admin-two-col">
-      <Panel title="Cashback de indicação" description="Quando um amigo indicado paga uma cota, quem indicou ganha esse percentual da taxa de administração da cota (nunca mais do que sobra depois da comissão do afiliado). Use 0 para desligar.">
+      <Panel title="Cashback de indicação">
         <form className="admin-form-grid" onSubmit={saveCashback}>
           <label className="admin-field"><span>Percentual da taxa (%)</span><input inputMode="decimal" value={pct} onChange={(event) => setPct(event.target.value)} required /></label>
           <button className="admin-button admin-button-primary" disabled={busy}>Salvar cashback</button>
         </form>
       </Panel>
-      <Panel title="Lançar crédito ou reembolso" description="Reembolso em crédito devolve o valor de uma cota ao cliente em saldo. Todo lançamento avisa o cliente e fica na auditoria.">
+      <Panel title="Lançar crédito ou reembolso">
         <form className="admin-form-grid" onSubmit={adjust}>
           <label className="admin-field"><span>E-mail do cliente</span><input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label className="admin-field"><span>Tipo</span><select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="reembolso">Reembolso em crédito</option><option value="bonus">Crédito promocional (bônus)</option><option value="desconto">Descontar do saldo</option></select></label>
@@ -70,9 +70,9 @@ export function WalletAdminView({ notify }: { notify: Notify }) {
         </form>
       </Panel>
     </div>
-    <Panel title="Movimentos recentes" description="Os 50 últimos. Filtre pelo e-mail para ver o extrato de um cliente." action={<form className="admin-row-actions" onSubmit={(event: FormEvent) => { event.preventDefault(); void load(filter.trim()); }}><input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="E-mail do cliente" aria-label="Filtrar por e-mail" /><button className="admin-button admin-button-small admin-button-ghost" type="submit">Filtrar</button></form>}>
+    <Panel title="Movimentos recentes" action={<form className="admin-row-actions" onSubmit={(event: FormEvent) => { event.preventDefault(); void load(filter.trim()); }}><input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="E-mail do cliente" aria-label="Filtrar por e-mail" /><button className="admin-button admin-button-small admin-button-ghost" type="submit">Filtrar</button></form>}>
       <Table minWidth={640}><thead><tr><th>Quando</th><th>Cliente</th><th>Tipo</th><th>Valor</th><th>Motivo</th></tr></thead><tbody>{(data?.recentes ?? []).map((row: Rec) => <tr key={row.id}><td>{dateTime(row.em)}</td><td><strong>{row.cliente}</strong><small>{row.email}</small></td><td>{row.nome}</td><td><strong>{cents(row.valorCentavos)}</strong></td><td>{row.descricao ?? '—'}</td></tr>)}</tbody></Table>
-      {!(data?.recentes ?? []).length && <Empty text="Nenhum movimento ainda" hint="Cashback, créditos e pagamentos com saldo aparecem aqui." />}
+      {!(data?.recentes ?? []).length && <Empty text="Nenhum movimento ainda" />}
     </Panel>
     {(data?.porTipo ?? []).length > 0 && <Panel title="Totais por tipo"><Table minWidth={420}><thead><tr><th>Tipo</th><th>Movimentos</th><th>Total</th></tr></thead><tbody>{data!.porTipo.map((row: Rec) => <tr key={row.tipo}><td>{row.nome}</td><td>{row.movimentos}</td><td>{cents(row.totalCentavos)}</td></tr>)}</tbody></Table></Panel>}
   </>;

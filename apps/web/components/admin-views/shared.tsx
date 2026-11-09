@@ -89,8 +89,8 @@ export async function fetchAdmin(path: string, options?: RequestInit) {
   return payload;
 }
 
-export function SectionHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description?: string; action?: ReactNode }) {
-  return <div className="admin-page-heading"><div><span className="admin-eyebrow">{eyebrow}</span><h1>{title}</h1>{description && <p>{description}</p>}</div>{action}</div>;
+export function SectionHeading({ title, action }: { title: string; action?: ReactNode }) {
+  return <div className="admin-page-heading"><div><h1>{title}</h1></div>{action}</div>;
 }
 
 export function Kpi({ label, value, hint, tone = 'blue' }: { label: string; value: string | number; hint?: string; tone?: 'blue' | 'violet' | 'green' | 'amber' | 'rose' }) {
@@ -101,8 +101,8 @@ export function Panel({ title, description, action, children, className = '' }: 
   return <section className={`admin-panel ${className}`}><div className="admin-panel-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>{children}</section>;
 }
 
-export function Empty({ title, description }: { title: string; description: string }) {
-  return <div className="admin-empty"><span>BL</span><strong>{title}</strong><p>{description}</p></div>;
+export function Empty({ title, description }: { title: string; description?: string }) {
+  return <div className="admin-empty"><span>BL</span><strong>{title}</strong>{description && <p>{description}</p>}</div>;
 }
 
 export function Table({ children, minWidth = 720 }: { children: ReactNode; minWidth?: number }) {

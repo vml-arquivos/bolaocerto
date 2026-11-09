@@ -45,7 +45,7 @@ export function FestivalForm({ onDone, notify }: { onDone: () => Promise<void> |
   }
 
   if (!open) return <button className="admin-button admin-button-primary" onClick={() => setOpen(true)}>+ Concurso de festa (Mega da Virada, São João…)</button>;
-  return <Panel title="Concurso de festa" description="Crie antes de o número oficial sair. Quando a CAIXA divulgar, o número entra sozinho e os bolões continuam valendo." action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
+  return <Panel title="Concurso de festa" action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setOpen(false)}>Fechar</button>}>
     <form onSubmit={submit} style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))' }}>
       <label className="admin-field"><span>Qual festa?</span><select value={choice} onChange={(event) => setChoice(event.target.value)}>{presets.map((preset) => <option key={preset.chave} value={preset.chave}>{preset.nome}</option>)}<option value="personalizado">Outra (digitar)</option></select></label>
       {choice === 'personalizado' && <><label className="admin-field"><span>Jogo</span><select name="modalidade" required>{MODALIDADES.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>

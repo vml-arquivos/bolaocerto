@@ -50,7 +50,7 @@ export function AffiliateShell({ children }: { children: ReactNode }) {
 /** Aba "Mais" (celular): o que não cabe na barra de baixo. */
 export function AffiliateMore({ pending, status }: { pending: string; status?: string }) {
   return <section className="affiliate-table-card aff-more">
-    <div className="affiliate-card-heading"><div><span className="overline">Mais opções</span><h2>Seu aplicativo</h2><p>Cadastro: <span className={`affiliate-status ${status}`}>{String(status ?? '—').replaceAll('_', ' ')}</span></p></div></div>
+    <div className="affiliate-card-heading"><div><h2>Seu aplicativo</h2><p>Cadastro: <span className={`affiliate-status ${status}`}>{String(status ?? '—').replaceAll('_', ' ')}</span></p></div></div>
     <ProfilePanel pixLabel="Chave Pix para receber comissões" />
     <div className="aff-more-links">
       <Link href="/afiliado?aba=grupos"><strong>Grupos</strong><small>Pessoas, convites e páginas dos seus grupos.</small></Link>

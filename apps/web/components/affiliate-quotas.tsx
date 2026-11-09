@@ -29,7 +29,7 @@ export function AffiliateQuotas() {
   const items = data?.items ?? [];
   const sum = (predicate: (row: Row) => boolean) => items.filter(predicate).reduce((total, row) => total + row.quantidade, 0);
   return <section className="affiliate-table-card">
-    <div className="affiliate-card-heading"><div><span className="overline">Controle</span><h2>Cotas do seu link</h2><p>Cada cota comprada por quem veio do seu link ou do seu código. Por privacidade, o comprador aparece só com o primeiro nome e a inicial do sobrenome.</p></div></div>
+    <div className="affiliate-card-heading"><div><h2>Cotas do seu link</h2><p>Cada cota comprada por quem veio do seu link ou do seu código. Por privacidade, o comprador aparece só com o primeiro nome e a inicial do sobrenome.</p></div></div>
     <div className="aff-filters" role="group" aria-label="Filtrar cotas">{FILTERS.map(([key, name]) => <button key={key} type="button" className={status === key ? 'is-active' : ''} aria-pressed={status === key} onClick={() => setStatus(key)}>{name}</button>)}</div>
     {error && <div className="form-message form-error" role="alert">{error}</div>}
     {!data && !error && <p className="muted" role="status">Carregando as cotas…</p>}

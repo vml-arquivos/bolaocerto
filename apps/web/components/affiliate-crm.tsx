@@ -58,7 +58,7 @@ export function AffiliateCrm() {
 
   return <div className="affiliate-crm">
     <section className="affiliate-table-card">
-      <div className="affiliate-card-heading"><div><span className="overline">Seus clientes</span><h2>Funil de vendas</h2><p>Todo cliente que entrou pelo seu link, pelo seu grupo ou comprou nos seus bolões. Toque em uma etapa para ver só essas pessoas.</p></div></div>
+      <div className="affiliate-card-heading"><div><h2>Funil de vendas</h2><p>Todo cliente que entrou pelo seu link, pelo seu grupo ou comprou nos seus bolões. Toque em uma etapa para ver só essas pessoas.</p></div></div>
       <div className="kpi-grid">
         <div><small>Clientes</small><strong>{totals.clientes ?? 0}</strong></div>
         <div><small>Já pagaram</small><strong>{funnel.totais?.jaPagaram ?? 0}</strong></div>
@@ -143,7 +143,7 @@ function ClientSheet({ id, onClose, onChanged }: { id: string; onClose: () => vo
   const history: Rec[] = data.historico ?? [];
   const link = whatsapp(client.telefone, suggestedText(client));
   return <section className="affiliate-table-card" aria-label={`Ficha de ${client.nome}`}>
-    <div className="affiliate-card-heading"><div><span className="overline">Ficha do cliente</span><h2>{client.nome}</h2><p><Stage etapa={client.etapa} nome={client.etapaNome} /> · {client.proximaAcao}</p></div><button type="button" className="button button-ghost" onClick={onClose}>Fechar</button></div>
+    <div className="affiliate-card-heading"><div><h2>{client.nome}</h2><p><Stage etapa={client.etapa} nome={client.etapaNome} /> · {client.proximaAcao}</p></div><button type="button" className="button button-ghost" onClick={onClose}>Fechar</button></div>
     <div className="kpi-grid">
       <div><small>Total pago</small><strong>{money(client.totalGasto)}</strong></div>
       <div><small>Cotas pagas</small><strong>{client.cotasPagas}</strong></div>

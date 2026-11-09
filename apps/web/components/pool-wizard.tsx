@@ -44,6 +44,13 @@ function dateOnly(value: unknown) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR');
 }
 
+/** Regras de venda do bolão salvo. A lista do admin devolve o registro bruto (regrasVenda é o texto); a API pública devolve um objeto. */
+function salesRulesOf(pool: RecordValue | null | undefined) {
+  const raw = pool?.regrasVenda;
+  if (raw && typeof raw === 'object') return { antecipada: Boolean(raw.antecipada), inicioEm: raw.inicioEm ?? null, fimEm: raw.fimEm ?? null, maxCotasPorPessoa: raw.maxCotasPorPessoa ?? null, texto: raw.texto ?? '' };
+  return { antecipada: Boolean(pool?.vendaAntecipada), inicioEm: pool?.vendaInicioEm ?? null, fimEm: pool?.vendaFimEm ?? null, maxCotasPorPessoa: pool?.maxCotasPorPessoa ?? null, texto: typeof raw === 'string' ? raw : '' };
+}
+
 function toLocalInput(value: unknown) {
   if (!value) return '';
   const date = new Date(String(value));
@@ -159,12 +166,16 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setCusto(String(editPool.jogos?.[0]?.custo ?? '0'));
     setDescription(String(editPool.grupo?.descricao ?? ''));
     setConditional(Boolean(editPool.liberacao?.condicional));
-    setTrigger(editPool.liberacao?.gatilho ? String(editPool.liberacao.gatilho) : '100000000');
-    setPresale(Boolean(editPool.regrasVenda?.antecipada));
-    setSaleStart(toLocalInput(editPool.regrasVenda?.inicioEm));
-    setSaleEnd(toLocalInput(editPool.regrasVenda?.fimEm));
-    setMaxPerPerson(editPool.regrasVenda?.maxCotasPorPessoa ? String(editPool.regrasVenda.maxCotasPorPessoa) : '');
-    setSaleText(String(editPool.regrasVenda?.texto ?? ''));
+    const savedTrigger = editPool.liberacao?.gatilho ?? editPool.premioMinimoLiberacao;
+    setTrigger(savedTrigger ? String(Math.round(Number(savedTrigger))) : '100000000');
+    const rules = salesRulesOf(editPool);
+    setPresale(rules.antecipada);
+    setSaleStart(toLocalInput(rules.inicioEm));
+    setSaleEnd(toLocalInput(rules.fimEm));
+    setMaxPerPerson(rules.maxCotasPorPessoa ? String(rules.maxCotasPorPessoa) : '');
+    setSaleText(String(rules.texto ?? ''));
+    const savedSelection = editPool.jogos?.[0]?.selecao;
+    setSpecialValue(String(savedSelection?.timeCoracao ?? savedSelection?.mesSorte ?? ''));
     setNewDate(false);
     setMessage('');
   }, [editPool, groupId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -323,8 +334,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const finiteRevenue = unlimited ? null : modeUi ? (plan?.ok ? plan.totalCents / 100 : null) : Number(totalCotas || 0) * Number(valorCota || 0);
 
   useEffect(() => {
+    if (editing) return;
     if (!contestId && availableContests[0]) setContestId(availableContests[0].id);
-  }, [availableContests, contestId]);
+  }, [availableContests, contestId, editing]);
 
   function resetAfterSave() {
     setNumbersLater(false); setAutomatic(true);
@@ -383,7 +395,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         vendaFimEm: saleEnd ? new Date(saleEnd).toISOString() : null,
         maxCotasPorPessoa: maxPerPerson.trim() ? Number(maxPerPerson) : null,
         regrasVenda: saleText.trim() || null,
-        ...(role === 'admin' && (presale || editPool?.regrasVenda?.antecipada) ? { vendaAntecipada: presale } : {}),
+        ...(role === 'admin' && (presale || salesRulesOf(editPool).antecipada) ? { vendaAntecipada: presale } : {}),
       };
       if (salesRules.maxCotasPorPessoa !== null && (!Number.isInteger(salesRules.maxCotasPorPessoa) || salesRules.maxCotasPorPessoa < 1)) { setMessage('O limite por pessoa precisa ser um número inteiro de 1 em diante.'); setSaving(false); return; }
       if (saleStart && saleEnd && new Date(saleStart) >= new Date(saleEnd)) { setMessage('O início da venda precisa ser antes do fim.'); setSaving(false); return; }
@@ -432,15 +444,15 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     <div className="admin-form-grid admin-form-grid-three">
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
       <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setSpecialValue(''); setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
-      <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateOnly(contest.dataSorteio)}{contest.fonteSincronizacao === 'projetado' || contest.previsto ? ' (data prevista)' : ''} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
+      <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{editing && editPool?.concurso && contestId && !availableContests.some((contest) => contest.id === contestId) && <option value={contestId}>{editPool.concurso.nomeEspecial ? `${editPool.concurso.nomeEspecial} · ` : ''}{concursoNo(editPool.concurso.numeroConcurso) === 'a definir' ? 'número a definir' : `#${editPool.concurso.numeroConcurso}`} · {dateOnly(editPool.concurso.dataSorteio)}</option>}{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateOnly(contest.dataSorteio)}{contest.fonteSincronizacao === 'projetado' || contest.previsto ? ' (data prevista)' : ''} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Sincronize os concursos.</small>}</label>
       {!editing && (modality === 'timemania' || modality === 'diadesorte') && <label className="admin-field admin-field-wide"><span>{modality === 'timemania' ? 'Time do Coração dos jogos' : 'Mês de Sorte dos jogos'}</span>{modality === 'timemania'
         ? <input value={specialValue} maxLength={60} onChange={(event) => setSpecialValue(event.target.value)} placeholder="Ex.: Vasco da Gama/RJ" />
         : <select value={specialValue} onChange={(event) => setSpecialValue(event.target.value)}><option value="">Escolha o mês</option>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>}
-        <small>Vale para todos os jogos. É com isso que a apuração confere o prêmio do {modality === 'timemania' ? 'Time do Coração' : 'Mês de Sorte'}; sem isso, a equipe precisa conferir essa faixa à mão.</small></label>}
+        </label>}
       {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
         <button type="button" className="admin-button" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}>{newDate ? 'Fechar' : 'Criar para uma data comemorativa (sem concurso aberto)'}</button>
         {newDate && <div className="festa-inline-body">
-          <p className="admin-muted">Serve para Mega da Virada, Quina de São João, Lotofácil da Independência ou qualquer data. O concurso fica provisório e assume o número oficial quando a CAIXA publicar. Você já pode abrir a venda de cotas.</p>
+          
           <div className="admin-form-grid admin-form-grid-three">
             <label className="admin-field"><span>Data comemorativa</span><select value={festaChoice} onChange={(event) => setFestaChoice(event.target.value)}>{modalityPresets.map((preset) => <option key={preset.chave} value={preset.chave}>{preset.nome}</option>)}<option value="personalizado">Outra data (informar nome)</option></select></label>
             {(festaChoice === 'personalizado' || !modalityPresets.some((preset) => preset.chave === festaChoice)) && <label className="admin-field"><span>Nome da data</span><input value={festaName} maxLength={80} onChange={(event) => setFestaName(event.target.value)} placeholder="Ex.: Quina do Natal" /></label>}
@@ -451,22 +463,21 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
           <button type="button" className="admin-button admin-button-primary" disabled={festaBusy} onClick={() => void createDateContest()}>{festaBusy ? 'Criando…' : `Criar concurso de ${modalityNames[modality] ?? modality}`}</button>
         </div>}
       </div>}
-      {modeUi && <label className="admin-toggle-row admin-field-wide"><input type="checkbox" checked={numbersLater} onChange={(event) => { setNumbersLater(event.target.checked); if (freeMode) { if (event.target.checked) { setAutomatic(false); setPresale(true); } else { setAutomatic(true); setPlannedManual(false); } } }} /><span><strong>Números ainda não definidos (definir depois)</strong><small>Para datas como a Mega da Virada: você abre a venda das cotas agora, só com a quantidade de números de cada jogo, e informa os jogos antes do fechamento. O custo do registro já aparece pela tabela da CAIXA.</small></span></label>}
+      {modeUi && <label className="admin-toggle-row admin-field-wide"><input type="checkbox" checked={numbersLater} onChange={(event) => { setNumbersLater(event.target.checked); if (freeMode) { if (event.target.checked) { setAutomatic(false); setPresale(true); } else { setAutomatic(true); setPlannedManual(false); } } }} /><span><strong>Números ainda não definidos (definir depois)</strong></span></label>}
       {modeUi && numbersLater && <div className="admin-field admin-field-wide planned-games" aria-label="Quantidade de números do bolão sem jogos">
         {canPrice && <div className="admin-form-grid admin-form-grid-three">
-          <label className="admin-field"><span>Números em cada jogo</span>{sizeOptions.length > 0 ? <select value={plannedSize} onChange={(event) => setPlannedSize(event.target.value)}>{sizeOptions.map((size) => <option key={size} value={size}>{size} números · {money((priceTable[`${modality}:${size}`] ?? 0) / 100)}</option>)}</select> : <input type="number" min={limits.min} max={limits.max} value={plannedSize} onChange={(event) => setPlannedSize(event.target.value)} />}<small>Preço oficial da CAIXA para cada jogo.</small></label>
-          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} inputMode="numeric" value={plannedGames} onChange={(event) => setPlannedGames(event.target.value)} /><small>De 1 a 100.</small></label>
-          {freeMode && <label className="admin-toggle-row"><input type="checkbox" checked={plannedManual} onChange={(event) => setPlannedManual(event.target.checked)} /><span><strong>Informar o custo à mão</strong><small>Só se o valor da tabela não servir.</small></span></label>}
+          <label className="admin-field"><span>Números em cada jogo</span>{sizeOptions.length > 0 ? <select value={plannedSize} onChange={(event) => setPlannedSize(event.target.value)}>{sizeOptions.map((size) => <option key={size} value={size}>{size} números · {money((priceTable[`${modality}:${size}`] ?? 0) / 100)}</option>)}</select> : <input type="number" min={limits.min} max={limits.max} value={plannedSize} onChange={(event) => setPlannedSize(event.target.value)} />}</label>
+          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} inputMode="numeric" value={plannedGames} onChange={(event) => setPlannedGames(event.target.value)} /></label>
+          {freeMode && <label className="admin-toggle-row"><input type="checkbox" checked={plannedManual} onChange={(event) => setPlannedManual(event.target.checked)} /><span><strong>Informar o custo à mão</strong></span></label>}
         </div>}
         {plannedByTable && <div className="generator-cost" aria-live="polite">{plannedCostCents === null ? <span>Escolha uma quantidade de números que a CAIXA vende para ver o custo do registro.</span> : <span>Custo do registro na CAIXA: <strong>{plannedGamesNumber} {plannedGamesNumber === 1 ? 'jogo' : 'jogos'} de {plannedSizeNumber} números = {money(plannedCostCents / 100)}</strong> ({money((plannedUnit ?? 0) / 100)} por jogo)</span>}</div>}
-        {freeMode && !plannedByTable && <p className="admin-muted">Informe o custo estimado do registro no campo abaixo.</p>}
       </div>}
       {canPrice && !editing && !numbersLater && <div className="admin-field admin-field-wide game-generator" aria-label="Gerador de jogos">
         <strong>Gerar jogos automaticamente</strong>
-        <small className="admin-muted">Usa o histórico de sorteios da CAIXA para montar jogos variados. Não prevê resultado: todo jogo tem a mesma chance.</small>
+        
         <div className="admin-form-grid admin-form-grid-four">
-          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} inputMode="numeric" value={genCount} onChange={(event) => setGenCount(event.target.value)} /><small>De 1 a 100 por bolão.</small></label>
-          <label className="admin-field"><span>Números em cada jogo</span>{sizeOptions.length > 0 ? <select value={genSize} onChange={(event) => setGenSize(event.target.value)}>{sizeOptions.map((size) => <option key={size} value={size}>{size} números · {money((priceTable[`${modality}:${size}`] ?? 0) / 100)}</option>)}</select> : <input type="number" min={limits.min} value={genSize} onChange={(event) => setGenSize(event.target.value)} />}<small>Só aparecem as apostas que a CAIXA vende, com o preço oficial.</small></label>
+          <label className="admin-field"><span>Quantos jogos</span><input type="number" min={1} max={100} inputMode="numeric" value={genCount} onChange={(event) => setGenCount(event.target.value)} /></label>
+          <label className="admin-field"><span>Números em cada jogo</span>{sizeOptions.length > 0 ? <select value={genSize} onChange={(event) => setGenSize(event.target.value)}>{sizeOptions.map((size) => <option key={size} value={size}>{size} números · {money((priceTable[`${modality}:${size}`] ?? 0) / 100)}</option>)}</select> : <input type="number" min={limits.min} value={genSize} onChange={(event) => setGenSize(event.target.value)} />}</label>
           <label className="admin-field"><span>Como escolher</span><select value={genStrategy} onChange={(event) => setGenStrategy(event.target.value)}><option value="equilibrado">Equilibrado (evita padrões comuns)</option><option value="aleatorio">Totalmente aleatório</option><option value="quentes">Mais sorteados recentes</option><option value="atrasados">Mais atrasados</option><option value="misto">Misto</option></select></label>
           <div className="admin-field" style={{ alignSelf: 'end' }}><button type="button" className="admin-button admin-button-primary" disabled={generating} onClick={() => void generateGames()}>{generating ? 'Gerando…' : generated ? 'Gerar de novo' : 'Gerar jogos'}</button></div>
         </div>
@@ -482,9 +493,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         {generated && <div className="generator-result"><span>{generated.quantidade} {generated.quantidade === 1 ? 'jogo gerado' : 'jogos gerados'} · {generated.dezenas} números cada · <strong>total na CAIXA {money(generated.custoTotal)}</strong></span><small>{generated.aviso}</small></div>}
       </div>}
       {role === 'admin' && !editing && canPrice && !numbersLater && <BankPicker modalidade={modality} onUse={(lines, mode) => setNumbers((current) => (mode === 'append' && current.trim() ? `${current.trim()}\n${lines.join('\n')}` : lines.join('\n')))} />}
-      {!numbersLater && <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}<small>A sugestão evita padrões populares e usa soma/paridade típicas; não aumenta a chance de acerto.</small></label>}
+      {!numbersLater && <label className="admin-field admin-field-wide"><span>Jogos — um por linha</span><textarea rows={5} value={numbers} onChange={(event) => setNumbers(event.target.value)} placeholder="Ex.: 04 12 23 35 44 58" /><small>{uniqueNumbers.length}/{limits.min} mínimos · separe por espaço, vírgula ou ponto e vírgula.</small>{!['loteca', 'supersete'].includes(modality) && <button type="button" className="button button-ghost" style={{ justifySelf: 'start', marginTop: 6 }} disabled={suggesting} onClick={() => void suggestGame()}>{suggesting ? 'Gerando…' : 'Sugerir jogo equilibrado'}</button>}</label>}
     </div>
-    {!editing && !numbersLater && !modalMode && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>{freeMode ? 'Calcular o custo do registro pela tabela da CAIXA' : 'Calcular pela tabela Caixa'}</strong><small>{freeMode ? 'A tabela só mostra quanto custa registrar os jogos na CAIXA. O valor da cota e a taxa você define livremente, abaixo.' : 'Custo dos jogos + administração sobre o custo. Cotas finitas; ajuste de centavos explicitado.'}</small></span></label>}
+    {!editing && !numbersLater && !modalMode && <label className="admin-toggle-row"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} /><span><strong>{freeMode ? 'Calcular o custo do registro pela tabela da CAIXA' : 'Calcular pela tabela Caixa'}</strong></span></label>}
     {automatic && !canPrice && <p role="alert">Matriz disponível na API. Venda automática desta modalidade aguarda suporte à apuração completa.</p>}
     {quoteError && <p role="alert">{quoteError}</p>}
     {quote && !modeUi && quote.jogos?.length > 0 && <div className="simple-form-summary" aria-label="Custo de cada jogo"><span>Jogos <strong>{quote.jogos.length}</strong></span><span>Custo por jogo <strong>{[...new Set(quote.jogos.map((g: RecordValue) => money(g.custo)))].join(' / ')}</strong></span><span>Registro na CAIXA <strong>{money(quote.costCents / 100)}</strong></span></div>}
@@ -493,9 +504,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       <legend>Preço da cota e taxa de serviço</legend>
       {freeMode && (numbersLater ? !plannedByTable : !automatic) && <label className="admin-field"><span>Custo total do registro na CAIXA (R$)</span><input type="text" inputMode="decimal" value={manualCost} onChange={(event) => setManualCost(event.target.value)} placeholder="Ex.: 60,00" /></label>}
       <div className="price-free-mode" role="radiogroup" aria-label="Como definir o valor da cota">
-        <label className={quotaMode === 'total' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'total'} onChange={() => { setQuotaMode('total'); if (!allowedFeeModes('total', role).includes(feeMode)) setFeeMode(allowedFeeModes('total', role)[0]!); }} /><span><strong>% sobre o total do registro</strong><small>Soma a porcentagem ao valor total do registro e divide pelas cotas. Ex.: R$ 504 + 10% ÷ 10 cotas.</small></span></label>
-        <label className={quotaMode === 'registro' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'registro'} onChange={() => { setQuotaMode('registro'); if (!allowedFeeModes('registro', role).includes(feeMode)) setFeeMode(allowedFeeModes('registro', role)[0]!); }} /><span><strong>Registro ÷ cotas + % em cada cota</strong><small>Divide o registro pelas cotas e soma a porcentagem em cima de cada cota. Ex.: R$ 504 ÷ 10 = R$ 50,40 + 10%.</small></span></label>
-        <label className={quotaMode === 'digitar' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'digitar'} onChange={() => { setQuotaMode('digitar'); if (!allowedFeeModes('digitar', role).includes(feeMode)) setFeeMode(allowedFeeModes('digitar', role)[0]!); }} /><span><strong>Eu defino o valor da cota</strong><small>Digite o preço que quiser{role === 'affiliate' ? `, até o teto de ${AFFILIATE_FEE_CAP}% sobre o registro` : '; a taxa é separada dele'}.</small></span></label>
+        <label className={quotaMode === 'total' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'total'} onChange={() => { setQuotaMode('total'); if (!allowedFeeModes('total', role).includes(feeMode)) setFeeMode(allowedFeeModes('total', role)[0]!); }} /><span><strong>% sobre o total do registro</strong></span></label>
+        <label className={quotaMode === 'registro' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'registro'} onChange={() => { setQuotaMode('registro'); if (!allowedFeeModes('registro', role).includes(feeMode)) setFeeMode(allowedFeeModes('registro', role)[0]!); }} /><span><strong>Registro ÷ cotas + % em cada cota</strong></span></label>
+        <label className={quotaMode === 'digitar' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'digitar'} onChange={() => { setQuotaMode('digitar'); if (!allowedFeeModes('digitar', role).includes(feeMode)) setFeeMode(allowedFeeModes('digitar', role)[0]!); }} /><span><strong>Eu defino o valor da cota</strong></span></label>
       </div>
       <div className="price-free-fields">
         <label className="admin-field"><span>Quantidade de cotas</span><input type="number" min="1" step="1" max={groupCapacity ?? undefined} inputMode="numeric" value={totalCotas} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convide alguém antes de criar o bolão.'}</small>}</label>
@@ -527,19 +538,19 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" max={groupCapacity ?? undefined} value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: o bolão pode ter no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convite alguém para o grupo antes de criar o bolão.'}</small>}</label>
       <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>}
-    {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong><small>Permite reservas sem estoque máximo. Opção legada, indisponível para novos lotes.</small></span></label>}
-    <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong><small>As cotas ficam bloqueadas até o prêmio estimado do concurso atingir o valor abaixo. Quando atingir, as vendas abrem sozinhas.</small></span></label>
+    {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong></span></label>}
+    <label className="admin-toggle-row"><input type="checkbox" checked={conditional} onChange={(event) => setConditional(event.target.checked)} /><span><strong>Bolão condicional (liberar cotas só com prêmio alto)</strong></span></label>
     {conditional && <label className="admin-field"><span>Liberar cotas quando o prêmio estimado chegar a (R$)</span><input type="number" min="1" step="1" value={trigger} onChange={(event) => setTrigger(event.target.value)} /><small>{money(trigger)} · prêmio estimado atual do concurso: {selectedContest ? money(selectedContest.valorEstimadoPremio) : '—'}</small></label>}
     <fieldset className="sales-rules">
       <legend>Regras de venda</legend>
-      <p className="admin-muted">Opcional. Defina quando as cotas ficam à venda e o limite por pessoa. Sem datas, a venda vale até o prazo do concurso.</p>
+      
       <div className="admin-form-grid admin-form-grid-three">
         <label className="admin-field"><span>Venda começa em</span><input type="datetime-local" value={saleStart} onChange={(event) => setSaleStart(event.target.value)} /></label>
         <label className="admin-field"><span>Venda termina em</span><input type="datetime-local" value={saleEnd} onChange={(event) => setSaleEnd(event.target.value)} /></label>
         <label className="admin-field"><span>Máximo de cotas por pessoa</span><input type="number" min="1" step="1" inputMode="numeric" value={maxPerPerson} onChange={(event) => setMaxPerPerson(event.target.value)} placeholder="Sem limite" /></label>
       </div>
       <label className="admin-field"><span>Regras para o cliente (aparecem no bolão)</span><textarea rows={3} maxLength={2000} value={saleText} onChange={(event) => setSaleText(event.target.value)} placeholder="Ex.: Cotas de R$ 10. O jogo é registrado após o encerramento das vendas e o comprovante é enviado a todos." /></label>
-      {role === 'admin' && <label className="admin-toggle-row"><input type="checkbox" checked={presale} disabled={editing && Boolean(editPool?.cotasVendidas)} onChange={(event) => setPresale(event.target.checked)} /><span><strong>Pré-venda (vender antes de registrar o jogo)</strong><small>As cotas são vendidas sem comprovante prévio. Depois de registrar a aposta na lotérica, o comprovante é enviado a todos os cotistas. Use para datas comemorativas antes de o concurso abrir.</small></span></label>}
+      {role === 'admin' && <label className="admin-toggle-row"><input type="checkbox" checked={presale} disabled={editing && Boolean(editPool?.cotasVendidas)} onChange={(event) => setPresale(event.target.checked)} /><span><strong>Pré-venda (vender antes de registrar o jogo)</strong></span></label>}
     </fieldset>
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
     <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? (selectedContest.nomeEspecial ? `${selectedContest.nomeEspecial}${selectedContest.numeroConcurso > 0 ? ` #${selectedContest.numeroConcurso}` : ' (número a definir)'}` : `#${selectedContest.numeroConcurso}`) : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>

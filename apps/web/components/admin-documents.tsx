@@ -66,8 +66,8 @@ export function DocumentsView({ notify }: { notify: Notify }) {
   const reaccept = open ? NEEDS_REACCEPT.has(open) : false;
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Administração</span><h1>Documentos</h1><p>Termos de uso, política de privacidade (LGPD) e contratos. Aqui você vê o texto que está valendo, publica uma versão nova e consulta o histórico.</p></div></div>
-    <Panel title="Documentos do sistema" description="Ao publicar um texto novo de Termos, Privacidade ou Afiliado, quem já aceitou precisa aceitar de novo no próximo acesso.">
+    <div className="admin-page-heading"><div><h1>Documentos</h1></div></div>
+    <Panel title="Documentos do sistema">
       {loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando…</p></div> : items.length === 0 ? <Empty text="Nenhum documento encontrado" /> :
         <Table minWidth={980}><thead><tr><th>Documento</th><th>Para quem</th><th>Versão</th><th>Origem do texto</th><th>Aceites</th><th>Quando a pessoa aceita</th><th /></tr></thead><tbody>
           {items.map((doc) => <tr key={doc.tipo} className={open === doc.tipo ? 'is-selected' : undefined}>
@@ -83,7 +83,7 @@ export function DocumentsView({ notify }: { notify: Notify }) {
     </Panel>
     {open && detail && <Panel title={detail.titulo} description={`${detail.para} · versão ${detail.versao} · ${SOURCE_LABEL[detail.origem] ?? detail.origem}`} action={<div className="admin-row-actions"><button className="admin-button admin-button-ghost" onClick={() => download(`${detail.tipo}-${detail.versao}.txt`, detail.texto)}>Baixar .txt</button><button className="admin-button admin-button-ghost" onClick={() => setShowCurrent((v) => !v)}>{showCurrent ? 'Ocultar texto atual' : 'Ver texto atual'}</button></div>}>
       {detail.origem === 'minuta' && <div className="admin-callout"><strong>Minuta provisória</strong><p>Este documento ainda mostra o texto provisório do sistema. Cole abaixo o texto definitivo e publique.</p></div>}
-      {detail.origem === 'ambiente' && <div className="admin-callout"><strong>Texto vindo de variável do servidor</strong><p>Ao publicar aqui, o texto do painel passa a valer no lugar da variável.</p></div>}
+      
       {!detail.aprovado && ['participacao', 'afiliado'].includes(detail.tipo) && <p className="admin-help">Contratação ainda bloqueada: faltam as variáveis de identidade e aprovação do operador no servidor (LEGAL_*). Publicar o texto aqui não libera as vendas sozinho.</p>}
       {showCurrent && <pre className="doc-text-preview">{detail.texto}</pre>}
       <div className="admin-form-grid">

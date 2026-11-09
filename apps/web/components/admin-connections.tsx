@@ -48,10 +48,10 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
   const mail = data.email ?? {}; const pay = data.pagamentos ?? {}; const caixa = data.caixa ?? {}; const files = data.arquivos ?? {}; const sec = data.seguranca ?? {}; const db = data.banco ?? {};
 
   return <>
-    <div className="admin-page-heading"><div><span className="admin-eyebrow">Conta e acesso</span><h1>Conexões</h1><p>O que está ligado no sistema e o que ainda falta. Para ligar algo, o suporte técnico preenche os dados no servidor.</p></div><div className="admin-heading-actions"><button className="admin-button" onClick={() => void load()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div></div>
+    <div className="admin-page-heading"><div><h1>Conexões</h1></div><div className="admin-heading-actions"><button className="admin-button" onClick={() => void load()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div></div>
 
     <div className="admin-dashboard-grid">
-      <Panel title="E-mail" description="Recuperação de senha, avisos de pagamento e recibos">
+      <Panel title="E-mail">
         <StatusList items={[
           { ok: Boolean(mail.configurado), title: mail.configurado ? 'Ligado' : 'Ainda não ligado', text: mail.configurado ? `${mail.provedor && mail.provedor !== 'Outro' ? `${mail.provedor} · ` : ''}Servidor ${mail.servidor}, porta ${mail.porta}${mail.seguro ? ' (seguro)' : ''}` : 'Sem isso, os avisos aparecem só dentro da conta do cliente.' },
           ...(mail.configurado ? [
@@ -60,7 +60,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
             { ok: Boolean(mail.enderecoDoSite && !String(mail.enderecoDoSite).includes('localhost')), title: 'Endereço do site nos e-mails', text: String(mail.enderecoDoSite) },
           ] : []),
         ]} />
-        {mail.configurado && <p className="admin-help">Saem por e-mail: nova senha (esqueci minha senha), boas-vindas, convites com e-mail, pagamento confirmado e comprovante do jogo (com o arquivo anexado) e as mensagens que você marcar para e-mail.</p>}
+        
         <div className="connections-test">
           <label className="admin-field"><span>Enviar e-mail de teste para</span><input type="email" value={to} onChange={(event) => setTo(event.target.value)} placeholder="deixe vazio para enviar para o seu e-mail" /></label>
           <div className="admin-row-actions">
@@ -76,7 +76,7 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
         </div>}
       </Panel>
 
-      <Panel title="Pagamentos" description="Pix e boleto pela Cora, cartão pelo Mercado Pago">
+      <Panel title="Pagamentos">
         <StatusList items={[
           { ok: Boolean(pay.habilitado), title: pay.habilitado ? 'Ligados' : 'Desligados', text: pay.habilitado ? `Serviço: ${pay.provedor}${pay.ambiente ? ` (${pay.ambiente === 'production' ? 'valendo' : 'teste'})` : ''}` : 'Ninguém consegue reservar cotas enquanto estiver desligado.' },
           ...(pay.provedor === 'cora' ? [{ ok: Boolean(pay.credenciais), title: 'Chaves da Cora', text: pay.credenciais ? 'Preenchidas' : 'Faltam chaves (CORA_CLIENT_ID, certificado e chave)' }] : []),
@@ -87,29 +87,29 @@ export function ConnectionsView({ notify }: { notify: Notify }) {
     </div>
 
     <div className="admin-dashboard-grid admin-dashboard-grid-three">
-      <Panel title="Sorteios da CAIXA" description="Resultados e concursos">
+      <Panel title="Sorteios da CAIXA">
         <StatusList items={[{ ok: Boolean(caixa.ok), title: caixa.ok ? 'Atualizando normalmente' : 'Parado', text: caixa.ultimaAtualizacao ? `Última atualização: ${dateTime(caixa.ultimaAtualizacao)} (há ${caixa.idadeMinutos} min)` : 'Ainda não atualizou. Clique em "Atualizar sorteios" no Resumo.' }]} />
       </Panel>
-      <Panel title="Alertas no celular" description="Aviso quando algo precisa de atenção">
+      <Panel title="Alertas no celular">
         <StatusList items={[{ ok: Boolean(data.alertas?.configurado), title: data.alertas?.configurado ? 'Ligados' : 'Desligados', text: data.alertas?.configurado ? `Canal: ${data.alertas.rotulo}` : 'Peça ao suporte para preencher ALERT_WEBHOOK_URL (Slack ou Discord).' }]} />
         <button className="admin-button admin-button-small" disabled={busy === 'alert' || !data.alertas?.configurado} onClick={() => void test('/api/v1/admin/conexoes/alertas/testar', 'alert')}>{busy === 'alert' ? 'Enviando…' : 'Enviar alerta de teste'}</button>
       </Panel>
-      <Panel title="Avisos no celular (PWA)" description="Push para quem instalou o aplicativo ou ligou os avisos no site">
+      <Panel title="Avisos no celular (PWA)">
         <StatusList items={[{ ok: Boolean(data.push?.disponivel), title: data.push?.disponivel ? 'Pronto para enviar' : 'Indisponível', text: data.push?.disponivel ? `${data.push.pessoas ?? 0} ${(data.push.pessoas ?? 0) === 1 ? 'pessoa' : 'pessoas'} com avisos ligados (${data.push.aparelhos ?? 0} ${(data.push.aparelhos ?? 0) === 1 ? 'aparelho' : 'aparelhos'}). Envie em Mensagens aos clientes.` : 'O serviço de avisos não respondeu. Veja os logs da API.' }]} />
       </Panel>
-      <Panel title="Banco de dados" description="Onde tudo fica guardado">
+      <Panel title="Banco de dados">
         <StatusList items={[{ ok: Boolean(db.ok), title: db.ok ? 'Respondendo' : 'Sem resposta', text: db.ok ? `${db.latenciaMs} ms` : db.detalhe ?? 'Verifique o servidor do banco' }]} />
       </Panel>
     </div>
 
     <div className="admin-dashboard-grid">
-      <Panel title="Arquivos enviados" description="Comprovantes e recibos">
+      <Panel title="Arquivos enviados">
         <StatusList items={[
           { ok: Boolean(files.pastaOk), title: files.pastaOk ? 'Pasta pronta para gravar' : 'Não consegue gravar', text: files.pastaOk ? `${files.quantidade} arquivo(s) · ${fileSize(files.bytes ?? 0)} · limite de ${files.limiteMb} MB cada` : files.detalhe ?? 'Verifique a pasta de arquivos no servidor' },
           { ok: Boolean(files.pastaOk) && !files.pastaPadraoDocker ? true : null, title: 'Onde ficam guardados', text: files.pasta ?? '—', extra: files.pastaPadraoDocker ? <small>Confirme que esta pasta é um volume persistente no servidor; senão os arquivos somem a cada deploy. O backup diário já copia os arquivos.</small> : undefined },
         ]} />
       </Panel>
-      <Panel title="Segurança" description="Proteção das contas e do painel">
+      <Panel title="Segurança">
         <StatusList items={[
           { ok: Boolean(sec.segredosFortes), title: 'Senhas de sessão (JWT)', text: sec.segredosFortes ? 'Fortes' : 'Fracas ou de exemplo — troque por textos longos e aleatórios' },
           { ok: Boolean(sec.chaveDoisFatores), title: 'Chave do 2FA', text: sec.chaveDoisFatores ? 'Preenchida (TOTP_ENC_KEY)' : 'Não preenchida: preencha TOTP_ENC_KEY antes de ligar o 2FA' },

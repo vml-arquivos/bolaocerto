@@ -62,19 +62,19 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
         <label className="admin-field"><span>E-mail</span><input required type="email" maxLength={180} value={user.email} onChange={e => setUser({ ...user, email: e.target.value })}/></label>
         <label className="admin-field"><span>Telefone</span><input type="tel" maxLength={20} value={user.telefone ?? ''} onChange={e => setUser({ ...user, telefone: e.target.value })}/></label>
         <label className="admin-field"><span>Nascimento (opcional)</span><input type="date" value={(user.dataNascimento ?? '').slice(0, 10)} onChange={e => setUser({ ...user, dataNascimento: e.target.value })}/></label>
-        <p className="admin-help">CPF: {user.cpf}. A identificação fiscal e os dados das compras anteriores são preservados. Alterar o e-mail encerra as sessões e invalida links antigos de redefinição.</p>
+        <p className="admin-help">CPF: {user.cpf}</p>
         <button className="admin-button" disabled={busy}>{busy ? 'Processando…' : 'Salvar alterações'}</button>
       </form>
       <hr/><h3>Perfil de acesso</h3>
       <label className="admin-field"><span>Permissões do usuário</span><select value={user.papel} disabled={busy} onChange={e => setUser({ ...user, papel: e.target.value })}><option value="cotista">Cliente / cotista</option><option value="afiliado">Afiliado</option><option value="operacao">Equipe de operação</option>{(superAdmin || user.papel === 'admin') && <option value="admin">Administrador</option>}</select></label>
-      <p className="admin-help">Cliente: sua conta e participações. Afiliado: recursos da sua rede conforme aprovação. Equipe: rotinas operacionais autorizadas. Administrador: gestão completa, incluindo contas e acessos. As permissões são verificadas pela API.</p>
+      
       <button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void saveRole()}>Aplicar perfil de acesso</button>
       <hr/><h3>Recuperação de senha</h3>
-      <p className="admin-help">Gere e copie um link sem SMTP ou envie por e-mail quando o servidor estiver configurado. Ambos permitem ao usuário escolher a própria senha.</p>
+      
       <div className="admin-row-actions"><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('link')}>Gerar link de redefinição</button><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('reset')}>Enviar redefinição de senha</button><button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void action(user.desativadoEm ? 'restore' : 'remove')}>{user.desativadoEm ? 'Reativar conta' : 'Remover acesso'}</button></div>
       {resetLink && <div className="notice"><label className="admin-field"><span>Link pessoal de redefinição</span><input readOnly value={resetLink.link} onFocus={e => e.currentTarget.select()} /></label><p>Válido até {new Date(resetLink.expiraEm).toLocaleString('pt-BR')}. {resetLink.aviso}</p><button className="admin-button" type="button" onClick={async () => { try { await navigator.clipboard.writeText(resetLink.link); setMessage('Link copiado. Envie somente ao titular da conta.'); } catch { setMessage('Selecione o campo do link e copie manualmente.'); } }}>Copiar link</button><button className="admin-button admin-button-ghost" type="button" onClick={() => setResetLink(null)}>Ocultar link</button><p className="admin-help">Ocultar fecha a exibição; o link continua válido até ser usado, substituído ou expirar.</p></div>}
       <button className="admin-button admin-button-danger" disabled={busy} onClick={() => void action('delete')}>Excluir conta</button>
-      <p className="admin-help">"Remover acesso" só impede a pessoa de entrar e guarda o histórico. "Excluir conta" apaga de vez e só funciona para conta sem histórico; se houver, o painel mostra o que impede. Solicitações de eliminação de dados exigem análise de retenção.</p>
+      
     </>}
   </AdminModal>;
 }

@@ -66,7 +66,7 @@ export function PasswordCard() {
     } catch (issue) { setMessage(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
   }
   return <article className="dashboard-card wide"><h2>Segurança</h2>
-    <p className="muted">Troque a senha com regularidade e não a repita em outros serviços.</p>
+    
     <form onSubmit={submit} className="admin-form-grid">
       <PasswordField id="senhaAtual" name="senhaAtual" label="Senha atual" />
       <PasswordField id="novaSenhaConta" name="novaSenha" label="Nova senha" create />
@@ -192,7 +192,7 @@ export function TwoFactorCard({ role }: { role?: string }) {
     </form>}
     {message && <div className={`form-message ${ok ? 'form-success' : 'form-error'}`} role={ok ? 'status' : 'alert'}>{message}</div>}
     <hr className="soft-divider" />
-    <div className="action-row"><button type="button" className="button button-ghost" onClick={() => void logoutAll()} disabled={busy}>Sair de todos os dispositivos</button><small className="muted">Útil se perdeu um aparelho ou suspeita de acesso indevido.</small></div>
+    <div className="action-row"><button type="button" className="button button-ghost" onClick={() => void logoutAll()} disabled={busy}>Sair de todos os dispositivos</button></div>
   </article>;
 }
 
