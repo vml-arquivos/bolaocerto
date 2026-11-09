@@ -7,6 +7,7 @@ import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { ReceiptPanel } from './receipt-panel';
 import { PushToggle } from './push-toggle';
+import { ModalityAlertsCard } from './modality-alerts-card';
 import { ProfilePanel } from './profile-panel';
 import { NotificationsCard, PasswordCard, PrivacyCard, ReceiptsCard, ResponsiblePlayCard, TwoFactorCard } from './account-extras';
 import { concursoNo } from '../lib/contest';
@@ -172,6 +173,7 @@ export function AccountDashboard() {
         {address?.nfseAtiva && paidShares.length > 0 && <AddressCard address={address} onSaved={() => void load()} />}
       </Row>
       <Row title="Avisos no celular" icon="bell"><PushToggle /></Row>
+      <Row title="Avise-me de novos bolões" icon="bell"><ModalityAlertsCard /></Row>
       <Row title="Limite de gastos" icon="gauge"><ResponsiblePlayCard /></Row>
       <Row title="Comprovantes" icon="receipt"><ReceiptsCard /></Row>
       <Row title="Alterar senha" icon="lock" open={params.get('abrir') === 'senha'}><PasswordCard /></Row>

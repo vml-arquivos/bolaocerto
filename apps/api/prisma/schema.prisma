@@ -119,6 +119,7 @@ model Usuario {
   bloqueadoAte          DateTime?     @map("bloqueado_ate")
   totpSecret            String?       @map("totp_secret")
   totpAtivo             Boolean       @default(false) @map("totp_ativo")
+  googleSub             String?       @unique @map("google_sub") @db.VarChar(64)
   totpRecuperacao       String[]      @default([]) @map("totp_recuperacao")
   criadoEm              DateTime      @default(now()) @map("criado_em")
   atualizadoEm          DateTime      @updatedAt @map("atualizado_em")
@@ -132,6 +133,7 @@ model Usuario {
   cotasCompradas        Cota[]        @relation("comprador_cota")
   mandatos              Mandato[]
   aceitesLegais         AceiteLegal[]
+  alertasModalidade     AlertaModalidade[]
   notificacoes          Notificacao[]
   pushInscricoes        PushInscricao[]
   auditorias            AuditoriaEvento[]
@@ -780,4 +782,16 @@ model BancoNumeros {
 
   @@index([modalidade, criadoEm])
   @@map("banco_numeros")
+}
+
+/// "Avise-me quando abrir bolão de [jogo]": a pessoa escolhe as modalidades e recebe um aviso quando um bolão oficial for publicado.
+model AlertaModalidade {
+  usuarioId  String   @map("usuario_id") @db.Uuid
+  modalidade String   @db.VarChar(30)
+  criadoEm   DateTime @default(now()) @map("criado_em")
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, modalidade])
+  @@index([modalidade])
+  @@map("alertas_modalidade")
 }

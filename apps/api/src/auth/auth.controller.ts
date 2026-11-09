@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { DisableTwoFactorDto, LoginDto, RegisterDto, TwoFactorCodeDto } from './auth.dto';
+import { DisableTwoFactorDto, GoogleCredentialDto, GoogleSignupDto, LoginDto, RegisterDto, TwoFactorCodeDto } from './auth.dto';
 import { clearAuthCookies, setAuthCookies } from './cookies';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './auth.decorators';
@@ -27,6 +27,31 @@ export class AuthController {
   @Post('login')
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response) {
     const result = await this.auth.login(dto);
+    setAuthCookies(response, result.accessToken, result.refreshToken);
+    return { user: result.user };
+  }
+
+  /** Informa à tela se o "Entrar com Google" está ativo (o client id do Google é público). */
+  @Get('google/config')
+  googleConfig() {
+    const clientId = this.auth.googleClientId();
+    return { ativo: Boolean(clientId), clientId };
+  }
+
+  @Post('google')
+  @HttpCode(200)
+  async google(@Body() dto: GoogleCredentialDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const result = await this.auth.googleLogin(dto.credential, { ip: request.ip ?? request.socket.remoteAddress ?? 'unknown', userAgent: request.get('user-agent') });
+    if (result.tokens) {
+      setAuthCookies(response, result.tokens.accessToken, result.tokens.refreshToken);
+      return { user: result.tokens.user };
+    }
+    return { cadastroPendente: true, ...result.cadastro };
+  }
+
+  @Post('google/cadastro')
+  async googleSignup(@Body() dto: GoogleSignupDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const result = await this.auth.googleSignup(dto, { ip: request.ip ?? request.socket.remoteAddress ?? 'unknown', userAgent: request.get('user-agent') });
     setAuthCookies(response, result.accessToken, result.refreshToken);
     return { user: result.user };
   }

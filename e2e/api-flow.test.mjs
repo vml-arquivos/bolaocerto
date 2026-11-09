@@ -251,6 +251,37 @@ test('funil de conversão: contagem anônima do site e relatório do painel', as
   assert.equal((await fetch(`${process.env.E2E_API_URL}/api/v1/admin/funil`)).status, 401, 'o relatório não é público');
 });
 
+test('onda 2: conferidor público, avise-me por jogo e Google desligado sem configuração', async () => {
+  const anon = { cookie: '' };
+  const modalities = await call('GET', '/conferidor/modalidades', undefined, {}, anon);
+  ok(modalities, 'modalidades do conferidor');
+  assert.equal(modalities.data.length, 7);
+  assert.equal((await call('POST', '/conferidor', { modalidade: 'loteca', jogos: [[1, 2, 3]] }, {}, anon)).status, 400, 'modalidade sem dezenas é recusada');
+  assert.equal((await call('POST', '/conferidor', { modalidade: 'megasena', jogos: Array.from({ length: 21 }, () => [1, 2, 3, 4, 5, 6]) }, {}, anon)).status, 400, 'no máximo 20 jogos');
+  const checked = await call('POST', '/conferidor', { modalidade: 'megasena', jogos: [[1, 2, 3, 4, 5, 6], [1, 2, 3]] }, {}, anon);
+  assert.ok([200, 404].includes(checked.status), `conferir: HTTP ${checked.status}`);
+  if (checked.status === 200) assert.ok(checked.data.jogos[1].erro, 'jogo inválido volta com explicação, sem derrubar o outro');
+
+  const google = await call('GET', '/auth/google/config', undefined, {}, anon);
+  ok(google, 'config do Google');
+  assert.equal(typeof google.data.ativo, 'boolean');
+  if (!google.data.ativo) assert.equal((await call('POST', '/auth/google', { credential: 'x'.repeat(40) }, {}, anon)).status, 409, 'sem GOOGLE_CLIENT_ID o recurso fica desligado');
+
+  assert.equal((await call('GET', '/usuarios/me/alertas-bolao', undefined, {}, anon)).status, 401, 'avise-me exige conta');
+  const prefs = await call('GET', '/usuarios/me/alertas-bolao');
+  ok(prefs, 'preferências de aviso');
+  assert.ok(prefs.data.disponiveis.some((item) => item.modalidade === 'megasena'));
+  const saved = await call('PUT', '/usuarios/me/alertas-bolao', { modalidades: ['megasena', 'megasena', 'nao-existe'] });
+  ok(saved, 'salvar avisos');
+  assert.deepEqual(saved.data.modalidades, ['megasena']);
+  assert.deepEqual((await call('GET', '/usuarios/me/alertas-bolao')).data.modalidades, ['megasena']);
+  ok(await call('PUT', '/usuarios/me/alertas-bolao', { modalidades: [] }), 'desligar avisos');
+
+  const health = await call('GET', '/operacao/saude');
+  ok(health, 'saúde');
+  for (const key of ['faixasEspeciais', 'pagamentosFalhos', 'premiosSemAviso']) assert.ok(Array.isArray(health.data.pendencias[key]), key);
+});
+
 test('bolão de data festiva: abre a venda sem números e define os jogos depois', async () => {
   const noNumbers = await call('POST', '/admin/boloes', {
     concursoId: state.contestId, grupoId: state.groupId, numerosApostados: [],

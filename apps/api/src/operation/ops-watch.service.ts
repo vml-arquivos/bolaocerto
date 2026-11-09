@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { AlertService } from '../common/alert.service';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 
 const STALE_SYNC_MINUTES = 90;
@@ -39,6 +40,46 @@ export class OpsWatchService {
     return pools.map((pool) => ({ bolaoId: pool.id, modalidade: pool.concurso.modalidade, concurso: pool.concurso.numeroConcurso, sorteio: pool.concurso.dataSorteio }));
   }
 
+  /** Bolões apurados em que o Time do Coração / Mês de Sorte não pôde ser conferido sozinho: a equipe confere e repassa na mão. */
+  async specialTierPending() {
+    const pools = await this.prisma.bolao.findMany({
+      where: { status: 'apurado', apuracao: { not: Prisma.DbNull }, concurso: { dataSorteio: { gte: new Date(Date.now() - 45 * 86_400_000) } } },
+      select: { id: true, apuracao: true, concurso: { select: { modalidade: true, numeroConcurso: true, dataSorteio: true } } },
+      orderBy: { concurso: { dataSorteio: 'desc' } },
+      take: 200,
+    });
+    return pools
+      .map((pool) => ({ pool, motivo: (pool.apuracao as { faixaEspecialNaoConferida?: unknown } | null)?.faixaEspecialNaoConferida }))
+      .filter((entry): entry is { pool: (typeof pools)[number]; motivo: string } => typeof entry.motivo === 'string' && entry.motivo.length > 0)
+      .map(({ pool, motivo }) => ({ bolaoId: pool.id, modalidade: pool.concurso.modalidade, concurso: pool.concurso.numeroConcurso, sorteio: pool.concurso.dataSorteio, motivo }));
+  }
+
+  /** Pagamentos que falharam nos últimos 3 dias e cuja cota continua reservada: a pessoa pode precisar de ajuda para pagar. */
+  async failedPayments() {
+    const rows = await this.prisma.pagamento.findMany({
+      where: { status: 'falhou', criadoEm: { gte: new Date(Date.now() - 3 * 86_400_000) }, cota: { status: 'reservada' } },
+      select: { id: true, metodo: true, valorBruto: true, criadoEm: true, cota: { select: { titularNome: true, bolao: { select: { id: true, concurso: { select: { modalidade: true, numeroConcurso: true } } } } } } },
+      orderBy: { criadoEm: 'desc' },
+      take: 30,
+    });
+    return rows.map((row) => ({ pagamentoId: row.id, metodo: row.metodo, valor: Number(row.valorBruto), em: row.criadoEm, titular: row.cota.titularNome, bolaoId: row.cota.bolao.id, modalidade: row.cota.bolao.concurso.modalidade, concurso: row.cota.bolao.concurso.numeroConcurso }));
+  }
+
+  /** Cotas premiadas cujo aviso de prêmio não saiu depois de mais de 2 horas. */
+  async prizesWithoutNotice() {
+    const rows = await this.prisma.cota.findMany({
+      where: { status: 'premiada', premioNotificadoEm: null, bolao: { apuradoEm: { lt: new Date(Date.now() - 2 * 3_600_000) } } },
+      select: { id: true, titularNome: true, valorPremio: true, bolaoId: true },
+      take: 30,
+    });
+    return rows.map((row) => ({ cotaId: row.id, titular: row.titularNome, valorPremio: row.valorPremio === null ? null : Number(row.valorPremio), bolaoId: row.bolaoId }));
+  }
+
+  /** Cada verificação extra é independente: se uma falhar, as outras e o painel continuam funcionando. */
+  private async safe<T>(run: () => Promise<T[]>): Promise<T[]> {
+    try { return await run(); } catch (error) { this.logger.warn(`Verificação extra falhou: ${error instanceof Error ? error.message : String(error)}`); return []; }
+  }
+
   async syncStatus() {
     const latest = await this.prisma.concurso.findFirst({ orderBy: { sincronizadoEm: 'desc' }, select: { sincronizadoEm: true } });
     const last = latest?.sincronizadoEm ?? null;
@@ -48,14 +89,15 @@ export class OpsWatchService {
 
   async snapshot() {
     const [unregistered, overdue, sync] = await Promise.all([this.unregisteredPools(), this.overdueSettlements(), this.syncStatus()]);
+    const [special, failed, unnoticed] = await Promise.all([this.safe(() => this.specialTierPending()), this.safe(() => this.failedPayments()), this.safe(() => this.prizesWithoutNotice())]);
     return {
       geradoEm: new Date(),
       sincronizacaoCaixa: sync,
       pagamentos: { provedor: this.config.get<string>('PAYMENT_PROVIDER') ?? null, habilitado: this.config.get<string>('PAYMENTS_ENABLED') === 'true' || this.config.get<string>('PLATFORM_PAYMENTS_ENABLED') === 'true' },
       email: { configurado: Boolean(this.config.get<string>('SMTP_HOST')?.trim()) },
       alertas: { configurado: this.alerts.isConfigured() },
-      pendencias: { apostasNaoRegistradas: unregistered, apuracoesAtrasadas: overdue },
-      ok: sync.ok && unregistered.length === 0 && overdue.length === 0,
+      pendencias: { apostasNaoRegistradas: unregistered, apuracoesAtrasadas: overdue, faixasEspeciais: special, pagamentosFalhos: failed, premiosSemAviso: unnoticed },
+      ok: sync.ok && unregistered.length === 0 && overdue.length === 0 && special.length === 0 && unnoticed.length === 0,
     };
   }
 

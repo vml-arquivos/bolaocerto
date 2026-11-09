@@ -126,6 +126,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
       TOTP_ENC_KEY: ${TOTP_ENC_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       UPLOAD_DIR: /data/uploads
       UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-10}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}

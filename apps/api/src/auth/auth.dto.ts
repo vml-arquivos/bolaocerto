@@ -90,3 +90,39 @@ export class DisableTwoFactorDto extends TwoFactorCodeDto {
   @MinLength(1)
   senha!: string;
 }
+
+export class GoogleCredentialDto {
+  /** ID token entregue pelo botão "Entrar com Google". */
+  @IsString()
+  @Length(20, 4096)
+  credential!: string;
+}
+
+export class GoogleSignupDto {
+  @IsString()
+  @Length(20, 4096)
+  token!: string;
+
+  @IsString()
+  @Length(11, 11)
+  cpf!: string;
+
+  @IsString()
+  @Matches(/^\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}$/, { message: 'Informe o telefone com DDD, por exemplo (11) 91234-5678.' })
+  telefone!: string;
+
+  @IsBoolean()
+  @Equals(true, { message: 'Confirme que você tem 18 anos ou mais para criar a conta.' })
+  maiorDeIdade!: boolean;
+
+  @Equals(true, { message: 'Aceite os Termos de Uso para criar a conta.' })
+  aceiteTermos!: boolean;
+
+  @Equals(true, { message: 'Aceite a Política de Privacidade (LGPD) para criar a conta.' })
+  aceitePrivacidade!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Length(3, 20)
+  codigoAfiliado?: string;
+}

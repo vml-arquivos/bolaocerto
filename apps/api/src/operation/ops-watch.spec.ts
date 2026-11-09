@@ -92,3 +92,44 @@ describe('OpsWatchService', () => {
     expect(await service.syncStatus()).toMatchObject({ ok: false, ultima: null });
   });
 });
+
+describe('OpsWatchService — exceções extras', () => {
+  const base = (over: any = {}): any => ({
+    bolao: { findMany: jest.fn().mockResolvedValue([]) },
+    concurso: { findFirst: jest.fn().mockResolvedValue({ sincronizadoEm: new Date() }) },
+    pagamento: { findMany: jest.fn().mockResolvedValue([]) },
+    cota: { findMany: jest.fn().mockResolvedValue([]) },
+    ...over,
+  });
+  const alerts: any = { alert: jest.fn(), isConfigured: () => true };
+  const make = (prisma: any) => new OpsWatchService(prisma, alerts, cfg({}));
+
+  it('lista bolões apurados com faixa especial a conferir e marca o painel como atenção', async () => {
+    const rows = [
+      { id: 'a', apuracao: { faixaEspecialNaoConferida: 'o jogo não tem o time/mês guardado' }, concurso: { modalidade: 'timemania', numeroConcurso: 2200, dataSorteio: new Date() } },
+      { id: 'b', apuracao: { melhorFaixa: '5 acertos' }, concurso: { modalidade: 'megasena', numeroConcurso: 1, dataSorteio: new Date() } },
+    ];
+    const snap = await make(base({ bolao: { findMany: jest.fn().mockImplementation(async ({ where }: any) => (where.status === 'apurado' ? rows : [])) } })).snapshot();
+    expect(snap.pendencias.faixasEspeciais).toEqual([expect.objectContaining({ bolaoId: 'a', modalidade: 'timemania', motivo: 'o jogo não tem o time/mês guardado' })]);
+    expect(snap.ok).toBe(false);
+  });
+
+  it('pagamento que falhou aparece como informação, sem derrubar o "ok"', async () => {
+    const row = { id: 'pg1', metodo: 'pix', valorBruto: '25.00', criadoEm: new Date(), cota: { titularNome: 'Maria', bolao: { id: 'p1', concurso: { modalidade: 'quina', numeroConcurso: 10 } } } };
+    const snap = await make(base({ pagamento: { findMany: jest.fn().mockResolvedValue([row]) } })).snapshot();
+    expect(snap.pendencias.pagamentosFalhos[0]).toMatchObject({ pagamentoId: 'pg1', valor: 25, titular: 'Maria', modalidade: 'quina' });
+    expect(snap.ok).toBe(true);
+  });
+
+  it('prêmio sem aviso é listado e pede atenção', async () => {
+    const snap = await make(base({ cota: { findMany: jest.fn().mockResolvedValue([{ id: 'c1', titularNome: 'João', valorPremio: '120.50', bolaoId: 'p1' }]) } })).snapshot();
+    expect(snap.pendencias.premiosSemAviso[0]).toMatchObject({ cotaId: 'c1', valorPremio: 120.5 });
+    expect(snap.ok).toBe(false);
+  });
+
+  it('se uma verificação extra falhar, o painel continua funcionando', async () => {
+    const snap = await make(base({ pagamento: { findMany: jest.fn().mockRejectedValue(new Error('x')) } })).snapshot();
+    expect(snap.pendencias.pagamentosFalhos).toEqual([]);
+    expect(snap.ok).toBe(true);
+  });
+});

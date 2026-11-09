@@ -29,6 +29,8 @@ async function bootstrap(): Promise<void> {
   app.use('/api/v1/funil', strict(60_000, 60));
   app.use('/api/v1/auth/login', strict(15 * 60_000, 30));
   app.use('/api/v1/auth/registrar', strict(60 * 60_000, 20));
+  app.use('/api/v1/auth/google', strict(15 * 60_000, 40));
+  app.use('/api/v1/conferidor', strict(60_000, 30));
   app.use('/api/v1/auth/esqueci-senha', strict(60 * 60_000, 10));
   app.use('/api/v1/auth/redefinir-senha', strict(60 * 60_000, 20));
   app.use('/api/v1/auth/2fa', strict(15 * 60_000, 30));

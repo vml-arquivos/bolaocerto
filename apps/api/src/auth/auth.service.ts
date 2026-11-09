@@ -9,9 +9,10 @@ import * as argon2 from 'argon2';
 import { AuditService } from '../common/audit.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
-import { RegisterDto, LoginDto } from './auth.dto';
+import { RegisterDto, LoginDto, GoogleSignupDto } from './auth.dto';
 import { assertAdult, AuthUser, isValidCpf, normalizeCpf } from './auth.utils';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from './password-policy';
+import { GOOGLE_LOGIN_ROLES, GoogleIdentity, verifyGoogleIdToken } from './google';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, openSecret, otpauthUrl, sealSecret, verifyTotp } from './totp';
 
 const GENERIC_LOGIN_ERROR = 'E-mail ou senha incorretos, ou conta temporariamente bloqueada por excesso de tentativas. Tente novamente em alguns minutos.';
@@ -194,6 +195,61 @@ export class AuthService {
     }
     if (user.tentativasLogin > 0 || user.bloqueadoAte) await this.prisma.usuario.update({ where: { id: user.id }, data: { tentativasLogin: 0, bloqueadoAte: null } });
     return this.issueTokens({ id: user.id, email: user.email, papel: user.papel, tokenVersion: user.tokenVersion });
+  }
+
+  // ───────── Entrar com Google ─────────
+
+  googleClientId(): string | null { return (this.config.get<string>('GOOGLE_CLIENT_ID') ?? '').trim() || null; }
+
+  protected verifyGoogle(credential: string): Promise<GoogleIdentity | null> {
+    return verifyGoogleIdToken(credential, this.googleClientId() ?? '');
+  }
+
+  /**
+   * Conta existente (cliente ou afiliado, sem 2FA) entra direto. Equipe e contas com 2FA continuam com e-mail e senha.
+   * E-mail ainda sem conta: devolve um token curto para a pessoa completar CPF, telefone e aceites.
+   */
+  async googleLogin(credential: string, meta: { ip?: string; userAgent?: string | null } = {}): Promise<{ tokens?: { accessToken: string; refreshToken: string; user: AuthUser }; cadastro?: { token: string; nome: string; email: string } }> {
+    if (!this.googleClientId()) throw new ConflictException('Entrar com Google não está ativo neste momento.');
+    const identity = await this.verifyGoogle(credential);
+    if (!identity) throw new UnauthorizedException('Não foi possível confirmar sua conta Google. Tente novamente ou entre com e-mail e senha.');
+    const user = await this.prisma.usuario.findUnique({ where: { email: identity.email }, select: { id: true, email: true, papel: true, tokenVersion: true, desativadoEm: true, totpAtivo: true, googleSub: true, bloqueadoAte: true } });
+    if (!user) {
+      const token = await this.jwt.signAsync({ typ: 'google-signup', email: identity.email, nome: identity.nome, gsub: identity.sub }, { secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'), expiresIn: '15m' as any });
+      return { cadastro: { token, nome: identity.nome, email: identity.email } };
+    }
+    const passwordOnly = !GOOGLE_LOGIN_ROLES.has(user.papel) || user.totpAtivo;
+    if (user.desativadoEm || passwordOnly || (user.googleSub && user.googleSub !== identity.sub)) {
+      throw new UnauthorizedException(passwordOnly && !user.desativadoEm ? 'Esta conta entra com e-mail e senha.' : GENERIC_LOGIN_ERROR);
+    }
+    if (user.bloqueadoAte && user.bloqueadoAte > new Date()) throw new UnauthorizedException(GENERIC_LOGIN_ERROR);
+    let tokenVersion = user.tokenVersion;
+    if (!user.googleSub) {
+      // Primeira vez com Google: vincula a conta e encerra as sessões antigas dessa conta.
+      const updated = await this.prisma.usuario.update({ where: { id: user.id }, data: { googleSub: identity.sub, tokenVersion: { increment: 1 } }, select: { tokenVersion: true } });
+      tokenVersion = updated.tokenVersion;
+      await this.audit?.record(this.prisma, { entidade: 'usuario', entidadeId: user.id, evento: 'auth.google_vinculado', atorId: user.id, payloadDepois: { ip: meta.ip ?? null } }).catch(() => undefined);
+    }
+    return { tokens: await this.issueTokens({ id: user.id, email: user.email, papel: user.papel, tokenVersion }) };
+  }
+
+  /** Conclui o cadastro de quem entrou com Google: usa o mesmo caminho do cadastro normal (CPF, aceites, indicação, boas-vindas). */
+  async googleSignup(dto: GoogleSignupDto, meta: { ip?: string; userAgent?: string | null } = {}): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
+    let payload: { typ?: string; email?: string; nome?: string; gsub?: string };
+    try { payload = await this.jwt.verifyAsync(dto.token, { secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET') }); }
+    catch { throw new UnauthorizedException('Sua confirmação com o Google expirou. Toque em "Entrar com Google" outra vez.'); }
+    if (payload.typ !== 'google-signup' || !payload.email || !payload.gsub) throw new UnauthorizedException('Confirmação com o Google inválida.');
+    const code = dto.codigoAfiliado?.trim();
+    if (code) {
+      const staffInvite = await this.prisma.convite.findFirst({ where: { codigo: code, tipo: { in: ['afiliado', 'operacao', 'admin'] } }, select: { id: true } });
+      if (staffInvite) throw new ConflictException('Este convite exige cadastro com e-mail e senha. Use o formulário do link que você recebeu.');
+    }
+    // Senha aleatória forte (a pessoa entra pelo Google; se quiser senha própria, usa "Esqueci minha senha").
+    const randomPassword = `Gg1${randomBytes(18).toString('hex')}`;
+    const result = await this.register({ nome: (payload.nome ?? payload.email.split('@')[0]!).slice(0, 150), cpf: dto.cpf, email: payload.email, telefone: dto.telefone, maiorDeIdade: dto.maiorDeIdade, senha: randomPassword, confirmarSenha: randomPassword, aceiteTermos: dto.aceiteTermos, aceitePrivacidade: dto.aceitePrivacidade, ...(code ? { codigoAfiliado: code } : {}) } as RegisterDto, meta);
+    await this.prisma.usuario.update({ where: { id: result.user.id }, data: { googleSub: payload.gsub } });
+    await this.audit?.record(this.prisma, { entidade: 'usuario', entidadeId: result.user.id, evento: 'auth.cadastro_google', atorId: result.user.id }).catch(() => undefined);
+    return result;
   }
 
   /** Conta as falhas e bloqueia a conta (padrão: 5 erros → 15 minutos). */

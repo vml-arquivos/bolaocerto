@@ -8,7 +8,7 @@ export function PoolExtraInfo({ unitPrice, ticket, fee, feePct, operation }: { u
     <div className="pool-extra-body">
       <ul>
         <li><strong>Valor da cota</strong> {money(unitPrice)}{ticket !== null && fee !== null && <> · {money(ticket)} para os jogos do bolão e {money(fee)} de taxa de serviço{feePct !== null ? ` (${String(feePct).replace('.', ',')}%)` : ''}.</>}</li>
-        <li><strong>Operação</strong> {operation === 'mandato' ? 'a aposta é registrada nos canais oficiais da CAIXA, por mandato dos cotistas. A BL organiza o bolão; não é lotérica nem a CAIXA.' : 'a aposta é registrada em lotérica parceira.'}</li>
+        <li><strong>Operação</strong> {operation === 'mandato' ? 'o jogo é registrado nos canais oficiais da CAIXA, em lotérica credenciada ou na própria CAIXA. A BL organiza o bolão; não é lotérica nem a CAIXA.' : 'o jogo é registrado em lotérica parceira credenciada pela CAIXA.'}</li>
         <li><strong>Sua participação</strong> fica vinculada à sua conta e ao comprovante da cota. Os números apostados aparecem antes da reserva.</li>
         <li><strong>Acompanhamento</strong> do status, do resultado e da premiação em <Link href="/minha-conta">Minhas cotas</Link>.</li>
       </ul>

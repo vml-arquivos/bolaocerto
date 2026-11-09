@@ -23,6 +23,8 @@ import { HomeModule } from './home/home.module';
 import { NumbersModule } from './numbers/numbers.module';
 import { LegalModule } from './legal/legal.module';
 import { FunnelModule } from './funnel/funnel.module';
+import { ConferidorModule } from './conferidor/conferidor.module';
+import { ModalityAlertsModule } from './alerts/modality-alerts.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -49,6 +51,8 @@ import { HealthController } from './health.controller';
     OperationModule,
     LegalModule,
     FunnelModule,
+    ConferidorModule,
+    ModalityAlertsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

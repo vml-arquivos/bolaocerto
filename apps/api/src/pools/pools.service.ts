@@ -2,6 +2,7 @@ import { hasSaleProof } from '../attachments/proof';
 import { StorageService } from '../attachments/storage.service';
 import { assessPoolDeletion } from './pool-deletion';
 import { approvedDocument } from '../legal/documents';
+import { notifyModalityWatchers } from '../alerts/modality-alerts';
 import { splitPoolByFee, splitPoolByQuota } from '../pricing/pricing.engine';
 import { PricingService } from '../pricing/pricing.service';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
@@ -268,7 +269,18 @@ export class PoolsService {
       return { ...result, aguardandoAprovacao: false };
     });
     if (updated.aguardandoAprovacao) return { id: updated.id, status: updated.status, aguardandoAprovacao: true };
+    // "Avise-me quando abrir bolão": só bolão oficial recém-publicado; qualquer falha aqui é ignorada.
+    void this.notifyNewPool(id, pool.concurso, user.id);
     return { id: updated.id, status: updated.status };
+  }
+
+  private async notifyNewPool(id: string, concurso: { modalidade: string; numeroConcurso: number }, actorId: string): Promise<void> {
+    try {
+      const row = await this.prisma.bolao.findUnique({ where: { id }, select: { valorCota: true, grupo: { select: { tipo: true } } } });
+      if (!row?.grupo) return;
+      const config = await this.prisma.configLoteria.findUnique({ where: { modalidade: concurso.modalidade }, select: { nomeExibicao: true } });
+      await notifyModalityWatchers(this.prisma, { id, modalidade: concurso.modalidade, nomeModalidade: config?.nomeExibicao ?? concurso.modalidade, numeroConcurso: concurso.numeroConcurso, valorCota: row.valorCota, grupoTipo: row.grupo.tipo, criadoPor: actorId });
+    } catch { /* aviso é extra: nunca atrapalha a publicação */ }
   }
 
   /** Libera manualmente as cotas de um bolão condicional (decisão do administrador). */

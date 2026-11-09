@@ -247,3 +247,10 @@
 /* Declaração de maioridade no cadastro simples */
 .field-check { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0 12px; font-size: 14px; line-height: 1.4; }
 .field-check input { width: 18px; height: 18px; margin-top: 2px; flex: none; }
+
+/* Entrar com Google */
+.google-login { margin-top: 16px; display: grid; gap: 12px; justify-items: center; }
+.google-login[hidden] { display: none; }
+.google-login-sep { width: 100%; display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: .8rem; }
+.google-login-sep::before, .google-login-sep::after { content: ''; flex: 1; border-top: 1px solid var(--border, rgba(127,127,127,.3)); }
+.google-login-button { min-height: 44px; }
