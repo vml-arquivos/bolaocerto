@@ -1,4 +1,5 @@
 'use client';
+import { WhatsappJoin } from './community-link';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { money } from '../lib/domain';
@@ -143,6 +144,7 @@ export function Checkout({ shareId, voltar }: { shareId: string; voltar?: string
       <span className="checkout-check" aria-hidden="true">✓</span>
       <strong>Pagamento confirmado!</strong>
       <p>Sua cota está garantida{payment.valorBruto ? ` · ${money(payment.valorBruto)}` : ''}. O comprovante do jogo chega para você depois do registro na lotérica.</p>
+      <WhatsappJoin />
       <div className="checkout-actions">
         <Link className="button button-primary" href={back}>Voltar ao bolão</Link>
         <Link className="button button-secondary" href="/minha-conta">Ver Minhas Cotas</Link>

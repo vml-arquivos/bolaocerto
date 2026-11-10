@@ -213,3 +213,9 @@
 .compare-table th, .compare-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border, rgba(127,127,127,.25)); vertical-align: top; }
 .modality-alerts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 16px; }
 .modality-alerts-grid .field-check { margin: 4px 0; align-items: center; }
+
+/* Entrada na comunidade e no grupo do WhatsApp */
+.whatsapp-join { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.whatsapp-join.is-footer { flex-direction: column; align-items: flex-start; margin: 10px 0 0; }
+.whatsapp-join.is-account { margin: 0 0 14px; }
+.checkout-card .whatsapp-join { justify-content: center; }

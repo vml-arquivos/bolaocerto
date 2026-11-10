@@ -1,5 +1,5 @@
 // Editar bolão no painel: o formulário precisa abrir exatamente com o que foi salvo
-// (concurso, datas e regras de venda, limite por pessoa, texto das regras, descrição e jogos).
+// (concurso, limite por pessoa, texto das regras, descrição e jogos; a janela de venda é automática).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -28,7 +28,7 @@ test('editar bolão abre com as informações salvas', async () => {
     const contest = await api('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: number, dataSorteio: future(20) });
     const numbers = [3, 12, 24, 36, 47, 58];
     const pool = await api('POST', '/admin/boloes', { concursoId: contest.id, grupoId: group.id, numerosApostados: numbers, jogos: [{ ordem: 1, numeros: numbers, quantidadeDezenas: 6, custo: 6 }], cotasIlimitadas: false, totalCotas: 10, valorCota: 20, taxaAdministracaoPct: 10, modeloOperacional: 'mandato' });
-    await api('PATCH', `/admin/boloes/${pool.id}`, { vendaInicioEm: `${future(5)}T12:00:00.000Z`, vendaFimEm: `${future(6)}T20:30:00.000Z`, maxCotasPorPessoa: 7, regrasVenda: 'Regra de teste salva' });
+    await api('PATCH', `/admin/boloes/${pool.id}`, { maxCotasPorPessoa: 7, regrasVenda: 'Regra de teste salva' });
 
     await page.goto(`${BASE}/admin?view=boloes`, { waitUntil: 'load', timeout: 90000 });
     const row = page.locator('tr', { hasText: `#${number}` }).first();
@@ -45,8 +45,7 @@ test('editar bolão abre com as informações salvas', async () => {
     assert.ok(selects.some((text) => text.includes(`#${number}`)), `o concurso salvo (#${number}) precisa vir selecionado; veio: ${selects.join(' | ')}`);
     const numbersFields = await page.locator('input[type=number]').evaluateAll((els) => els.map((e) => e.value));
     assert.ok(numbersFields.includes('7'), `limite por pessoa salvo (7); veio: ${numbersFields.join(', ')}`);
-    const dates = await page.locator('input[type=datetime-local]').evaluateAll((els) => els.map((e) => e.value));
-    assert.ok(dates.some((value) => value.startsWith(future(5)) || value.startsWith(future(6))), `datas de venda salvas precisam aparecer; vieram: ${dates.join(', ')}`);
+    assert.equal(await page.locator('input[type=datetime-local]').count(), 0, 'a janela de venda é automática: sem campos de data');
     const areas = await page.locator('textarea').evaluateAll((els) => els.map((e) => e.value));
     assert.ok(areas.some((value) => value.includes('Regra de teste salva')), 'texto das regras salvo precisa aparecer');
     assert.ok(areas.some((value) => numbers.every((n) => value.includes(String(n).padStart(2, '0')) || value.includes(String(n)))), 'os jogos salvos precisam aparecer');

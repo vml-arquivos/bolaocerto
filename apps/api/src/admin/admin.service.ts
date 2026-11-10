@@ -1,4 +1,5 @@
 import { assertTicketMatchesPool } from '../pools/ticket-match';
+import { effectiveSaleWindow } from '../pools/sales-rules';
 import { assertCanGrantRole, assertCanManage, isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
@@ -194,7 +195,7 @@ export class AdminService {
       ...(query.modalidade ? { concurso: { modalidade: query.modalidade } } : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
     ]);
     const interested = new Map<string, number>();
@@ -209,6 +210,8 @@ export class AdminService {
         taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
         cotas: undefined,
         _count: undefined,
+        origem: pool.tipoOrganizador === 'afiliado' ? 'afiliado' : 'equipe',
+        janelaVenda: effectiveSaleWindow(pool, pool.concurso.cutoffAt),
         registro: { arquivos: pool._count.anexos, registrado: Boolean(pool.registradoEm) || ['registrado', 'apurado'].includes(pool.status) },
         premioMinimoLiberacao: pool.premioMinimoLiberacao === null ? null : pool.premioMinimoLiberacao.toFixed(2),
         liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso.valorEstimadoPremio }),
@@ -565,7 +568,7 @@ export class AdminService {
 
   private toPublicPool(pool: any) {
     const games = Array.isArray(pool.jogos) ? pool.jogos.map((game: any) => ({ id: game.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: Number(game.custo ?? 0).toFixed(2), status: game.status, selecao: game.selecao ?? null })) : [];
-    return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.cotasIlimitadas ? null : pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, precificacao: pool.precificacao ?? null, aprovacao: pool.tipoOrganizador === 'afiliado' ? { solicitadaEm: pool.aprovacaoSolicitadaEm ?? null, aprovadoEm: pool.aprovadoEm ?? null } : null, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null, especial: pool.concurso.especial ?? null, nomeEspecial: pool.concurso.nomeEspecial ?? null, numeroDefinido: pool.concurso.numeroDefinido ?? true } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug, descricao: pool.grupo.descricao ?? null } : null, liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso?.valorEstimadoPremio }), regrasVenda: { antecipada: pool.vendaAntecipada === true, inicioEm: pool.vendaInicioEm ?? null, fimEm: pool.vendaFimEm ?? null, maxCotasPorPessoa: pool.maxCotasPorPessoa ?? null, texto: pool.regrasVenda ?? null } };
+    return { id: pool.id, concursoId: pool.concursoId, grupoId: pool.grupoId, totalCotas: pool.cotasIlimitadas ? null : pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, cotasVendidas: pool.cotasVendidas, cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0), valorCota: pool.valorCota?.toFixed?.(2) ?? String(pool.valorCota), taxaAdministracaoPct: pool.taxaAdministracaoPct?.toFixed?.(2) ?? String(pool.taxaAdministracaoPct), status: pool.status, tipoOrganizador: pool.tipoOrganizador, jogos: games, precificacao: pool.precificacao ?? null, aprovacao: pool.tipoOrganizador === 'afiliado' ? { solicitadaEm: pool.aprovacaoSolicitadaEm ?? null, aprovadoEm: pool.aprovadoEm ?? null } : null, concurso: pool.concurso ? { modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, dataSorteio: pool.concurso.dataSorteio, cutoffAt: pool.concurso.cutoffAt, valorEstimadoPremio: pool.concurso.valorEstimadoPremio?.toFixed?.(2) ?? null, especial: pool.concurso.especial ?? null, nomeEspecial: pool.concurso.nomeEspecial ?? null, numeroDefinido: pool.concurso.numeroDefinido ?? true } : null, grupo: pool.grupo ? { id: pool.grupo.id, nome: pool.grupo.nome, slug: pool.grupo.slug, descricao: pool.grupo.descricao ?? null } : null, liberacao: evaluateReleaseGate({ premioMinimoLiberacao: pool.premioMinimoLiberacao, liberadoEm: pool.liberadoEm, premioAtual: pool.concurso?.valorEstimadoPremio }), regrasVenda: { antecipada: pool.vendaAntecipada === true, inicioEm: pool.vendaInicioEm ?? null, fimEm: pool.vendaFimEm ?? null, maxCotasPorPessoa: pool.maxCotasPorPessoa ?? null, texto: pool.regrasVenda ?? null }, ofertaBl: pool.ofertaBlGrupoId ? { grupoId: pool.ofertaBlGrupoId, em: pool.ofertaBlEm ?? null } : null };
   }
 
   async listUsers(query: AdminListQueryDto, actor: AuthUser) {

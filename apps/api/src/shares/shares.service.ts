@@ -65,11 +65,14 @@ export class SharesService {
         }
       }
       // Comissão: o afiliado dono do grupo do bolão é o vendedor; senão vale o código de indicação. Nunca comissiona a própria compra.
-      const groupAffiliate = pool.grupo?.afiliado && pool.grupo.afiliado.statusAprovacao === 'aprovado' ? pool.grupo.afiliado : null;
-      const seller = groupAffiliate ?? affiliate;
+      // Bolão assumido pela BL (intervenção do administrador): as cotas que sobraram são da BL, sem comissão de afiliado, e a pessoa entra no grupo oficial escolhido.
+      const takenByBl = Boolean(pool.ofertaBlGrupoId);
+      const groupAffiliate = !takenByBl && pool.grupo?.afiliado && pool.grupo.afiliado.statusAprovacao === 'aprovado' ? pool.grupo.afiliado : null;
+      const seller = takenByBl ? null : groupAffiliate ?? affiliate;
       const referenceAffiliateId = seller && seller.usuarioId !== user.id ? seller.id : undefined;
       // Quem compra num bolão de afiliado (ou chegou pelo link dele) passa a fazer parte do grupo desse afiliado.
-      if (pool.grupo?.tipo === 'afiliado' && groupAffiliate && groupAffiliate.usuarioId !== user.id) await joinGroup(tx, pool.grupo.id, user.id);
+      if (takenByBl) await joinGroup(tx, pool.ofertaBlGrupoId as string, user.id);
+      else if (pool.grupo?.tipo === 'afiliado' && groupAffiliate && groupAffiliate.usuarioId !== user.id) await joinGroup(tx, pool.grupo.id, user.id);
       else if (affiliate && affiliate.usuarioId !== user.id) await joinAffiliateGroup(tx, affiliate.id, user.id);
       const share = await tx.cota.create({
         data: {

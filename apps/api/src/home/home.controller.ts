@@ -6,7 +6,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { AuthUser } from '../auth/auth.utils';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { SaveHomeDto } from './home.dto';
+import { SaveCommunityDto, SaveHomeDto } from './home.dto';
 import { HomeService } from './home.service';
 
 @Controller()
@@ -15,6 +15,12 @@ export class HomeController {
 
   @Get('home/config') @Header('Cache-Control', 'public, max-age=30')
   config() { return this.home.getConfig(); }
+
+  @Get('config/comunidade') @Header('Cache-Control', 'public, max-age=30')
+  community() { return this.home.getCommunity(); }
+
+  @Put('admin/comunidade') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
+  saveCommunity(@Body() dto: SaveCommunityDto, @CurrentUser() admin: AuthUser) { return this.home.saveCommunity(dto, admin.id); }
 
   @Get('resultados/ultimos') @Header('Cache-Control', 'public, max-age=60')
   latest(@Query('porModalidade') porModalidade?: string) { return this.home.latestResults(Number(porModalidade) || 5); }

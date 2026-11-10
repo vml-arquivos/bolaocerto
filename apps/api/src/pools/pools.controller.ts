@@ -18,6 +18,8 @@ class RejectPoolDto {
   motivo!: string;
 }
 
+class OfferToBlDto { @IsUUID() grupoId!: string; }
+
 @Controller()
 export class PoolsController {
   constructor(private readonly pools: PoolsService, private readonly pricing: PricingService) {}
@@ -128,6 +130,20 @@ export class PoolsController {
   @Roles('admin')
   release(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.pools.release(id, user);
+  }
+
+  @Post('admin/boloes/:id/oferta-bl')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  offerToBl(@Param('id') id: string, @Body() dto: OfferToBlDto, @CurrentUser() user: AuthUser) {
+    return this.pools.offerToBl(id, dto.grupoId, user);
+  }
+
+  @Delete('admin/boloes/:id/oferta-bl')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  withdrawBlOffer(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.pools.withdrawBlOffer(id, user);
   }
 
   @Post('afiliados/me/boloes/:id/fechar')

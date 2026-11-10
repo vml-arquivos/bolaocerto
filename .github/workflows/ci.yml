@@ -144,6 +144,10 @@ jobs:
           NODE_PATH=$(npm root -g) node --test e2e/checkout-browser.test.mjs
         env:
           E2E_BASE_URL: http://localhost:3000
+      - name: Bolões por origem, janela automática, intervenção da BL e WhatsApp
+        run: node --test e2e/boloes-origem.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
       - name: Editar bolão (formulário abre com os dados salvos)
         run: NODE_PATH=$(npm root -g) node --test e2e/edit-bolao.test.mjs
         env:

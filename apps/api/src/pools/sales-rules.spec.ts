@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { parseSalesRules, remainingForPerson, saleWindow, saleWindowMessage } from './sales-rules';
+import { effectiveSaleWindow, parseSalesRules, remainingForPerson, saleWindow, saleWindowMessage } from './sales-rules';
 
 const cutoff = new Date('2026-12-31T22:00:00-03:00');
 
@@ -46,5 +46,26 @@ describe('saleWindow', () => {
 describe('remainingForPerson', () => {
   it('calcula o que falta e nunca fica negativo', () => {
     expect(remainingForPerson(5, 2)).toBe(3); expect(remainingForPerson(5, 9)).toBe(0); expect(remainingForPerson(null, 3)).toBeNull(); expect(remainingForPerson(undefined, 3)).toBeNull();
+  });
+});
+
+describe('janela de venda automática', () => {
+  const cutoff = new Date('2026-12-01T22:00:00.000Z');
+  it('sem datas escolhidas, começa na criação e termina no prazo do concurso', () => {
+    const created = new Date('2026-11-10T22:00:00.000Z');
+    const window = effectiveSaleWindow({ criadoEm: created }, cutoff);
+    expect(window.inicioEm).toEqual(created);
+    expect(window.fimEm).toEqual(cutoff);
+    expect(window.automatico).toEqual({ inicio: true, fim: true });
+  });
+  it('bolão de afiliado conta o início a partir da aprovação', () => {
+    const approved = new Date('2026-11-11T10:00:00.000Z');
+    expect(effectiveSaleWindow({ criadoEm: new Date('2026-11-10T22:00:00.000Z'), aprovadoEm: approved }, cutoff).inicioEm).toEqual(approved);
+  });
+  it('datas antigas continuam valendo, mas nunca passam do prazo do concurso', () => {
+    const early = new Date('2026-11-20T12:00:00.000Z');
+    expect(effectiveSaleWindow({ vendaFimEm: early }, cutoff).fimEm).toEqual(early);
+    expect(effectiveSaleWindow({ vendaFimEm: new Date('2027-01-01T00:00:00.000Z') }, cutoff).fimEm).toEqual(cutoff);
+    expect(effectiveSaleWindow({ vendaFimEm: early }, cutoff).automatico.fim).toBe(false);
   });
 });

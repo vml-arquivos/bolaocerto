@@ -44,6 +44,17 @@ export function parseSalesRules(input: SalesRulesInput, ctx: { cutoffAt: Date; t
   return out;
 }
 
+/**
+ * Janela de venda automática: começa quando o bolão é criado/aprovado e termina no prazo de compra do concurso
+ * (o prazo já acompanha o dia e o horário do sorteio). Datas salvas antes continuam valendo, mas nunca passam do prazo.
+ */
+export function effectiveSaleWindow(pool: { vendaInicioEm?: Date | null; vendaFimEm?: Date | null; aprovadoEm?: Date | null; criadoEm?: Date | null }, cutoffAt?: Date | null) {
+  const inicioEm = pool.vendaInicioEm ?? pool.aprovadoEm ?? pool.criadoEm ?? null;
+  let fimEm = pool.vendaFimEm ?? cutoffAt ?? null;
+  if (fimEm && cutoffAt && fimEm.getTime() > cutoffAt.getTime()) fimEm = cutoffAt;
+  return { inicioEm, fimEm, automatico: { inicio: !pool.vendaInicioEm, fim: !pool.vendaFimEm } };
+}
+
 export type SaleWindow = 'em_breve' | 'aberta' | 'encerrada';
 
 export function saleWindow(pool: { vendaInicioEm?: Date | null; vendaFimEm?: Date | null }, now = new Date()): SaleWindow {

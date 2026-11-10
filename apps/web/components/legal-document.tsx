@@ -5,7 +5,7 @@ export function LegalDocument({ kind }: { kind: string }) {
   const [doc, setDoc] = useState<LegalDocumentData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void fetch(`/api/v1/config/contratos/${kind}`, { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Documento indisponível.'); setDoc(await response.json()); }).catch(e => setError(e.message)); }, [kind]);
-  return <>{error && <p role="alert">{error}</p>}{!doc && !error && <p>Carregando documento…</p>}{doc && <>{!doc.aprovado && <p className="notice">Minuta em revisão. Ainda não habilitada para contratação.</p>}<p>Versão {doc.versao}</p><div className="legal-text">{doc.texto}</div><details><summary>Identificador de integridade</summary><code>{doc.hash}</code></details><button className="button button-secondary" onClick={() => window.print()}>Imprimir / salvar PDF</button></>}</>;
+  return <>{error && <p role="alert">{error}</p>}{!doc && !error && <p>Carregando documento…</p>}{doc && <><div className="legal-text">{doc.texto}</div><button className="button button-secondary" onClick={() => window.print()}>Imprimir / salvar PDF</button></>}</>;
 }
 export function AffiliateContract() {
   const [doc, setDoc] = useState<LegalDocumentData | null>(null);

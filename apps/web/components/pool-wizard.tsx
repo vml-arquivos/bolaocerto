@@ -51,13 +51,6 @@ function salesRulesOf(pool: RecordValue | null | undefined) {
   return { antecipada: Boolean(pool?.vendaAntecipada), inicioEm: pool?.vendaInicioEm ?? null, fimEm: pool?.vendaFimEm ?? null, maxCotasPorPessoa: pool?.maxCotasPorPessoa ?? null, texto: typeof raw === 'string' ? raw : '' };
 }
 
-function toLocalInput(value: unknown) {
-  if (!value) return '';
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 /** Formas de informar a taxa em cada modo de preço (o afiliado tem menos opções, porque tem teto de taxa). */
 function allowedFeeModes(quotaMode: QuotaMode, role: 'admin' | 'affiliate'): FeeMode[] {
@@ -129,8 +122,6 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [festaPresets, setFestaPresets] = useState<Array<{ chave: string; nome: string; modalidade: string; proximoSorteio?: { data: string; hora: string; confirmado: boolean; fonte: string } | null }>>([]);
   const [presale, setPresale] = useState(false);
   const [numbersLater, setNumbersLater] = useState(false);
-  const [saleStart, setSaleStart] = useState('');
-  const [saleEnd, setSaleEnd] = useState('');
   const [maxPerPerson, setMaxPerPerson] = useState('');
   const [saleText, setSaleText] = useState('');
 
@@ -149,7 +140,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setDescription('');
       setConditional(false);
       setTrigger('100000000');
-      setPresale(false); setNumbersLater(false); setSaleStart(''); setSaleEnd(''); setMaxPerPerson(''); setSaleText(''); setNewDate(false);
+      setPresale(false); setNumbersLater(false); setMaxPerPerson(''); setSaleText(''); setNewDate(false);
       return;
     }
     const existingModality = String(editPool.concurso?.modalidade ?? editPool.modalidade ?? 'megasena');
@@ -170,8 +161,6 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setTrigger(savedTrigger ? String(Math.round(Number(savedTrigger))) : '100000000');
     const rules = salesRulesOf(editPool);
     setPresale(rules.antecipada);
-    setSaleStart(toLocalInput(rules.inicioEm));
-    setSaleEnd(toLocalInput(rules.fimEm));
     setMaxPerPerson(rules.maxCotasPorPessoa ? String(rules.maxCotasPorPessoa) : '');
     setSaleText(String(rules.texto ?? ''));
     const savedSelection = editPool.jogos?.[0]?.selecao;
@@ -351,7 +340,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setDescription('');
     setConditional(false);
     setTrigger('100000000');
-    setPresale(false); setSaleStart(''); setSaleEnd(''); setMaxPerPerson(''); setSaleText('');
+    setPresale(false); setMaxPerPerson(''); setSaleText('');
     setMessage('');
   }
 
@@ -391,14 +380,14 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     setSaving(true);
     try {
       const salesRules = {
-        vendaInicioEm: saleStart ? new Date(saleStart).toISOString() : null,
-        vendaFimEm: saleEnd ? new Date(saleEnd).toISOString() : null,
+        // A janela de venda é automática: abre quando o bolão é criado e fecha no prazo do concurso (dia e horário do sorteio).
+        vendaInicioEm: null,
+        vendaFimEm: null,
         maxCotasPorPessoa: maxPerPerson.trim() ? Number(maxPerPerson) : null,
         regrasVenda: saleText.trim() || null,
         ...(role === 'admin' && (presale || salesRulesOf(editPool).antecipada) ? { vendaAntecipada: presale } : {}),
       };
       if (salesRules.maxCotasPorPessoa !== null && (!Number.isInteger(salesRules.maxCotasPorPessoa) || salesRules.maxCotasPorPessoa < 1)) { setMessage('O limite por pessoa precisa ser um número inteiro de 1 em diante.'); setSaving(false); return; }
-      if (saleStart && saleEnd && new Date(saleStart) >= new Date(saleEnd)) { setMessage('O início da venda precisa ser antes do fim.'); setSaving(false); return; }
       const modeFields = modeUi && plan?.ok ? {
         ...(plan.modoPreco ? { modoPreco: plan.modoPreco, ...(plan.precoPct !== undefined ? { precoPct: plan.precoPct } : {}) } : {}),
         ...(numbersLater && plannedByTable ? { dezenasPrevistas: plannedSizeNumber, jogosPrevistos: plannedGamesNumber } : {}),
@@ -544,9 +533,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     <fieldset className="sales-rules">
       <legend>Regras de venda</legend>
       
-      <div className="admin-form-grid admin-form-grid-three">
-        <label className="admin-field"><span>Venda começa em</span><input type="datetime-local" value={saleStart} onChange={(event) => setSaleStart(event.target.value)} /></label>
-        <label className="admin-field"><span>Venda termina em</span><input type="datetime-local" value={saleEnd} onChange={(event) => setSaleEnd(event.target.value)} /></label>
+      <div className="admin-form-grid">
         <label className="admin-field"><span>Máximo de cotas por pessoa</span><input type="number" min="1" step="1" inputMode="numeric" value={maxPerPerson} onChange={(event) => setMaxPerPerson(event.target.value)} placeholder="Sem limite" /></label>
       </div>
       <label className="admin-field"><span>Regras para o cliente (aparecem no bolão)</span><textarea rows={3} maxLength={2000} value={saleText} onChange={(event) => setSaleText(event.target.value)} placeholder="Ex.: Cotas de R$ 10. O jogo é registrado após o encerramento das vendas e o comprovante é enviado a todos." /></label>

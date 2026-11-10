@@ -52,9 +52,30 @@ describe('Documentos publicados pelo painel', () => {
     expect(after.hash).toBe(createHash('sha256').update(after.texto, 'utf8').digest('hex'));
   });
 
-  it('sem publicação, a minuta provisória continua valendo (nada muda para quem já usa o sistema)', () => {
-    expect(documentSource('privacidade')).toBe('minuta');
-    expect(legalDocument('privacidade').versao).toBe(LEGAL_VERSION);
+  it('sem publicação, a minuta provisória continua valendo para os documentos que ainda não têm texto definitivo', () => {
+    expect(documentSource('participacao')).toBe('minuta');
+    expect(legalDocument('participacao').versao).toBe(LEGAL_VERSION);
+  });
+
+  it('termos de uso e política de privacidade oficiais vêm do arquivo, sem avisos de minuta nem de validação jurídica', () => {
+    expect(documentSource('termos')).toBe('arquivo');
+    expect(documentSource('privacidade')).toBe('arquivo');
+    const termos = legalDocument('termos').texto;
+    expect(termos.startsWith('TERMOS DE USO')).toBe(true);
+    expect(termos).toContain('SORTE TECH SERVIÇOS DIGITAIS LTDA');
+    expect(termos).not.toMatch(/BLINDAGEM|MINUTA PROVISÓRIA/i);
+    const privacidade = legalDocument('privacidade').texto;
+    expect(privacidade.startsWith('POLÍTICA DE PRIVACIDADE')).toBe(true);
+    expect(privacidade).toContain('18. LEI APLICÁVEL E FORO');
+    expect(privacidade).not.toMatch(/MINUTA PROVISÓRIA|Parte (superior|inferior) do formulário/i);
+  });
+
+  it('o e-mail do encarregado vem do contato configurado no servidor', () => {
+    const before = process.env.LEGAL_CONTACT_EMAIL;
+    process.env.LEGAL_CONTACT_EMAIL = 'privacidade@exemplo.com.br';
+    expect(legalDocument('privacidade').texto).toContain('E-mail: privacidade@exemplo.com.br');
+    expect(legalDocument('privacidade').texto).not.toContain('[email@empresa.com]');
+    if (before === undefined) delete process.env.LEGAL_CONTACT_EMAIL; else process.env.LEGAL_CONTACT_EMAIL = before;
   });
 
   it('o contrato de afiliado publicado pelo painel continua levando a comissão de cada afiliado', () => {

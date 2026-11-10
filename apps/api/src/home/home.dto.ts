@@ -32,3 +32,8 @@ export class SaveHomeDto {
   @IsArray() @ArrayMaxSize(MAX_DESTAQUES) @IsUUID('all', { each: true }) destaques!: string[];
   @ValidateNested() @Type(() => HomeSecoesDto) secoes!: HomeSecoesDto;
 }
+
+export class SaveCommunityDto {
+  @IsOptional() @IsString() @MaxLength(200) comunidade?: string;
+  @IsOptional() @IsString() @MaxLength(200) grupo?: string;
+}

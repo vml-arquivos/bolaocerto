@@ -67,7 +67,7 @@ describe('LegalPublishingService', () => {
     const { service, rows, audit } = make();
     await service.publish('termos', { texto: LONG }, actor);
     await service.revert('termos', actor);
-    expect(documentSource('termos')).toBe('minuta');
+    expect(documentSource('termos')).toBe('arquivo');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.ativo).toBe(false);
     expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ evento: 'documento.voltou_ao_padrao' }));

@@ -7,6 +7,19 @@ import { detectFileType } from '../attachments/file-type';
 import { HOME_CONFIG_KEY, HOME_IMAGE_PREFIX, HOME_IMAGE_URL, HomeConfig, MAX_IMAGE_BYTES, normalizeHomeConfig } from './home.config';
 import { randomBytes } from 'crypto';
 
+export const COMMUNITY_KEY = 'whatsapp.comunidade';
+export type CommunityLinks = { comunidade: string; grupo: string };
+/** Só aceita convites do WhatsApp (chat.whatsapp.com ou wa.me); qualquer outro endereço é descartado. */
+export function safeWhatsappLink(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'https:' && ['chat.whatsapp.com', 'wa.me', 'whatsapp.com', 'www.whatsapp.com'].includes(url.hostname) ? url.toString() : '';
+  } catch { return ''; }
+}
+
 @Injectable()
 export class HomeService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
@@ -15,6 +28,26 @@ export class HomeService {
   async getConfig(): Promise<HomeConfig> {
     const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: HOME_CONFIG_KEY } });
     return normalizeHomeConfig(row?.valor ?? null);
+  }
+
+  /** Links da comunidade e do grupo do WhatsApp (configurados no painel). */
+  async getCommunity(): Promise<CommunityLinks> {
+    const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: COMMUNITY_KEY } });
+    try {
+      const data = JSON.parse(row?.valor ?? '{}') as Partial<CommunityLinks>;
+      return { comunidade: safeWhatsappLink(data.comunidade), grupo: safeWhatsappLink(data.grupo) };
+    } catch { return { comunidade: '', grupo: '' }; }
+  }
+
+  async saveCommunity(input: { comunidade?: string; grupo?: string }, actorId: string): Promise<CommunityLinks> {
+    const comunidade = (input.comunidade ?? '').trim();
+    const grupo = (input.grupo ?? '').trim();
+    if (comunidade && !safeWhatsappLink(comunidade)) throw new BadRequestException('O link da comunidade precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
+    if (grupo && !safeWhatsappLink(grupo)) throw new BadRequestException('O link do grupo precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
+    const value: CommunityLinks = { comunidade: safeWhatsappLink(comunidade), grupo: safeWhatsappLink(grupo) };
+    await this.prisma.configuracaoSistema.upsert({ where: { chave: COMMUNITY_KEY }, create: { chave: COMMUNITY_KEY, valor: JSON.stringify(value) }, update: { valor: JSON.stringify(value) } });
+    await this.audit.record(this.prisma, { entidade: 'configuracao', entidadeId: actorId, evento: 'whatsapp.links_alterados', atorId: actorId, payloadDepois: value as unknown as Record<string, string> });
+    return value;
   }
 
   /** Tela do painel: configuração atual e os bolões abertos que podem ser destacados. */

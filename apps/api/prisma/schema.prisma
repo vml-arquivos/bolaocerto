@@ -316,6 +316,7 @@ model Grupo {
   afiliado      Afiliado?     @relation(fields: [afiliadoId], references: [id])
   criador       Usuario?      @relation("criador_grupo", fields: [criadoPor], references: [id])
   boloes        Bolao[]
+  boloesOfertados Bolao[]     @relation("oferta_bl_grupo")
   membros       GrupoMembro[]
   convites      Convite[]
 
@@ -360,9 +361,14 @@ model Bolao {
   aprovacaoSolicitadaEm DateTime?           @map("aprovacao_solicitada_em")
   aprovadoEm            DateTime?           @map("aprovado_em")
   aprovadoPor           String?             @map("aprovado_por") @db.Uuid
+  /// Intervenção da BL: as cotas que sobraram de um bolão de afiliado passam a ser vendidas num grupo oficial (sem comissão para o afiliado).
+  ofertaBlGrupoId       String?             @map("oferta_bl_grupo_id") @db.Uuid
+  ofertaBlEm            DateTime?           @map("oferta_bl_em")
+  ofertaBlPor           String?             @map("oferta_bl_por") @db.Uuid
   criadoEm              DateTime            @default(now()) @map("criado_em")
   concurso              Concurso            @relation(fields: [concursoId], references: [id])
   grupo                 Grupo               @relation(fields: [grupoId], references: [id])
+  ofertaBlGrupo         Grupo?              @relation("oferta_bl_grupo", fields: [ofertaBlGrupoId], references: [id], onDelete: SetNull)
   criador               Usuario            @relation("criador_bolao", fields: [criadoPor], references: [id])
   lotericaParceira      LotericaParceira?  @relation(fields: [lotericaParceiraId], references: [id])
   editor                Usuario?           @relation("editor_bolao", fields: [editadoPor], references: [id])
@@ -373,6 +379,7 @@ model Bolao {
 
   @@index([concursoId, status])
   @@index([criadoPor, status])
+  @@index([ofertaBlGrupoId])
   @@map("boloes")
 }
 
