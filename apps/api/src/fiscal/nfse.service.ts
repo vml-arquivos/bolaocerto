@@ -154,7 +154,7 @@ export class NfseService {
       missing,
       issuer: {
         cnpj,
-        inscricaoMunicipal: get('NFSE_MUNICIPAL_REGISTER'),
+        inscricaoMunicipal: get('NFSE_MUNICIPAL_REGISTER').replace(/[^0-9A-Za-z]/g, ''), // CF/DF: só números, sem pontos, barra, traço ou espaço
         codigoMunicipio: get('NFSE_IBGE', '5300108'),
         codigoTributacaoNacional: get('NFSE_TRIB_NACIONAL'),
         codigoTributacaoMunicipal: get('NFSE_TRIB_MUNICIPAL') || defaultMunicipalCode(get('NFSE_IBGE', '5300108'), get('NFSE_TRIB_NACIONAL')),
@@ -433,7 +433,7 @@ export class NfseService {
         xmlUrl: info.xml ?? note.xmlUrl,
         numero: info.number ?? note.numero,
         emitidaEm: info.status === 'emitida' ? (note.emitidaEm ?? new Date()) : note.emitidaEm,
-        erro: info.status === 'erro' ? 'O fisco rejeitou a emissão. Confira inscrição municipal, regime, código de serviço e o endereço do tomador.' : null,
+        erro: info.status === 'erro' ? 'O fisco rejeitou a emissão. Confira a inscrição (CF/DF), regime, código de serviço e o endereço do tomador.' : null,
       },
     });
     if (info.status === 'emitida' && note.status !== StatusNotaFiscal.emitida) await this.notifyIssued(note.pagamentoId);

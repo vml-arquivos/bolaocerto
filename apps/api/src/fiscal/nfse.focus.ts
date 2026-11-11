@@ -115,9 +115,13 @@ export function buildFocusBody(input: FocusEmitInput) {
   };
 }
 
-/** Brasília/DF (IBGE 5300108) exige o código de tributação municipal; sem ele, usa o item da lista de serviços (4 primeiros dígitos do código nacional), como no exemplo da Focus (100801 → 1008). */
+/**
+ * Brasília/DF (IBGE 5300108) exige o código de tributação municipal, que no padrão nacional tem EXATAMENTE 3 números (cTribMun).
+ * Sem NFSE_TRIB_MUNICIPAL, usa 001 (o primeiro código do serviço; 000 o fisco não aceita). Se o DF não tiver esse código para o
+ * serviço, a Focus devolve "código inexistente" e o valor certo vai em NFSE_TRIB_MUNICIPAL.
+ */
 export function defaultMunicipalCode(ibge: string, nacional: string): string | undefined {
-  return ibge === '5300108' && /^\d{6}$/.test(nacional) ? nacional.slice(0, 4) : undefined;
+  return ibge === '5300108' && /^\d{6}$/.test(nacional) ? '001' : undefined;
 }
 
 /** Item 19.01 da lista de serviços (venda de bilhetes e produtos de loteria): a tabela oficial de correlação liga ao NBS 1.0905.11.00. Só preenche sozinho para esse item; os demais exigem NFSE_NBS. */
@@ -138,9 +142,11 @@ export function defaultIbsCbs(nacional: string): { indicadorOperacao: string; ib
 export function explainFocusError(raw: string): string {
   const text = raw.toLowerCase();
   const hints: string[] = [];
-  if (text.includes('ctribmun')) hints.push('Falta o código de tributação municipal do serviço (NFSE_TRIB_MUNICIPAL).');
+  if (text.includes('ctribmun') && text.includes('pattern')) hints.push('O código de tributação municipal precisa ter exatamente 3 números (NFSE_TRIB_MUNICIPAL, ex.: 001).');
+  else if (text.includes('ctribmun')) hints.push('Falta o código de tributação municipal do serviço (NFSE_TRIB_MUNICIPAL, 3 números).');
+  if (/e0314|e0315|tributa[cç][aã]o municipal inexistente|c[oó]digo de tributa[cç][aã]o municipal/.test(text) && !text.includes('pattern')) hints.push('O DF não reconhece esse código de tributação municipal para o serviço. Veja o código certo na lista do Emissor Nacional (nota de teste, campo "código de tributação municipal") ou com o contador e coloque em NFSE_TRIB_MUNICIPAL (3 números, nunca 000).');
   if (text.includes('cindop') || text.includes('inddest') || text.includes('ibscbs')) hints.push('O fisco recusou o grupo da reforma tributária (IBS/CBS): ele precisa ir completo (indicador da operação, CST e classificação, além do NBS). Confira NFSE_TRIB_NACIONAL=190101 ou preencha NFSE_NBS, NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST e NFSE_IBS_CBS_CLASS.');
-  if (/inscri[cç][aã]o municipal/.test(text)) hints.push('Confira a inscrição municipal (NFSE_MUNICIPAL_REGISTER) e se ela está cadastrada na Focus.');
+  if (/inscri[cç][aã]o (municipal|do prestador)|cf\/df/.test(text)) hints.push('Confira a inscrição do prestador (no DF é o CF/DF, na variável NFSE_MUNICIPAL_REGISTER) e se é a mesma cadastrada na Focus.');
   if (text.includes('certificado')) hints.push('Confira o certificado digital A1 no painel da Focus (validade e senha).');
   return hints.join(' ');
 }
@@ -199,7 +205,7 @@ export class FocusNfseClient {
       // Os campos de PDF/XML mudam conforme o município; aceita os nomes usados pela Focus.
       pdf: text(data.url_danfse) ?? text(data.url) ?? text(data.caminho_pdf_nota_fiscal),
       xml: text(data.caminho_xml_nota_fiscal) ?? text(data.caminho_xml),
-      erro: status === 'erro' ? withHint(errorText(data, 'O fisco recusou a nota. Confira inscrição municipal, códigos de tributação e dados do tomador.')) : null,
+      erro: status === 'erro' ? withHint(errorText(data, 'O fisco recusou a nota. Confira a inscrição (CF/DF), os códigos de tributação e dados do tomador.')) : null,
     };
   }
 }

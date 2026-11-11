@@ -34,7 +34,7 @@ describe('buildFocusBody', () => {
   });
 
   it('Brasília usa os 4 primeiros dígitos do código nacional como código municipal', () => {
-    expect(defaultMunicipalCode('5300108', '100801')).toBe('1008');
+    expect(defaultMunicipalCode('5300108', '100801')).toBe('001');
     expect(defaultMunicipalCode('3550308', '100801')).toBeUndefined();
     expect(defaultMunicipalCode('5300108', '')).toBeUndefined();
   });
@@ -42,7 +42,8 @@ describe('buildFocusBody', () => {
   it('item 19.01 (loteria) preenche o NBS sozinho; outros itens não', () => {
     expect(defaultNbs('190101')).toBe('109051100');
     expect(defaultNbs('170901')).toBeUndefined();
-    expect(defaultMunicipalCode('5300108', '190101')).toBe('1901');
+    expect(defaultMunicipalCode('5300108', '190101')).toBe('001');
+    expect(defaultMunicipalCode('5300108', '190101')).toMatch(/^\d{3}$/);
   });
 
   it('item 19.01 manda o grupo IBS/CBS completo por padrão (100301 / 000 / 000001)', () => {
@@ -57,6 +58,14 @@ describe('buildFocusBody', () => {
     expect(explainFocusError(raw)).toMatch(/tributação municipal/);
     expect(explainFocusError(raw)).toMatch(/reforma tributária/);
     expect(explainFocusError('qualquer outra coisa')).toBe('');
+  });
+
+  it('explica o código municipal com formato errado e o código inexistente no DF', () => {
+    const formato = "Element 'cTribMun': [facet 'pattern'] The value '1901' is not accepted by the pattern '[0-9]{3}'.";
+    expect(explainFocusError(formato)).toMatch(/exatamente 3 números/);
+    expect(explainFocusError(formato)).not.toMatch(/não reconhece/);
+    const inexistente = 'E0314: Código de tributação municipal inexistente para o município de incidência.';
+    expect(explainFocusError(inexistente)).toMatch(/não reconhece esse código/);
   });
 
   it('inclui o endereço do tomador e os campos da reforma só quando existem', () => {
@@ -136,6 +145,12 @@ function setup(options: { values?: Record<string, string>; payment?: unknown; ca
 }
 
 describe('NfseService com a Focus NFe', () => {
+  it('inscrição com pontos, barra, traço e espaço vira só números (CF/DF)', async () => {
+    const { service, focus } = setup({ values: { NFSE_MUNICIPAL_REGISTER: '08.476.146/001 35' } });
+    await service.emitForPayment('p', admin);
+    expect((focus.emit as jest.Mock).mock.calls[0]![1].issuer.inscricaoMunicipal).toBe('0847614600135');
+  });
+
   it('emite só pela taxa de administração, para pagamento de qualquer origem e sem endereço', async () => {
     const { service, focus, prisma } = setup();
     const note = await service.emitForPayment('p', admin);
