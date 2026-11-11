@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreatePaymentDto {
   @IsIn(['pix', 'boleto', 'cartao', 'pix_automatico'], { message: 'Método de pagamento inválido.' })
@@ -61,4 +61,21 @@ export class CancelShareDto {
   @IsString()
   @MaxLength(300)
   motivo?: string;
+}
+
+export class RefundShareDto {
+  @IsIn(['carteira', 'pix'])
+  devolucao!: 'carteira' | 'pix';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  resposta?: string;
+}
+
+export class RejectCancellationDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  resposta!: string;
 }

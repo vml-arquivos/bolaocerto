@@ -11,6 +11,7 @@ import { PrismaService } from '../common/prisma.service';
 import { applyDiscount } from '../promotions/promo-math';
 import { grantCampaignCashback } from '../promotions/cashback';
 import { addEntry, grantReferralCashback, lockWallet, unwindWalletForPayment, walletBalance, WALLET_KINDS } from '../wallet/wallet';
+import { cancellationInfo } from './cancellation-rules';
 import { CancelShareDto, CreatePaymentDto, ManualPaymentDto, ManualSaleDto } from './payments.dto';
 import { buildCardProvider, buildPaymentProvider, ChargeMethod, ChargeStatus, CoraProvider, PaymentProvider } from './payment.provider';
 
@@ -54,6 +55,8 @@ export class PaymentsService {
   private readonly boletoDueDays: number;
   private readonly boletoMinHoursToCutoff: number;
 
+  private readonly cancelWindowDays: number;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -66,6 +69,7 @@ export class PaymentsService {
     const card = provider ? null : buildCardProvider(config);
     if (card) this.providers.set(card.name, card);
     this.reservationMinutes = Number(config.get<string>('SHARE_RESERVATION_MINUTES', '15')) || 15;
+    this.cancelWindowDays = Number(config.get<string>('CANCELAMENTO_PRAZO_DIAS', '7')) || 7;
     this.boletoDueDays = Number(config.get<string>('PAYMENT_BOLETO_DUE_DAYS', '2')) || 2;
     this.boletoMinHoursToCutoff = Number(config.get<string>('PAYMENT_BOLETO_MIN_HOURS_TO_CUTOFF', '96')) || 96;
   }
@@ -624,12 +628,23 @@ export class PaymentsService {
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (([StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status)) throw new ForbiddenException('Cotas já registradas na loteria não podem ser canceladas por aqui.');
     if (share.status === StatusCota.cancelada || share.status === StatusCota.estornada) throw new ConflictException('A cota já está cancelada.');
+    if (share.pagamento?.status === StatusPagamento.confirmado && share.pagamento.origem === 'gateway') throw new ConflictException('Esta cota está paga. Use "Estornar" para devolver o valor ao cliente (em saldo ou Pix).');
+    if (share.pagamento?.status === StatusPagamento.confirmado) return this.releasePayment(share.pagamento.id, StatusPagamento.estornado, admin.id);
+    return this.cancelUnpaid(share, admin.id, 'cota.cancelada_admin', dto.motivo);
+  }
+
+  /** Cancela uma reserva que ainda não foi paga: cancela a cobrança no banco, devolve a cota ao estoque e some com a comissão pendente. */
+  private async cancelUnpaid(share: Prisma.CotaGetPayload<{ include: { pagamento: true } }>, actorId: string, evento: string, motivo?: string) {
     const chargeProvider = this.providerByName(share.pagamento?.pspProvedor);
     if (share.pagamento?.pspTransactionId && share.pagamento.status === StatusPagamento.pendente && chargeProvider?.cancelCharge) {
       try { await chargeProvider.cancelCharge(share.pagamento.pspTransactionId); } catch (error) { this.logger.warn(`Cobrança não cancelada no provedor: ${(error as Error).message}`); }
     }
-    if (share.pagamento?.status === StatusPagamento.confirmado && share.pagamento.origem === 'gateway') throw new ConflictException('Solicite o estorno no provedor e aguarde a confirmação do webhook. Cancelamento local não devolve dinheiro.');
-    if (share.pagamento) return this.releasePayment(share.pagamento.id, share.pagamento.status === StatusPagamento.confirmado ? StatusPagamento.estornado : StatusPagamento.falhou, admin.id);
+    if (share.pagamento) {
+      await this.releasePayment(share.pagamento.id, StatusPagamento.falhou, actorId);
+      const after = await this.prisma.cota.findUnique({ where: { id: share.id }, select: { status: true } });
+      if (after?.status !== StatusCota.cancelada) throw new ConflictException('O pagamento foi confirmado agora há pouco, por isso a compra não foi cancelada. Atualize a página.');
+      return { cancelada: true };
+    }
     await this.prisma.$transaction(async (tx) => {
       await this.lockBolao(tx, share.bolaoId);
       const current = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true } });
@@ -637,9 +652,154 @@ export class PaymentsService {
       await tx.cota.update({ where: { id: share.id }, data: { status: StatusCota.cancelada } });
       await tx.bolao.update({ where: { id: share.bolaoId }, data: { cotasVendidas: { decrement: share.quantidade } } });
       await tx.comissao.updateMany({ where: { cotaId: share.id, status: StatusComissao.pendente }, data: { status: StatusComissao.cancelada } });
-      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.cancelada_admin', atorId: admin.id, payloadDepois: { motivo: dto.motivo } as unknown as Prisma.InputJsonValue });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento, atorId: actorId, payloadDepois: { motivo } as unknown as Prisma.InputJsonValue });
     });
     return { cancelada: true };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Cancelamento pelo cliente                                           */
+  /* ------------------------------------------------------------------ */
+
+  /** O cliente cancela a própria compra enquanto ela não foi paga. */
+  async cancelOwnShare(shareId: string, user: AuthUser, dto: CancelShareDto = {}) {
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { pagamento: true } });
+    if (!share || share.compradorId !== user.id) throw new NotFoundException('Cota não encontrada.');
+    if (share.status === StatusCota.cancelada || share.status === StatusCota.estornada) throw new ConflictException('Esta compra já está cancelada.');
+    if (share.status !== StatusCota.reservada || share.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Esta cota já foi paga. Use "Pedir cancelamento".');
+    return this.cancelUnpaid(share, user.id, 'cota.cancelada_cliente', dto.motivo);
+  }
+
+  /** Situação do direito de cancelar uma cota (para a tela do cliente e para validar o pedido). */
+  cancellationInfo(share: Parameters<typeof cancellationInfo>[0], now = new Date()) {
+    return cancellationInfo(share, this.cancelWindowDays, now);
+  }
+
+  /** O cliente pede o cancelamento de uma cota paga (direito de arrependimento). A devolução é decidida pelo administrador. */
+  async requestCancellation(shareId: string, user: AuthUser, dto: CancelShareDto = {}) {
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { pagamento: true, bolao: { include: { concurso: true } } } });
+    if (!share || share.compradorId !== user.id) throw new NotFoundException('Cota não encontrada.');
+    if (share.status === StatusCota.cancelada || share.status === StatusCota.estornada) throw new ConflictException('Esta compra já está cancelada.');
+    if (share.status === StatusCota.reservada) throw new ConflictException('Esta compra ainda não foi paga. Use "Cancelar compra".');
+    const info = this.cancellationInfo(share);
+    if (!info.pode) throw new ConflictException(info.motivoBloqueio ?? 'Esta cota não pode mais ser cancelada.');
+    if (share.pagamento?.status !== StatusPagamento.confirmado) throw new ConflictException('O pagamento desta cota ainda não foi confirmado.');
+    const valorCentavos = Math.round(Number(share.pagamento.valorBruto) * 100);
+    const motivo = dto.motivo?.trim() ? dto.motivo.trim().slice(0, 500) : null;
+    const created = await this.prisma.$transaction(async (tx) => {
+      const open = await tx.pedidoCancelamento.findFirst({ where: { cotaId: share.id, status: 'pendente' }, select: { id: true } });
+      if (open) throw new ConflictException('Já existe um pedido de cancelamento desta cota em análise.');
+      const row = await tx.pedidoCancelamento.create({ data: { cotaId: share.id, usuarioId: user.id, motivo, valorCentavos } });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.cancelamento_solicitado', atorId: user.id, payloadDepois: { pedidoId: row.id, motivo } as unknown as Prisma.InputJsonValue });
+      const admins = await tx.usuario.findMany({ where: { papel: 'admin', desativadoEm: null }, select: { id: true } });
+      const title = `${share.bolao.concurso.modalidade} ${share.bolao.concurso.numeroConcurso}`;
+      if (admins.length) await tx.notificacao.createMany({ data: admins.map((admin) => ({ usuarioId: admin.id, canal: 'push', tipo: 'cancelamento.pedido', payload: { titulo: 'Pedido de cancelamento de cota', mensagem: `${share.titularNome} pediu o cancelamento de ${share.quantidade} cota(s) do bolão ${title}.`, link: '/admin?view=cotas', cotaId: share.id } as Prisma.InputJsonValue })) });
+      return row;
+    });
+    return { id: created.id, status: created.status };
+  }
+
+  /** O cliente desiste do pedido enquanto ele está em análise. */
+  async withdrawCancellation(shareId: string, user: AuthUser) {
+    const row = await this.prisma.pedidoCancelamento.findFirst({ where: { cotaId: shareId, usuarioId: user.id, status: 'pendente' } });
+    if (!row) throw new NotFoundException('Não há pedido em análise para esta cota.');
+    const done = await this.prisma.pedidoCancelamento.updateMany({ where: { id: row.id, status: 'pendente' }, data: { status: 'retirado', resolvidoEm: new Date(), resolvidoPor: user.id } });
+    if (!done.count) throw new ConflictException('O pedido já foi respondido. Atualize a página.');
+    return { retirado: true };
+  }
+
+  /** Pedido mais recente de cada cota (para mostrar na tela do cliente). */
+  async latestCancellations(shareIds: string[]) {
+    if (!shareIds.length) return new Map<string, { id: string; status: string; devolucao: string | null; resposta: string | null; criadoEm: Date }>();
+    const rows = await this.prisma.pedidoCancelamento.findMany({ where: { cotaId: { in: shareIds } }, orderBy: { criadoEm: 'desc' }, select: { id: true, cotaId: true, status: true, devolucao: true, resposta: true, criadoEm: true } });
+    const out = new Map<string, { id: string; status: string; devolucao: string | null; resposta: string | null; criadoEm: Date }>();
+    for (const row of rows) if (!out.has(row.cotaId)) out.set(row.cotaId, row);
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Cancelamento: lado do administrador                                 */
+  /* ------------------------------------------------------------------ */
+
+  async listCancellationRequests(status: string | undefined) {
+    const where = status && ['pendente', 'aprovado', 'recusado', 'retirado'].includes(status) ? { status } : {};
+    const rows = await this.prisma.pedidoCancelamento.findMany({
+      where, orderBy: [{ status: 'asc' }, { criadoEm: 'desc' }], take: 100,
+      include: { usuario: { select: { nome: true, email: true } }, cota: { include: { pagamento: true, bolao: { include: { concurso: true } } } } },
+    });
+    return rows.map((row) => ({
+      id: row.id, status: row.status, motivo: row.motivo, valor: (row.valorCentavos / 100).toFixed(2), devolucao: row.devolucao, resposta: row.resposta, criadoEm: row.criadoEm, resolvidoEm: row.resolvidoEm,
+      cliente: row.usuario.nome, email: row.usuario.email,
+      cotaId: row.cotaId, cotaStatus: row.cota.status, quantidade: row.cota.quantidade,
+      bolao: { id: row.cota.bolaoId, status: row.cota.bolao.status, modalidade: row.cota.bolao.concurso.modalidade, numeroConcurso: row.cota.bolao.concurso.numeroConcurso },
+      pagamento: row.cota.pagamento ? { metodo: row.cota.pagamento.metodo, origem: row.cota.pagamento.origem, formaBaixa: row.cota.pagamento.formaBaixa, confirmadoEm: row.cota.pagamento.confirmadoEm } : null,
+    }));
+  }
+
+  async countOpenCancellations() {
+    return this.prisma.pedidoCancelamento.count({ where: { status: 'pendente' } });
+  }
+
+  async approveCancellation(requestId: string, dto: { devolucao: 'carteira' | 'pix'; resposta?: string }, admin: AuthUser) {
+    const row = await this.prisma.pedidoCancelamento.findUnique({ where: { id: requestId } });
+    if (!row) throw new NotFoundException('Pedido não encontrado.');
+    if (row.status !== 'pendente') throw new ConflictException('Este pedido já foi respondido.');
+    return this.refundPaidShare(row.cotaId, dto, admin, row.id);
+  }
+
+  async rejectCancellation(requestId: string, dto: { resposta: string }, admin: AuthUser) {
+    const row = await this.prisma.pedidoCancelamento.findUnique({ where: { id: requestId }, include: { cota: { include: { bolao: { include: { concurso: true } } } } } });
+    if (!row) throw new NotFoundException('Pedido não encontrado.');
+    const resposta = dto.resposta.trim().slice(0, 500);
+    await this.prisma.$transaction(async (tx) => {
+      const done = await tx.pedidoCancelamento.updateMany({ where: { id: row.id, status: 'pendente' }, data: { status: 'recusado', resposta, resolvidoEm: new Date(), resolvidoPor: admin.id } });
+      if (!done.count) throw new ConflictException('Este pedido já foi respondido.');
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: row.cotaId, evento: 'cota.cancelamento_recusado', atorId: admin.id, payloadDepois: { pedidoId: row.id, resposta } as unknown as Prisma.InputJsonValue });
+      await tx.notificacao.create({ data: { usuarioId: row.usuarioId, canal: 'push', tipo: 'cancelamento.recusado', payload: { titulo: 'Pedido de cancelamento recusado', mensagem: `Não foi possível cancelar sua cota. ${resposta}`, link: '/minha-conta', cotaId: row.cotaId } } });
+    });
+    return { recusado: true };
+  }
+
+  /** O administrador devolve o valor de uma cota paga (por conta própria, sem pedido do cliente). */
+  async refundShare(shareId: string, dto: { devolucao: 'carteira' | 'pix'; resposta?: string }, admin: AuthUser) {
+    return this.refundPaidShare(shareId, dto, admin, null);
+  }
+
+  /**
+   * Estorna uma cota paga e devolve o valor: em saldo na carteira do cliente ou em Pix (feito fora do sistema, pelo banco).
+   * Cota paga com o saldo do BL sempre volta para o saldo. Pode ser repetido se parar no meio (os passos são idempotentes).
+   */
+  private async refundPaidShare(shareId: string, dto: { devolucao: 'carteira' | 'pix'; resposta?: string }, admin: AuthUser, requestId: string | null) {
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { pagamento: { include: { notaFiscal: true } }, bolao: { include: { concurso: true } } } });
+    if (!share || !share.pagamento) throw new NotFoundException('Cota não encontrada.');
+    const payment = share.pagamento;
+    const resuming = share.status === StatusCota.estornada && payment.status === StatusPagamento.estornado && requestId !== null;
+    if (!resuming) {
+      if (([StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(share.status)) throw new ForbiddenException('A aposta desta cota já foi registrada na loteria e não pode ser estornada por aqui.');
+      if (share.status !== StatusCota.paga || payment.status !== StatusPagamento.confirmado) throw new ConflictException('Só dá para estornar cota paga. Para reserva sem pagamento, use Cancelar.');
+      const note = payment.notaFiscal;
+      if (note && !['cancelada', 'erro'].includes(note.status)) throw new ConflictException('Esta cota tem nota fiscal. Cancele a nota em Financeiro > Notas fiscais antes de estornar.');
+      await this.releasePayment(payment.id, StatusPagamento.estornado, admin.id);
+    }
+    const cents = Math.round(Number(payment.valorBruto) * 100);
+    const viaWallet = payment.formaBaixa === 'saldo_bl' || dto.devolucao === 'carteira';
+    const how = viaWallet ? 'carteira' : 'pix';
+    const reply = dto.resposta?.trim() ? dto.resposta.trim().slice(0, 500) : null;
+    const title = `${share.bolao.concurso.modalidade} ${share.bolao.concurso.numeroConcurso}`;
+    await this.prisma.$transaction(async (tx) => {
+      // Pago com o saldo do BL: o estorno acima já devolveu ao saldo. Nos demais casos em carteira, credita aqui (uma vez só).
+      if (how === 'carteira' && payment.formaBaixa !== 'saldo_bl' && cents > 0) {
+        await lockWallet(tx, share.compradorId);
+        await addEntry(tx, { usuarioId: share.compradorId, tipo: WALLET_KINDS.refundCredit, valorCentavos: cents, descricao: 'Cancelamento da cota: o valor voltou para a sua carteira', chave: `reembolso_cota:${payment.id}`, criadoPor: admin.id });
+      }
+      if (requestId) await tx.pedidoCancelamento.updateMany({ where: { id: requestId, status: 'pendente' }, data: { status: 'aprovado', devolucao: how, resposta: reply, resolvidoEm: new Date(), resolvidoPor: admin.id } });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.estornada_devolucao', atorId: admin.id, payloadDepois: { pedidoId: requestId, devolucao: how, valorCentavos: cents, resposta: reply } as unknown as Prisma.InputJsonValue });
+      const message = how === 'carteira'
+        ? `Sua cota do bolão ${title} foi cancelada e o valor de ${(cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} voltou para a sua carteira. Você pode usar o saldo em novas cotas.`
+        : `Sua cota do bolão ${title} foi cancelada. O valor de ${(cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} será devolvido por Pix.`;
+      await tx.notificacao.create({ data: { usuarioId: share.compradorId, canal: 'push', tipo: 'cancelamento.aprovado', payload: { titulo: 'Cancelamento aprovado', mensagem: reply ? `${message} ${reply}` : message, link: '/minha-conta', cotaId: share.id } } });
+    });
+    return { estornada: true, devolucao: how };
   }
 
   /* ------------------------------------------------------------------ */

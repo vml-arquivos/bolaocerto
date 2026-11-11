@@ -4,7 +4,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { SuperAdminGuard } from '../auth/superadmin.guard';
-import { CancelShareDto, ManualPaymentDto, ManualSaleDto } from './payments.dto';
+import { CancelShareDto, ManualPaymentDto, ManualSaleDto, RefundShareDto, RejectCancellationDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
 
 /** Operação financeira do administrador: baixa manual, venda de balcão, cancelamento e Cora. */
@@ -42,6 +42,29 @@ export class PaymentsAdminController {
   @Post('cotas/:id/cancelar')
   cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelShareDto, @CurrentUser() admin: AuthUser) {
     return this.payments.cancelShare(id, dto, admin);
+  }
+
+  /** Pedidos de cancelamento de cota paga feitos pelos clientes. */
+  @Get('pedidos-cancelamento')
+  async cancellationRequests(@Query('status') status?: string) {
+    const [items, abertos] = await Promise.all([this.payments.listCancellationRequests(status), this.payments.countOpenCancellations()]);
+    return { items, abertos };
+  }
+
+  @Post('pedidos-cancelamento/:id/aprovar')
+  approveCancellation(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RefundShareDto, @CurrentUser() admin: AuthUser) {
+    return this.payments.approveCancellation(id, dto, admin);
+  }
+
+  @Post('pedidos-cancelamento/:id/recusar')
+  rejectCancellation(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectCancellationDto, @CurrentUser() admin: AuthUser) {
+    return this.payments.rejectCancellation(id, dto, admin);
+  }
+
+  /** Estorna uma cota paga e devolve o valor (saldo ou Pix), sem pedido do cliente. */
+  @Post('cotas/:id/estornar')
+  refund(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RefundShareDto, @CurrentUser() admin: AuthUser) {
+    return this.payments.refundShare(id, dto, admin);
   }
 
   /** Apaga o registro de compra que falhou, venceu ou foi cancelada (não era venda). */

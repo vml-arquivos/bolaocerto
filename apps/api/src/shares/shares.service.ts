@@ -1,3 +1,4 @@
+import { cancellationInfo } from '../payments/cancellation-rules';
 import { hasSaleProof } from '../attachments/proof';
 import { approvedDocument } from '../legal/documents';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
@@ -123,8 +124,12 @@ export class SharesService {
       orderBy: { criadoEm: 'desc' },
       include: { pagamento: { include: { notaFiscal: true } }, bolao: { include: { concurso: true, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
     });
+    const requests = await this.prisma.pedidoCancelamento.findMany({ where: { cotaId: { in: shares.map((share) => share.id) } }, orderBy: { criadoEm: 'desc' }, select: { cotaId: true, status: true, devolucao: true, resposta: true, criadoEm: true } });
+    const latest = new Map<string, (typeof requests)[number]>();
+    for (const row of requests) if (!latest.has(row.cotaId)) latest.set(row.cotaId, row);
     return shares.map((share) => ({
       ...this.toPrivate(share, true),
+      cancelamento: { ...cancellationInfo(share), pedido: latest.get(share.id) ?? null },
       origemVenda: share.origemVenda,
       criadoEm: share.criadoEm,
       valorTotal: share.pagamento ? share.pagamento.valorBruto.toFixed(2) : (Number(share.bolao.valorCota) * share.quantidade).toFixed(2),

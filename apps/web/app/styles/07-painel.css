@@ -220,3 +220,17 @@ tr.is-selected td { background: rgba(37, 99, 235, .08); }
 .integration-copy span { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 .integration-copy code { flex: 1 1 260px; word-break: break-all; font-size: 13.5px; }
 .integration-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; line-height: 1.5; }
+
+/* Pedidos de cancelamento e devolução */
+.cancel-requests { display: grid; gap: 12px; }
+.cancel-request { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.cancel-request header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.cancel-request header div { display: grid; gap: 2px; }
+.cancel-request header small, .cancel-request-meta { color: var(--text-muted); font-size: 12.5px; }
+.cancel-request-meta, .cancel-request-reason { margin: 0; }
+.cancel-request-reason { font-style: italic; }
+.cancel-request-form { display: grid; gap: 8px; }
+.refund-choice { display: grid; gap: 8px; }
+.refund-choice label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.refund-choice label span { display: grid; gap: 1px; }
+.refund-choice small { color: var(--text-muted); font-size: 12px; }

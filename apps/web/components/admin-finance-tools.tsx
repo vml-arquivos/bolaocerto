@@ -191,21 +191,32 @@ export function ReportsView() {
 
 const FORMS: Array<[string, string]> = [['pix_direto', 'Pix direto'], ['dinheiro', 'Dinheiro'], ['transferencia', 'Transferência'], ['cartao_maquininha', 'Cartão (maquininha)'], ['outro', 'Outro']];
 
+/** Como devolver o dinheiro: em saldo na carteira do BL (na hora) ou em Pix (você devolve pelo banco). */
+export function RefundChoice({ value, onChange }: { value: 'carteira' | 'pix'; onChange: (next: 'carteira' | 'pix') => void }) {
+  return <div className="refund-choice" role="radiogroup" aria-label="Como devolver o valor">
+    <label><input type="radio" name="refund-to" checked={value === 'carteira'} onChange={() => onChange('carteira')} /><span><strong>Saldo na carteira</strong><small>Cai na hora na carteira do cliente.</small></span></label>
+    <label><input type="radio" name="refund-to" checked={value === 'pix'} onChange={() => onChange('pix')} /><span><strong>Pix</strong><small>Você devolve pelo app do banco; aqui só fica o registro.</small></span></label>
+  </div>;
+}
+
 export function ShareActions({ item, onDone, notify }: { item: Rec; onDone: () => Promise<void> | void; notify: (type: 'success' | 'error', text: string) => void }) {
-  const [mode, setMode] = useState<'' | 'baixa' | 'cancelar'>('');
+  const [mode, setMode] = useState<'' | 'baixa' | 'cancelar' | 'estornar'>('');
   const [forma, setForma] = useState('pix_direto');
+  const [refundTo, setRefundTo] = useState<'carteira' | 'pix'>('carteira');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const canPay = ['reservada', 'cancelada'].includes(String(item.status)) && item.pagamento?.status !== 'confirmado';
-  const canCancel = ['reservada', 'paga'].includes(String(item.status));
-  if (!canPay && !canCancel) return <span className="muted">—</span>;
+  const canCancel = String(item.status) === 'reservada' || (String(item.status) === 'paga' && item.pagamento?.origem !== 'gateway');
+  const canRefund = String(item.status) === 'paga' && item.pagamento?.status === 'confirmado';
+  if (!canPay && !canCancel && !canRefund) return <span className="muted">—</span>;
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true);
     try {
       if (mode === 'baixa') await api(`/api/v1/admin/cotas/${item.id}/baixa`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ forma, observacao: text || undefined }) });
+      else if (mode === 'estornar') await api(`/api/v1/admin/cotas/${item.id}/estornar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ devolucao: refundTo, resposta: text || undefined }) });
       else await api(`/api/v1/admin/cotas/${item.id}/cancelar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ motivo: text || undefined }) });
-      notify('success', mode === 'baixa' ? 'Pagamento registrado e cota confirmada.' : 'Cota cancelada.');
+      notify('success', mode === 'baixa' ? 'Pagamento registrado e cota confirmada.' : mode === 'estornar' ? (refundTo === 'carteira' ? 'Cota estornada e valor devolvido na carteira do cliente.' : 'Cota estornada. Lembre de devolver o Pix ao cliente pelo banco.') : 'Cota cancelada.');
       setMode(''); setText(''); await onDone();
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível concluir.'); }
     finally { setBusy(false); }
@@ -214,11 +225,13 @@ export function ShareActions({ item, onDone, notify }: { item: Rec; onDone: () =
   if (!mode) return <div className="admin-row-actions">
     {canPay && <button className="admin-button admin-button-small admin-button-primary" onClick={() => setMode('baixa')}>Dar baixa</button>}
     {canCancel && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setMode('cancelar')}>Cancelar</button>}
+    {canRefund && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setMode('estornar')}>Estornar</button>}
   </div>;
   return <form onSubmit={submit} className="admin-inline-form" style={{ display: 'grid', gap: 6, minWidth: 220 }}>
     {mode === 'baixa' && <select aria-label="Forma de pagamento" value={forma} onChange={(event) => setForma(event.target.value)}>{FORMS.map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select>}
-    <input aria-label="Observação" placeholder={mode === 'baixa' ? 'Observação (opcional)' : 'Motivo (opcional)'} value={text} maxLength={300} onChange={(event) => setText(event.target.value)} />
-    <div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={busy}>{busy ? 'Salvando…' : mode === 'baixa' ? 'Confirmar recebimento' : 'Confirmar cancelamento'}</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setMode('')}>Voltar</button></div>
+    {mode === 'estornar' && <RefundChoice value={refundTo} onChange={setRefundTo} />}
+    <input aria-label="Observação" placeholder={mode === 'baixa' ? 'Observação (opcional)' : mode === 'estornar' ? 'Mensagem ao cliente (opcional)' : 'Motivo (opcional)'} value={text} maxLength={300} onChange={(event) => setText(event.target.value)} />
+    <div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={busy}>{busy ? 'Salvando…' : mode === 'baixa' ? 'Confirmar recebimento' : mode === 'estornar' ? 'Confirmar estorno' : 'Confirmar cancelamento'}</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setMode('')}>Voltar</button></div>
   </form>;
 }
 

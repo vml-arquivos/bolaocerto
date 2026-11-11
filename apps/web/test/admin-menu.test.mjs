@@ -61,3 +61,14 @@ test('telas de Integrações carregam sozinhas (não pedem lista à API)', () =>
   const line = dash.split('\n').find((row) => row.startsWith('const selfLoadingViews')) ?? '';
   for (const key of ['integ-nfse', 'integ-pagamentos', 'integ-caixa']) assert.ok(line.includes(`'${key}'`), `${key} deve carregar sozinha`);
 });
+
+test('cliente tem como cancelar: reserva, pedido em cota paga e checkout; o administrador responde nas Cotas', () => {
+  const account = readFileSync(new URL('../components/account-dashboard.tsx', import.meta.url), 'utf8');
+  for (const text of ['Cancelar compra', 'Pedir cancelamento', 'Retirar pedido', '/pedido-cancelamento', '/cancelar`']) assert.ok(account.includes(text), `Minha conta precisa de "${text}"`);
+  const checkout = readFileSync(new URL('../components/checkout.tsx', import.meta.url), 'utf8');
+  assert.ok(checkout.includes('Cancelar esta compra') && checkout.includes('/cancelar`'));
+  const shares = readFileSync(new URL('../components/admin-views/shares-view.tsx', import.meta.url), 'utf8');
+  assert.ok(shares.includes('CancellationRequests'), 'pedidos aparecem em Cotas');
+  const finance = readFileSync(new URL('../components/admin-finance-tools.tsx', import.meta.url), 'utf8');
+  assert.ok(finance.includes('/estornar') && finance.includes('RefundChoice'), 'administrador estorna cota paga');
+});

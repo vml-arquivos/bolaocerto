@@ -75,6 +75,25 @@ function WalletPay({ shareId, valorBruto, onPaid }: { shareId: string; valorBrut
 }
 
 /** Página de pagamento: QR Code e código do Pix, boleto ou cartão, confirmação automática e volta ao bolão. */
+/** Cancela a compra de verdade: a cobrança é cancelada e a cota volta para o bolão. */
+function CancelPurchase({ shareId, back }: { shareId: string; back: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function cancel() {
+    if (!window.confirm('Cancelar esta compra? Nada será cobrado e a cota volta para o bolão.')) return;
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/v1/cotas/${shareId}/cancelar`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: '{}' });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body?.message || 'Não foi possível cancelar a compra.'); }
+      window.location.href = back;
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Não foi possível cancelar a compra.'); setBusy(false); }
+  }
+  return <>
+    <button type="button" className="button button-danger checkout-cancel" disabled={busy} onClick={() => void cancel()}>{busy ? 'Cancelando…' : 'Cancelar esta compra'}</button>
+    {error && <p className="form-message form-error" role="alert">{error}</p>}
+  </>;
+}
+
 export function Checkout({ shareId, voltar }: { shareId: string; voltar?: string }) {
   const [payment, setPayment] = useState<Payment | null>(null);
   const [error, setError] = useState('');
@@ -197,7 +216,8 @@ export function Checkout({ shareId, voltar }: { shareId: string; voltar?: string
           ? <ol className="checkout-steps"><li>Toque em <b>Pagar no cartão</b>.</li><li>Informe os dados do cartão na página do Mercado Pago.</li><li>Pronto: você volta para esta tela e a cota é confirmada.</li></ol>
           : <ol className="checkout-steps"><li>Abra o app do seu banco e vá em <b>Pix</b>.</li><li>Escolha <b>Ler QR Code</b> ou <b>Pix Copia e Cola</b>.</li><li>Confira o valor e confirme. A cota é garantida na hora.</li></ol>}
         <p className="checkout-safe">Ambiente seguro. Pagamentos confirmados automaticamente.</p>
-        <Link className="checkout-link" href={back}>Cancelar e voltar ao bolão</Link>
+        <Link className="checkout-link" href={back}>Voltar ao bolão (a reserva continua)</Link>
+        <CancelPurchase shareId={shareId} back={back} />
       </aside>
     </div>}
   </div>;

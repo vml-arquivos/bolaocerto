@@ -167,6 +167,7 @@ model Usuario {
   boloesEnviados        BolaoAfiliado[]  @relation("bolao_afiliado_enviado_por")
   cuponsCriados         Cupom[]          @relation("cupom_criador")
   cuponsUsados          CupomUso[]       @relation("cupom_uso_usuario")
+  pedidosCancelamento   PedidoCancelamento[] @relation("pedido_cancelamento_usuario")
   campanhasCashback     CashbackCampanha[] @relation("campanha_criador")
   gruposMembro          GrupoMembro[]
 
@@ -436,11 +437,36 @@ model Cota {
   comissao              Comissao?
   anexos                Anexo[]
   cupomUso              CupomUso?
+  pedidosCancelamento   PedidoCancelamento[]
 
   @@index([bolaoId, status])
   @@index([compradorId, status])
   @@index([criadoEm])
   @@map("cotas")
+}
+
+/// Pedido do cliente para cancelar uma cota já paga (direito de arrependimento, Código de Defesa do Consumidor art. 49).
+model PedidoCancelamento {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cotaId        String    @map("cota_id") @db.Uuid
+  usuarioId     String    @map("usuario_id") @db.Uuid
+  motivo        String?   @db.VarChar(500)
+  /// pendente | aprovado | recusado | retirado
+  status        String    @default("pendente") @db.VarChar(20)
+  valorCentavos Int       @map("valor_centavos")
+  /// carteira (saldo no BL) | pix (devolvido fora do sistema) — preenchido ao aprovar
+  devolucao     String?   @db.VarChar(20)
+  resposta      String?   @db.VarChar(500)
+  resolvidoEm   DateTime? @map("resolvido_em")
+  resolvidoPor  String?   @map("resolvido_por") @db.Uuid
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+  cota          Cota      @relation(fields: [cotaId], references: [id], onDelete: Cascade)
+  usuario       Usuario   @relation("pedido_cancelamento_usuario", fields: [usuarioId], references: [id])
+
+  @@index([status, criadoEm])
+  @@index([cotaId])
+  @@index([usuarioId])
+  @@map("pedidos_cancelamento")
 }
 
 model Mandato {

@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CreatePaymentDto } from './payments.dto';
+import { CancelShareDto, CreatePaymentDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
 
 @Controller()
@@ -22,6 +22,27 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   payWithBalance(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.payments.payWithBalance(id, user);
+  }
+
+  /** O cliente cancela a própria compra que ainda não foi paga. */
+  @Post('cotas/:id/cancelar')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  cancelOwn(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelShareDto, @CurrentUser() user: AuthUser) {
+    return this.payments.cancelOwnShare(id, user, dto);
+  }
+
+  /** O cliente pede o cancelamento de uma cota já paga (prazo de arrependimento). */
+  @Post('cotas/:id/pedido-cancelamento')
+  @UseGuards(JwtAuthGuard)
+  requestCancellation(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelShareDto, @CurrentUser() user: AuthUser) {
+    return this.payments.requestCancellation(id, user, dto);
+  }
+
+  @Delete('cotas/:id/pedido-cancelamento')
+  @UseGuards(JwtAuthGuard)
+  withdrawCancellation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.withdrawCancellation(id, user);
   }
 
   @Get('cotas/:id/pagamento')

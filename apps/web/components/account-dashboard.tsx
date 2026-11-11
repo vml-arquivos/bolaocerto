@@ -20,6 +20,7 @@ type Share = {
   comprovanteIndividualUrl: string | null; valorPremio?: string | null; faixaPremio?: string | null; expiraReservaEm?: string | null; criadoEm?: string; origemVenda?: string;
   bolao?: { id: string; status: string; grupo: string; valorCota: string; modalidade: string; numeroConcurso: number; dataSorteio: string; teveGanhador: boolean; jogos: Array<{ ordem: number; numeros: number[] }> };
   pagamento?: (PaymentView & { id: string; notaFiscal?: { status: string; numero: string | null; pdfUrl: string | null } | null }) | null;
+  cancelamento?: { tipo: 'reserva' | 'pedido' | 'nenhum'; pode: boolean; ate: string | null; motivoBloqueio: string | null; pedido: { status: string; devolucao: string | null; resposta: string | null; criadoEm: string } | null };
 };
 type Perfil = { telefone: string | null; chavePix: string | null };
 type Address = { cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; completo: boolean; nfseAtiva: boolean };
@@ -33,20 +34,61 @@ const TONE: Record<string, string> = { reservada: 'warn', paga: 'ok', registrada
 
 function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
   const [showPayment, setShowPayment] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const expired = share.status === 'reservada' && share.expiraReservaEm ? new Date(share.expiraReservaEm) < new Date() : false;
   const pending = share.status === 'reservada' && !expired && share.pagamento && share.pagamento.status === 'pendente';
   const title = share.bolao ? `${modalityNames[share.bolao.modalidade] ?? share.bolao.modalidade} · concurso ${concursoNo(share.bolao.numeroConcurso)}` : `Bolão ${share.bolaoId.slice(0, 8)}`;
   const label = expired ? 'Reserva expirada' : STATUS_TEXT[share.status] ?? share.status;
+  const cancel = share.cancelamento;
+  const request = cancel?.pedido ?? null;
+  async function call(path: string, options: RequestInit, success: string) {
+    setBusy(true); setMessage(null);
+    try {
+      const response = await authenticatedFetch(path, options);
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(Array.isArray(body?.message) ? body.message.join(' ') : body?.message || 'Não foi possível concluir. Tente de novo.'); }
+      setMessage({ ok: true, text: success }); setAsking(false); setReason(''); onPaid();
+    } catch (failure) { setMessage({ ok: false, text: failure instanceof Error ? failure.message : 'Não foi possível concluir.' }); }
+    finally { setBusy(false); }
+  }
+  function cancelReservation() {
+    if (!window.confirm('Cancelar esta compra? Nada será cobrado e a cota volta para o bolão.')) return;
+    void call(`/api/v1/cotas/${share.id}/cancelar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, 'Compra cancelada.');
+  }
+  function requestCancellation() {
+    void call(`/api/v1/cotas/${share.id}/pedido-cancelamento`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ motivo: reason.trim() || undefined }) }, 'Pedido enviado. Você recebe a resposta aqui e por e-mail.');
+  }
+  function withdrawRequest() {
+    void call(`/api/v1/cotas/${share.id}/pedido-cancelamento`, { method: 'DELETE' }, 'Pedido retirado.');
+  }
+  const canCancelReservation = share.status === 'reservada' && !expired && cancel?.tipo === 'reserva' && cancel.pode;
+  const canAsk = share.status === 'paga' && cancel?.tipo === 'pedido' && cancel.pode && (!request || request.status !== 'pendente');
+  const waiting = share.status === 'paga' && request?.status === 'pendente';
   return <article className="cota-card">
     <header><div><strong>{title}</strong><small>{share.bolao ? `Sorteio ${shortDate(share.bolao.dataSorteio)} · ${share.bolao.grupo}` : ''}</small></div><span className={`cota-status is-${expired ? 'muted' : TONE[share.status] ?? 'muted'}`}>{label}</span></header>
     <div className="cota-meta"><span>{share.quantidade} {share.quantidade === 1 ? 'cota' : 'cotas'}</span><strong>{money(share.valorPago ?? share.valorTotal)}</strong></div>
     {share.status === 'premiada' && <div className="form-message form-success">Cota premiada{share.faixaPremio ? ` (${share.faixaPremio})` : ''}: {money(share.valorPremio)}. Resgate com o comprovante individual vinculado ao seu CPF.</div>}
     <div className="cota-actions">
       {pending && share.pagamento && <button type="button" className="button button-primary" onClick={() => setShowPayment((value) => !value)}>{showPayment ? 'Ocultar pagamento' : share.pagamento.metodo === 'boleto' ? 'Ver boleto / Pix' : 'Pagar com Pix'}</button>}
+      {share.status === 'reservada' && !expired && !share.pagamento && <Link className="button button-primary" href={`/boloes/${share.bolaoId}`}>Pagar agora</Link>}
       <Link className="button button-secondary" href={`/boloes/${share.bolaoId}`}>Ver bolão</Link>
+      {canCancelReservation && <button type="button" className="button button-danger" disabled={busy} onClick={cancelReservation}>{busy ? 'Cancelando…' : 'Cancelar compra'}</button>}
+      {canAsk && <button type="button" className="button button-ghost" disabled={busy} onClick={() => setAsking((value) => !value)}>{asking ? 'Fechar' : 'Pedir cancelamento'}</button>}
       {share.comprovanteIndividualUrl && <a className="button button-secondary" href={share.comprovanteIndividualUrl} target="_blank" rel="noreferrer">Comprovante</a>}
       {share.pagamento?.notaFiscal?.status === 'emitida' && share.pagamento.notaFiscal.pdfUrl && <a className="button button-secondary" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar nota fiscal</a>}
     </div>
+    {asking && canAsk && <form className="cota-cancel" onSubmit={(event) => { event.preventDefault(); requestCancellation(); }}>
+      <p>Você pode pedir o cancelamento em até {cancel?.ate ? <strong>{shortDate(cancel.ate)}</strong> : '7 dias'} depois do pagamento (direito de arrependimento), enquanto a aposta ainda não foi registrada na loteria. Se for aprovado, o valor volta para a sua carteira ou por Pix.</p>
+      <label><span>Motivo (opcional)</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} rows={2} placeholder="Ex.: comprei por engano" /></label>
+      <div className="cota-actions"><button type="submit" className="button button-primary" disabled={busy}>{busy ? 'Enviando…' : 'Enviar pedido de cancelamento'}</button><button type="button" className="button button-ghost" onClick={() => setAsking(false)}>Voltar</button></div>
+    </form>}
+    {waiting && <div className="cota-cancel is-wait" role="status"><p><strong>Cancelamento em análise.</strong> Enviado em {shortDate(request?.criadoEm)}. Assim que for respondido, você recebe um aviso aqui e por e-mail.</p><div className="cota-actions"><button type="button" className="button button-ghost" disabled={busy} onClick={withdrawRequest}>Retirar pedido</button></div></div>}
+    {share.status === 'paga' && request?.status === 'recusado' && <div className="cota-cancel is-no" role="status"><p><strong>Pedido de cancelamento recusado.</strong>{request.resposta ? ` ${request.resposta}` : ''}</p></div>}
+    {share.status === 'estornada' && request?.status === 'aprovado' && <div className="cota-cancel is-ok" role="status"><p><strong>Cota cancelada.</strong> {request.devolucao === 'carteira' ? 'O valor voltou para o seu saldo na carteira.' : 'O valor será devolvido por Pix.'}{request.resposta ? ` ${request.resposta}` : ''}</p></div>}
+    {share.status === 'paga' && !waiting && !canAsk && cancel?.motivoBloqueio && <small className="muted">{cancel.motivoBloqueio}</small>}
+    {message && <div className={`form-message ${message.ok ? 'form-success' : 'form-error'}`} role="status">{message.text}</div>}
     {pending && share.pagamento && showPayment && <div className="cota-payment"><PaymentInstructions shareId={share.id} payment={share.pagamento} onPaid={onPaid} /></div>}
     {share.status === 'reservada' && !share.pagamento && !expired && <small className="muted">Reserva sem cobrança. Abra o bolão para gerar o pagamento antes do prazo{share.expiraReservaEm ? ` (${shortDate(share.expiraReservaEm)})` : ''}.</small>}
     <details className="cota-more"><summary>Detalhes</summary>
