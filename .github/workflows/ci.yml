@@ -196,6 +196,10 @@ jobs:
         env:
           E2E_API_URL: http://localhost:3001
           E2E_BASE_URL: http://localhost:3000
+      - name: E2E apagar cota vendida (superadmin)
+        run: NODE_PATH=$(npm root -g) node --test e2e/apagar-cota.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
       - name: App do afiliado (entrada própria, instalação, menu de baixo e aba Cotas)
         run: NODE_PATH=$(npm root -g) node --test e2e/affiliate-app.test.mjs
         env:
