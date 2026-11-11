@@ -14,7 +14,7 @@ import { remainingForPerson, saleWindowMessage } from '../pools/sales-rules';
 import { joinAffiliateGroup, joinGroup } from '../common/affiliate-groups';
 import { amountsForPool } from '../payments/payments.service';
 import { recordCouponUse, resolveCoupon } from '../promotions/coupons';
-import { toCents as couponCents } from '../promotions/promo-math';
+import { minPayableCents, toCents as couponCents } from '../promotions/promo-math';
 @Injectable()
 export class SharesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly responsible?: ResponsiblePlayService) {}
@@ -49,7 +49,7 @@ export class SharesService {
         const preview = await this.prisma.bolao.findUnique({ where: { id: dto.bolaoId }, select: { valorCota: true, taxaAdministracaoPct: true, precificacao: true } });
         if (preview) {
           const base = amountsForPool(preview, dto.quantidade, 0);
-          autoCoupon = Boolean(await resolveCoupon(this.prisma, { userId: user.id, grossCents: couponCents(base.gross), feeCents: couponCents(base.adminFee), lock: false }));
+          autoCoupon = Boolean(await resolveCoupon(this.prisma, { userId: user.id, grossCents: couponCents(base.gross), feeCents: couponCents(base.adminFee), minPayableCents: minPayableCents(process.env.CORA_MIN_AMOUNT), lock: false }));
         }
       } catch { autoCoupon = false; }
     }
@@ -90,7 +90,7 @@ export class SharesService {
       else if (affiliate && affiliate.usuarioId !== user.id) await joinAffiliateGroup(tx, affiliate.id, user.id);
       // Cupom: o código digitado ou o automático a que a pessoa tem direito. O desconto sai da taxa; o custo dos jogos não muda.
       const baseAmounts = amountsForPool(pool, dto.quantidade, 0);
-      const coupon = dto.cupom?.trim() || autoCoupon ? await resolveCoupon(tx, { userId: user.id, code: dto.cupom, grossCents: couponCents(baseAmounts.gross), feeCents: couponCents(baseAmounts.adminFee) }) : null;
+      const coupon = dto.cupom?.trim() || autoCoupon ? await resolveCoupon(tx, { userId: user.id, code: dto.cupom, grossCents: couponCents(baseAmounts.gross), feeCents: couponCents(baseAmounts.adminFee), minPayableCents: minPayableCents(process.env.CORA_MIN_AMOUNT) }) : null;
       const share = await tx.cota.create({
         data: {
           bolaoId: pool.id,
@@ -106,7 +106,7 @@ export class SharesService {
         include: { mandato: true },
       });
       if (coupon) {
-        await recordCouponUse(tx, { cupomId: coupon.cupomId, cotaId: share.id, usuarioId: user.id, descontoCentavos: coupon.descontoCentavos });
+        await recordCouponUse(tx, { cupomId: coupon.cupomId, cotaId: share.id, usuarioId: user.id, descontoCentavos: coupon.descontoCentavos, feeCents: couponCents(baseAmounts.adminFee) });
         await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cupom.aplicado', atorId: user.id, payloadDepois: { cupom: coupon.codigo, descontoCentavos: coupon.descontoCentavos, automatico: coupon.automatico } });
       }
       const updatedPool = await tx.bolao.update({ where: { id: pool.id }, data: { cotasVendidas: { increment: dto.quantidade } } });

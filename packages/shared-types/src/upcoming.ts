@@ -8,6 +8,15 @@ import { brazilDayKey } from './festas';
  */
 export const FONTE_PROJETADA = 'projetado';
 
+async function dropStaleProjections(db: UpcomingDb, modalidade: string, now: Date): Promise<void> {
+  if (!db.concurso.deleteMany) return;
+  try {
+    const rows = await db.concurso.findMany({ where: { modalidade, especial: null, numeroConcurso: { gt: 0 }, dataSorteio: { gte: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000) } }, select: { id: true, numeroConcurso: true, dataSorteio: true, fonteSincronizacao: true } });
+    const ids = staleProjectionIds(rows);
+    if (ids.length > 0) await db.concurso.deleteMany({ where: { id: { in: ids }, fonteSincronizacao: FONTE_PROJETADA, status: 'aberto', boloes: { none: {} } } });
+  } catch { /* melhor esforço: a lista segue com o que existe */ }
+}
+
 /** Dias da semana de sorteio (0 = domingo) usados só quando não há histórico nem configuração. */
 export const DIAS_SORTEIO_PADRAO: Record<string, number[]> = {
   megasena: [2, 4, 6],
@@ -49,10 +58,36 @@ export interface UpcomingDb {
     findFirst(args: unknown): Promise<ContestRow | null>;
     findMany(args: unknown): Promise<ContestRow[]>;
     create(args: { data: Record<string, unknown> }): Promise<unknown>;
+    /** Opcional: usado só para limpar previsões erradas. Sem ele, a limpeza é ignorada. */
+    deleteMany?(args: unknown): Promise<{ count: number }>;
   };
 }
 
 export interface UpcomingCreated { modalidade: string; numeroConcurso: number; dataSorteio: Date; cutoffAt: Date }
+
+/**
+ * Previsões que ficaram erradas porque a CAIXA publicou o concurso de verdade com outra data. Cada concurso precisa cair
+ * num dia depois do anterior (e nunca no dia de um concurso oficial). A primeira previsão fora disso, e todas as que vêm
+ * depois dela (foram calculadas em cadeia), são marcadas para refazer. Só entram previsões; concurso oficial nunca.
+ */
+export function staleProjectionIds(rows: Array<{ id?: string; numeroConcurso: number; dataSorteio: Date; fonteSincronizacao?: string | null }>): string[] {
+  const sorted = rows.filter((row) => row.numeroConcurso > 0).sort((a, b) => a.numeroConcurso - b.numeroConcurso);
+  const realDays = new Set(sorted.filter((row) => row.fonteSincronizacao !== FONTE_PROJETADA).map((row) => brazilDayKey(row.dataSorteio)));
+  const stale: string[] = [];
+  let previousDay = '';
+  let broken = false;
+  for (const row of sorted) {
+    const day = brazilDayKey(row.dataSorteio);
+    if (row.fonteSincronizacao !== FONTE_PROJETADA) { previousDay = day; continue; }
+    if (broken || (previousDay !== '' && day <= previousDay) || realDays.has(day)) {
+      broken = true;
+      if (row.id) stale.push(row.id);
+      continue;
+    }
+    previousDay = day;
+  }
+  return stale;
+}
 
 /** Dias de sorteio da modalidade: configuração do painel; senão os dias vistos nos concursos reais das últimas semanas; senão o padrão. */
 async function resolveDays(db: UpcomingDb, modalidade: string, configured: number[] | null | undefined, now: Date): Promise<number[]> {
@@ -80,6 +115,7 @@ export async function ensureUpcomingContests(db: UpcomingDb, calculateCutoff: (d
   const configs = await db.configLoteria.findMany();
   for (const config of configs) {
     const modalidade = config.modalidade;
+    await dropStaleProjections(db, modalidade, now);
     const opens = await db.concurso.findMany({ where: { modalidade, especial: null, status: 'aberto', cutoffAt: { gt: now } } });
     let missing = wanted - opens.length;
     if (missing <= 0) continue;

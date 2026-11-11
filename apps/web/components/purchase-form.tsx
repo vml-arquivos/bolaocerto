@@ -9,6 +9,7 @@ import { money, PoolRelease } from '../lib/domain';
 import { ReleaseMeter } from './release-meter';
 import { NotifyMe } from './notify-me';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
+import { clearStoredCoupon, readStoredCoupon } from './coupon-capture';
 
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito ou débito', pix_automatico: 'Pix Automático (recorrente)' };
@@ -29,7 +30,8 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const [review, setReview] = useState(false);
   const [couponInput, setCouponInput] = useState('');
   const [couponCode, setCouponCode] = useState('');
-  const [promo, setPromo] = useState<{ aplicado: boolean; codigo?: string; descontoCentavos?: number; totalComDescontoCentavos?: number; erro?: string; cashback?: { nome: string; percentual: number } | null } | null>(null);
+  const [promo, setPromo] = useState<{ aplicado: boolean; codigo?: string; descontoCentavos?: number; totalComDescontoCentavos?: number; gratis?: boolean; erro?: string; cashback?: { nome: string; percentual: number } | null } | null>(null);
+  useEffect(() => { const stored = readStoredCoupon(); if (stored) { setCouponInput(stored); setCouponCode(stored); } }, []);
   useEffect(() => { void fetch('/api/v1/auth/me', { credentials: 'include', cache: 'no-store' }).then(async (response) => setMe(response.ok ? await response.json() as { nome: string } : null)).catch(() => setMe(null)); }, []);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
@@ -61,7 +63,8 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [paymentsEnabled, me, poolId, qty, couponCode]);
   const discount = promo?.aplicado ? Number(promo.descontoCentavos ?? 0) / 100 : 0;
-  const totalToPay = Math.max(0, Number(unitPrice) * qty - discount);
+  const totalToPay = Math.max(0, Math.round((Number(unitPrice) * qty - discount) * 100) / 100);
+  const free = Boolean(promo?.aplicado && (promo.gratis || Number(promo.totalComDescontoCentavos ?? 1) === 0));
 
   /** Passo 1: confere os dados e mostra o resumo. Nada é reservado nem cobrado ainda. */
   function goReview(event: FormEvent<HTMLFormElement>) {
@@ -107,13 +110,13 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
         <dl>
           <dt>Cotas</dt><dd>{qty} × {money(unitPrice)}</dd>
           <dt>Titular</dt><dd>{otherHolder ? `${holderName.trim()} (CPF final ${holderCpf.slice(-3)})` : me?.nome}</dd>
-          <dt>Pagamento</dt><dd>{METHOD_LABEL[method]}</dd>
+          <dt>Pagamento</dt><dd>{free ? 'Sem pagamento (cupom de 100%)' : METHOD_LABEL[method]}</dd>
           {discount > 0 && <><dt>Desconto{promo?.codigo ? ` (${promo.codigo})` : ''}</dt><dd>− {money(discount)}</dd></>}
-          <dt>Total a pagar</dt><dd className="review-total">{money(totalToPay)}</dd>
+          <dt>Total a pagar</dt><dd className="review-total">{free ? 'Grátis' : money(totalToPay)}</dd>
         </dl>
-        <small className="muted">Ao confirmar, as cotas ficam reservadas para você por um prazo curto e a cobrança é gerada. Se o pagamento não for feito no prazo, a reserva é cancelada sem custo. O BL registra o jogo nos canais oficiais da CAIXA depois da confirmação do pagamento.</small>
+        <small className="muted">{free ? 'Ao confirmar, sua cota é garantida na hora, sem cobrança. ' : 'Ao confirmar, as cotas ficam reservadas para você por um prazo curto e a cobrança é gerada. Se o pagamento não for feito no prazo, a reserva é cancelada sem custo. '} O BL registra o jogo nos canais oficiais da CAIXA depois da confirmação do pagamento.</small>
         <div className="purchase-review-actions">
-          <button type="button" className="button button-primary" disabled={loading} onClick={() => void submit()}>{loading ? 'Processando…' : method === 'boleto' ? 'Confirmar e gerar boleto' : method === 'cartao' ? 'Confirmar e pagar no cartão' : 'Confirmar e gerar Pix'}</button>
+          <button type="button" className="button button-primary" disabled={loading} onClick={() => void submit()}>{loading ? 'Processando…' : free ? 'Confirmar minha cota grátis' : method === 'boleto' ? 'Confirmar e gerar boleto' : method === 'cartao' ? 'Confirmar e pagar no cartão' : 'Confirmar e gerar Pix'}</button>
           <button type="button" className="button button-ghost" disabled={loading} onClick={() => setReview(false)}>Voltar e alterar</button>
         </div>
       </div>
@@ -122,16 +125,16 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
           <div className="stepper"><button type="button" aria-label="Menos uma cota" onClick={() => setQty((value) => Math.max(1, value - 1))} disabled={qty <= 1}>−</button>
             <input id="quantidade" name="quantidade" type="number" inputMode="numeric" min={1} {...(maxQuantity === undefined ? {} : { max: maxQuantity })} value={qty} onChange={(event) => setQty(Math.max(1, Math.trunc(Number(event.target.value) || 1)))} required />
             <button type="button" aria-label="Mais uma cota" onClick={() => setQty((value) => (maxQuantity === undefined ? value + 1 : Math.min(maxQuantity, value + 1)))} disabled={maxQuantity !== undefined && qty >= maxQuantity}>+</button></div>
-          <strong className="buy-total" aria-live="polite">{discount > 0 && <s>{money(Number(unitPrice) * qty)}</s>}{money(totalToPay)}</strong></div>
+          <strong className="buy-total" aria-live="polite">{discount > 0 && <s>{money(Number(unitPrice) * qty)}</s>}{free ? 'Grátis' : money(totalToPay)}</strong></div>
         <div className="buy-coupon">{promo?.aplicado && <small className="coupon-ok" role="status">Desconto de {money(discount)}{promo.codigo ? ` com o cupom ${promo.codigo}` : ''} aplicado.</small>}{promo?.erro && <small className="coupon-error" role="alert">{promo.erro}</small>}{promo?.cashback && <small className="muted">Cashback de {String(promo.cashback.percentual).replace('.', ',')}% na carteira depois que o pagamento for confirmado.</small>}
-          {couponCode ? <button type="button" className="text-link" onClick={() => { setCouponCode(''); setCouponInput(''); }}>Tirar cupom</button>
-            : <details><summary>Tenho um cupom</summary><div className="buy-coupon-row"><input id="cupom" name="cupom" aria-label="Código do cupom" maxLength={60} value={couponInput} onChange={(event) => setCouponInput(event.target.value.toUpperCase())} placeholder="Código do cupom" /><button type="button" className="button button-secondary" disabled={!couponInput.trim()} onClick={() => setCouponCode(couponInput.trim())}>Aplicar</button></div></details>}</div>
+          {couponCode ? <button type="button" className="text-link" onClick={() => { setCouponCode(''); setCouponInput(''); clearStoredCoupon(); }}>Tirar cupom</button>
+            : <details open={Boolean(couponInput)}><summary>Tenho um cupom</summary><div className="buy-coupon-row"><input id="cupom" name="cupom" aria-label="Código do cupom" maxLength={60} value={couponInput} onChange={(event) => setCouponInput(event.target.value.toUpperCase())} placeholder="Código do cupom" /><button type="button" className="button button-secondary" disabled={!couponInput.trim()} onClick={() => setCouponCode(couponInput.trim())}>Aplicar</button></div></details>}</div>
         {maxPerPerson !== null && <small className="muted">Máximo de {maxPerPerson} {maxPerPerson === 1 ? 'cota' : 'cotas'} por pessoa.</small>}
         {!otherHolder ? <p className="buy-holder">Em nome de <strong>{me?.nome}</strong> · <button type="button" className="text-link" onClick={() => setOtherHolder(true)}>outro titular</button></p>
           : <div className="buy-holder-fields"><div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required value={holderName} onChange={(event) => setHolderName(event.target.value)} /></div>
             <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required value={holderCpf} onChange={(event) => setHolderCpf(event.target.value.replace(/\D/g, ''))} /></div>
             <button type="button" className="text-link" onClick={() => setOtherHolder(false)}>Usar meu cadastro</button></div>}
-        {methods.length > 1 && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
+        {methods.length > 1 && !free && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
         <details className="buy-contract"><summary>Ler o contrato desta compra</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito o <Link href="/termos" target="_blank"><u>contrato de participação</u></Link> e confirmo ter mais de 18 anos.</span></label>
         <button className="button button-primary" disabled={!accepted || !contract?.aprovado}>Revisar e continuar</button>
       </form> : ruleState === 'em_breve' ? <div className="notice"><strong>A venda ainda não começou</strong><span>As cotas abrem em {when(rules?.inicioEm)}.</span></div>

@@ -310,7 +310,7 @@ export function ManualContestForm({ onDone, notify }: { onDone: () => Promise<vo
     event.preventDefault(); setBusy(true);
     const form = new FormData(event.currentTarget);
     try {
-      await api('/api/v1/admin/concursos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: String(form.get('modalidade')), numeroConcurso: Number(form.get('numeroConcurso')), dataSorteio: String(form.get('dataSorteio')), acumulado: form.get('acumulado') === 'on' }) });
+      await api('/api/v1/admin/concursos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: String(form.get('modalidade')), numeroConcurso: Number(form.get('numeroConcurso')), dataSorteio: String(form.get('dataSorteio')), ...(String(form.get('horaSorteio') ?? '') ? { horaSorteio: String(form.get('horaSorteio')) } : {}), acumulado: form.get('acumulado') === 'on' }) });
       notify('success', 'Concurso cadastrado.'); setOpen(false); await onDone();
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível cadastrar o concurso.'); }
     finally { setBusy(false); }
@@ -321,6 +321,7 @@ export function ManualContestForm({ onDone, notify }: { onDone: () => Promise<vo
       <label className="admin-field"><span>Modalidade</span><select name="modalidade" required>{['megasena', 'lotofacil', 'quina', 'lotomania', 'duplasena', 'timemania', 'diadesorte', 'supersete', 'loteca'].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <label className="admin-field"><span>Número do concurso</span><input name="numeroConcurso" type="number" min={1} required /></label>
       <label className="admin-field"><span>Data do sorteio</span><input name="dataSorteio" type="date" required /></label>
+      <label className="admin-field"><span>Hora do sorteio (Brasília)</span><input name="horaSorteio" type="time" /><small>Deixe vazio para usar o horário oficial (festas) ou 20:00.</small></label>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input name="acumulado" type="checkbox" /> Acumulado</label>
       <div><button className="admin-button admin-button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Cadastrar concurso'}</button></div>
     </form>

@@ -132,10 +132,12 @@ export class PaymentsService {
     if (share.pagamento && (share.pagamento.status === StatusPagamento.pendente || share.pagamento.status === StatusPagamento.confirmado) && share.pagamento.pspTransactionId) {
       return this.toPublicPayment(share.pagamento);
     }
+    const amounts = this.shareAmounts(share);
+    // Cupom de 100%: não há o que cobrar. A cota é confirmada na hora, sem passar pelo banco.
+    if (amounts.gross === 0 && share.cupomUso) return this.settleFree(share, amounts, user);
     const provider = this.providerFor(dto.metodo);
     if (!provider) throw new BadRequestException('Este método de pagamento não está disponível no momento.');
 
-    const amounts = this.shareAmounts(share);
     if (amounts.gross < provider.minAmount) {
       throw new BadRequestException(`O valor mínimo para pagamento é R$ ${provider.minAmount.toFixed(2).replace('.', ',')}. Aumente a quantidade de cotas.`);
     }
@@ -422,6 +424,27 @@ export class PaymentsService {
       const settled = await this.settleTx(tx, row, admin.id, 'pagamento.baixa_manual');
       const fresh = await tx.cota.findUniqueOrThrow({ where: { id: share.id } });
       if (fresh.status !== StatusCota.paga) throw new ConflictException('Não há mais cotas disponíveis neste bolão para reativar esta reserva.');
+      return settled;
+    });
+    await this.afterSettled(result.id);
+    return this.toPublicPayment(result);
+  }
+
+  /**
+   * Cota com 100% de desconto: cria o pagamento de R$ 0,00 e confirma a cota na mesma transação (mesmo caminho da baixa,
+   * com as mesmas regras de estoque, prazo e bolão aberto). Quem paga a cota ao bolão é o BL.
+   */
+  private async settleFree(share: { id: string; bolaoId: string; compradorId: string }, amounts: ShareAmounts, user: AuthUser) {
+    const data = { metodo: MetodoPagamento.manual, origem: 'cupom', pspProvedor: 'cupom', pspTransactionId: null, formaBaixa: 'cupom', observacao: 'Cota gratuita: cupom de 100% de desconto', baixaPor: user.id, status: StatusPagamento.pendente, valorBruto: new Prisma.Decimal(amounts.gross), valorTaxaAdmin: new Prisma.Decimal(amounts.adminFee), valorComissaoAfiliado: new Prisma.Decimal(amounts.affiliateCommission), valorCustoBilhete: new Prisma.Decimal(amounts.cost) };
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockBolao(tx, share.bolaoId);
+      const fresh = await tx.cota.findUniqueOrThrow({ where: { id: share.id }, include: { pagamento: true } });
+      if (fresh.status !== StatusCota.reservada || fresh.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Pagamento ou cota mudou; recarregue.');
+      if (fresh.pagamento?.pspTransactionId) throw new ConflictException('Já existe uma cobrança. Recarregue para consultá-la.');
+      const row = fresh.pagamento ? await tx.pagamento.update({ where: { id: fresh.pagamento.id }, data }) : await tx.pagamento.create({ data: { cotaId: share.id, ...data } });
+      const settled = await this.settleTx(tx, row, user.id, 'pagamento.cupom_100');
+      const after = await tx.cota.findUniqueOrThrow({ where: { id: share.id } });
+      if (after.status !== StatusCota.paga) throw new ConflictException('Não há mais cotas disponíveis neste bolão para esta reserva.');
       return settled;
     });
     await this.afterSettled(result.id);

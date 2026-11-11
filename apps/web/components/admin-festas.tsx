@@ -5,7 +5,7 @@ import { Panel } from './admin-ui';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Notify = (type: 'success' | 'error', text: string) => void;
-type Preset = { chave: string; nome: string; modalidade: string };
+type Preset = { chave: string; nome: string; modalidade: string; proximoSorteio?: { data: string; hora: string; confirmado: boolean; fonte: string } | null };
 
 async function call(path: string, options?: RequestInit) {
   let response = await fetch(path, { ...options, credentials: 'include' });
@@ -26,7 +26,14 @@ export function FestivalForm({ onDone, notify }: { onDone: () => Promise<void> |
   const [busy, setBusy] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [choice, setChoice] = useState('mega-da-virada');
+  const [day, setDay] = useState('');
+  const [hour, setHour] = useState('20:00');
   useEffect(() => { if (open && !presets.length) call('/api/v1/admin/concursos/festas').then((data) => setPresets(data as Preset[])).catch(() => setPresets([])); }, [open, presets.length]);
+
+  const preset = presets.find((item) => item.chave === choice);
+  const known = preset?.proximoSorteio ?? null;
+  // Ao escolher a festa, o dia e a hora do sorteio já vêm preenchidos (dá para ajustar).
+  useEffect(() => { if (known) { setDay(known.data); setHour(known.hora); } else if (choice === 'personalizado') { setDay(''); setHour('20:00'); } }, [known?.data, known?.hora, choice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true);
@@ -35,7 +42,7 @@ export function FestivalForm({ onDone, notify }: { onDone: () => Promise<void> |
     const prize = String(form.get('valorEstimadoPremio') ?? '').replace(/\./g, '').replace(',', '.').trim();
     try {
       await call('/api/v1/admin/concursos/festa', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-        especial: choice, dataSorteio: String(form.get('dataSorteio')),
+        especial: choice, dataSorteio: day, horaSorteio: hour || '20:00',
         ...(choice === 'personalizado' ? { modalidade: String(form.get('modalidade')), nomeEspecial: String(form.get('nomeEspecial') ?? '').trim() } : {}),
         ...(number ? { numeroConcurso: Number(number) } : {}), ...(prize ? { valorEstimadoPremio: Number(prize) } : {}),
       }) });
@@ -50,7 +57,9 @@ export function FestivalForm({ onDone, notify }: { onDone: () => Promise<void> |
       <label className="admin-field"><span>Qual festa?</span><select value={choice} onChange={(event) => setChoice(event.target.value)}>{presets.map((preset) => <option key={preset.chave} value={preset.chave}>{preset.nome}</option>)}<option value="personalizado">Outra (digitar)</option></select></label>
       {choice === 'personalizado' && <><label className="admin-field"><span>Jogo</span><select name="modalidade" required>{MODALIDADES.map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
         <label className="admin-field"><span>Nome da festa</span><input name="nomeEspecial" maxLength={80} required placeholder="Ex.: Quina do Natal" /></label></>}
-      <label className="admin-field"><span>Dia do sorteio</span><input name="dataSorteio" type="date" required /></label>
+      <label className="admin-field"><span>Dia do sorteio</span><input name="dataSorteio" type="date" required value={day} onChange={(event) => setDay(event.target.value)} /></label>
+      <label className="admin-field"><span>Hora do sorteio (Brasília)</span><input name="horaSorteio" type="time" required value={hour} onChange={(event) => setHour(event.target.value)} /></label>
+      {known && <p className="admin-note" role="status" style={{ gridColumn: '1 / -1', margin: 0 }}>{known.confirmado ? 'Dia e hora confirmados pela CAIXA.' : `Data prevista, ainda não confirmada: ${known.fonte.replace(/\.$/, '')}.`} As apostas fecham 1 hora antes do sorteio ou no horário padrão da modalidade, o que for mais cedo.</p>}
       <label className="admin-field"><span>Número do concurso (se já souber)</span><input name="numeroConcurso" type="number" min={1} placeholder="Deixe vazio se ainda não saiu" /></label>
       <label className="admin-field"><span>Prêmio estimado (R$, se já souber)</span><input name="valorEstimadoPremio" inputMode="decimal" placeholder="Deixe vazio se ainda não saiu" /></label>
       <div style={{ alignSelf: 'end' }}><button className="admin-button admin-button-primary" disabled={busy}>{busy ? 'Criando…' : 'Criar concurso'}</button></div>

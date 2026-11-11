@@ -41,15 +41,33 @@ describe('checkCoupon', () => {
     expect((await checkCoupon(fakeDb({ usedByUser: 1 }), base as any, g)).ok).toBe(false);
     expect((await checkCoupon(fakeDb(), { ...base, valorMinimoCentavos: 20_000 } as any, g)).ok).toBe(false);
   });
-  it('o desconto nunca passa da taxa de administração', async () => {
+  it('100% deixa a cota grátis e nunca fica abaixo de zero', async () => {
     const result = await checkCoupon(fakeDb(), { ...base, valor: 100 } as any, { ...buy, groups: ['g1'] });
-    expect(result).toEqual({ ok: true, discount: 1000 });
+    expect(result).toEqual({ ok: true, discount: 10_000 });
+  });
+  it('desconto parcial respeita o mínimo cobrável', async () => {
+    const result = await checkCoupon(fakeDb(), { ...base, valor: 99 } as any, { ...buy, groups: ['g1'] });
+    expect(result).toEqual({ ok: true, discount: 9_500 });
+  });
+  it('cupom sem público vale para qualquer pessoa com o código', async () => {
+    const open = { ...base, grupoIds: [] as string[], usuarioIds: [] as string[] };
+    expect(await checkCoupon(fakeDb(), open as any, { ...buy, groups: [] })).toEqual({ ok: true, discount: 1000 });
+    expect((await checkCoupon(fakeDb({ usedByUser: 1 }), open as any, { ...buy, groups: [] })).ok).toBe(false);
   });
 });
 
 describe('resolveCoupon', () => {
   it('com código inexistente falha com erro claro', async () => {
     await expect(resolveCoupon(fakeDb(), { userId: 'u1', code: 'NAOEXISTE', grossCents: 10_000, feeCents: 1_000, now: NOW })).rejects.toBeInstanceOf(ConflictException);
+  });
+  it('cupom aberto (sem público) funciona para qualquer cliente, com código', async () => {
+    const open = { ...base, grupoIds: [] as string[], usuarioIds: [] as string[] };
+    const applied = await resolveCoupon(fakeDb({ coupons: [open], groups: [] }), { userId: 'qualquer', code: 'cotista10', grossCents: 10_000, feeCents: 1_000, now: NOW });
+    expect(applied).toMatchObject({ cupomId: 'c1', descontoCentavos: 1000 });
+  });
+  it('cupom automático sem público nunca é aplicado sozinho', async () => {
+    const open = { ...base, automatico: true, grupoIds: [] as string[], usuarioIds: [] as string[] };
+    expect(await resolveCoupon(fakeDb({ coupons: [open], groups: [] }), { userId: 'u1', grossCents: 10_000, feeCents: 1_000, now: NOW })).toBeNull();
   });
   it('com código válido devolve o desconto', async () => {
     const applied = await resolveCoupon(fakeDb(), { userId: 'u1', code: ' cotista10 ', grossCents: 10_000, feeCents: 1_000, now: NOW });

@@ -145,7 +145,7 @@
   .admin-kpi span:not(.admin-kpi-icon) { font-size: 11px; white-space: normal; }
   .admin-panel { padding: 15px; }
   .admin-panel-heading { margin-bottom: 12px; }
-  .admin-form-grid, .admin-form-grid-three, .wizard-review { grid-template-columns: 1fr; }
+  .admin-form-grid, .admin-form-grid-two, .admin-form-grid-three, .wizard-review { grid-template-columns: 1fr; }
   .modality-picker, .contest-picker { grid-template-columns: 1fr 1fr; }
   .number-grid { grid-template-columns: repeat(10, minmax(23px, 1fr)); }
   .game-builder-footer { align-items: flex-start; flex-direction: column; }

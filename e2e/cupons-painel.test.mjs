@@ -1,4 +1,4 @@
-// Telas: administrador cria cupom e campanha no painel; o cliente do grupo digita o cupom, vê o desconto e paga o valor menor.
+// Telas: administrador cria cupom (vale para qualquer pessoa) e campanha de cashback no painel; o cliente digita o cupom, vê o desconto e paga o valor menor; cupom de 100% gera cota grátis.
 // Uso: E2E_API_URL=http://localhost:3001 E2E_BASE_URL=http://localhost:3000 node --test e2e/cupons-painel.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,15 +50,20 @@ test('painel cria cupom e campanha; cliente do grupo usa o cupom na compra', asy
     const form = admin.getByRole('form', { name: 'Criar cupom' });
     await form.getByLabel(/Código/).fill(code);
     await form.getByLabel(/Desconto \(%\)/).fill('5');
-    // Sem escolher grupo nem cliente a tela recusa.
+    // O cupom não pede grupo nem cliente: vale para qualquer pessoa com o código.
+    assert.equal(await form.getByLabel('Buscar cliente').count(), 0, 'cupom não tem escolha de público');
+    await form.getByLabel(/Desconto \(%\)/).fill('150');
     await form.getByRole('button', { name: 'Criar cupom' }).click();
-    await admin.getByText(/Escolha pelo menos um grupo/).first().waitFor({ timeout: 10000 });
-    await form.getByLabel(new RegExp(groupName)).check();
+    await admin.getByText(/não pode passar de 100/).first().waitFor({ timeout: 10000 });
+    await form.getByLabel(/Desconto \(%\)/).fill('100');
+    await admin.getByText('Cota grátis').first().waitFor({ timeout: 10000 });
+    await form.getByLabel(/Desconto \(%\)/).fill('5');
     await form.getByRole('button', { name: 'Criar cupom' }).click();
     await admin.getByText(new RegExp(`Cupom ${code} criado`)).first().waitFor({ timeout: 20000 });
     const row = admin.locator('tr', { hasText: code });
     await row.waitFor({ timeout: 15000 });
-    assert.ok(await row.getByText(new RegExp(`Grupo ${groupName}`)).count(), 'mostra o grupo que recebe');
+    assert.ok(await row.getByText('Qualquer pessoa com o código').count(), 'mostra que vale para qualquer pessoa');
+    await row.getByRole('button', { name: 'Copiar código' }).waitFor({ timeout: 5000 });
     await row.getByRole('button', { name: 'Pausar' }).click();
     await admin.getByText(/pausado/).first().waitFor({ timeout: 15000 });
     await row.getByRole('button', { name: 'Ativar' }).click();
@@ -69,6 +74,10 @@ test('painel cria cupom e campanha; cliente do grupo usa o cupom na compra', asy
     const campaignForm = admin.getByRole('form', { name: 'Criar campanha de cashback' });
     await campaignForm.getByLabel('Nome da campanha').fill(`Campanha UI ${stamp}`);
     await campaignForm.getByLabel(/Cashback \(%/).fill('5');
+    // Sem grupo, cliente nem nível a tela recusa.
+    await campaignForm.getByRole('button', { name: 'Criar campanha' }).click();
+    await admin.getByText(/Escolha para quem vale/).first().waitFor({ timeout: 10000 });
+    await campaignForm.getByLabel(/Já gastou pelo menos/).waitFor({ timeout: 5000 });
     await campaignForm.getByLabel('Buscar cliente').fill(clientEmail);
     await campaignForm.getByRole('button', { name: new RegExp(clientEmail) }).click({ timeout: 15000 });
     await campaignForm.getByRole('button', { name: 'Criar campanha' }).click();
@@ -104,6 +113,25 @@ test('painel cria cupom e campanha; cliente do grupo usa o cupom na compra', asy
     const shareId = new URL(client.url()).pathname.split('/').pop();
     const payment = await send(clientCtx, 'GET', `/cotas/${shareId}/pagamento`);
     assert.equal(Math.round(Number(payment.valorBruto) * 100), 1900, 'a cobrança gerada é a do valor com desconto');
+
+    // Cupom de 100%: o link com ?cupom= já deixa o código aplicado e a cota sai grátis.
+    const freeCode = `FREE${String(stamp).slice(-6)}`;
+    await send(adminCtx, 'POST', '/admin/cupons', { codigo: freeCode, tipo: 'percentual', valor: 100, limiteTotal: 1, limitePorCliente: 1 });
+    await client.goto(`${BASE}/?cupom=${freeCode}`, { waitUntil: 'load', timeout: 90000 });
+    await client.waitForFunction(() => window.sessionStorage.getItem('bl-cupom'), null, { timeout: 15000 });
+    await client.goto(`${BASE}/boloes/${pool.id}`, { waitUntil: 'load', timeout: 90000 });
+    await client.waitForSelector('.purchase-card form');
+    await client.locator('.buy-total').getByText('Grátis').waitFor({ timeout: 20000 });
+    await client.check('.purchase-card form input[type=checkbox]');
+    await client.click('.purchase-card form button.button-primary');
+    const freeReview = client.locator('.purchase-review'); await freeReview.waitFor();
+    assert.match(await freeReview.locator('.review-total').innerText(), /Grátis/);
+    await freeReview.getByRole('button', { name: 'Confirmar minha cota grátis' }).click();
+    await client.waitForURL((url) => url.pathname.startsWith('/checkout/'), { timeout: 60000 });
+    const freeShare = new URL(client.url()).pathname.split('/').pop();
+    await client.getByText(/pago|confirmad|garantid/i).first().waitFor({ timeout: 30000 });
+    const freePayment = await send(clientCtx, 'GET', `/cotas/${freeShare}/pagamento`);
+    assert.equal(freePayment.status, 'confirmado'); assert.equal(Math.round(Number(freePayment.valorBruto) * 100), 0);
     assert.deepEqual(problems, []);
   } finally { await browser.close(); }
 });

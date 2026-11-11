@@ -10,8 +10,8 @@ const toIso = (value: string) => (value ? new Date(value).toISOString() : null);
 
 type Picked = { id: string; nome: string; email?: string };
 
-/** Escolha de quem recebe: grupos e clientes. Nunca vale para todos. */
-function AudiencePicker({ groups, pickedGroups, setPickedGroups, pickedClients, setPickedClients }: { groups: Rec[]; pickedGroups: string[]; setPickedGroups: (ids: string[]) => void; pickedClients: Picked[]; setPickedClients: (items: Picked[]) => void }) {
+/** Escolha de quem recebe: grupos e clientes. */
+function AudiencePicker({ label, groups, pickedGroups, setPickedGroups, pickedClients, setPickedClients }: { label: string; groups: Rec[]; pickedGroups: string[]; setPickedGroups: (ids: string[]) => void; pickedClients: Picked[]; setPickedClients: (items: Picked[]) => void }) {
   const [term, setTerm] = useState('');
   const [found, setFound] = useState<Rec[]>([]);
   useEffect(() => {
@@ -19,7 +19,7 @@ function AudiencePicker({ groups, pickedGroups, setPickedGroups, pickedClients, 
     const timer = window.setTimeout(() => { void api(`/api/v1/admin/promocoes/clientes?busca=${encodeURIComponent(term.trim())}`).then((result) => setFound(result.items ?? [])).catch(() => setFound([])); }, 250);
     return () => window.clearTimeout(timer);
   }, [term]);
-  return <div className="admin-field admin-field-wide"><span>Quem recebe (escolha grupos e/ou clientes — não vale para todos)</span>
+  return <div className="admin-field admin-field-wide"><span>{label}</span>
     <div className="admin-chip-row" aria-label="Grupos">{groups.length === 0 && <small>Nenhum grupo criado ainda.</small>}{groups.map((group) => <label key={group.id} className="check-line"><input type="checkbox" checked={pickedGroups.includes(group.id)} onChange={(event) => setPickedGroups(event.target.checked ? [...pickedGroups, group.id] : pickedGroups.filter((id) => id !== group.id))} /><span>{group.nome} <small>({group.membros} {group.membros === 1 ? 'membro' : 'membros'})</small></span></label>)}</div>
     <input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Buscar cliente por nome ou e-mail" aria-label="Buscar cliente" />
     {found.length > 0 && <ul className="admin-pick-list">{found.filter((item) => !pickedClients.some((client) => client.id === item.id)).map((item) => <li key={item.id}><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => { setPickedClients([...pickedClients, { id: item.id, nome: item.nome, email: item.email }]); setTerm(''); setFound([]); }}>+ {item.nome} · {item.email}</button></li>)}</ul>}
@@ -27,7 +27,13 @@ function AudiencePicker({ groups, pickedGroups, setPickedGroups, pickedClients, 
   </div>;
 }
 
-const audienceText = (row: Rec) => [...(row.grupos ?? []).map((group: Rec) => `Grupo ${group.nome}`), ...(row.clientes ?? []).map((client: Rec) => client.nome)].join(', ') || '—';
+const audienceText = (row: Rec) => [...(row.grupos ?? []).map((group: Rec) => `Grupo ${group.nome}`), ...(row.clientes ?? []).map((client: Rec) => client.nome)].join(', ');
+const levelText = (row: Rec) => [row.gastoMinimoCentavos ? `gastou ${cents(row.gastoMinimoCentavos)} ou mais` : '', row.comprasMinimas ? `${row.comprasMinimas}+ ${row.comprasMinimas === 1 ? 'compra' : 'compras'}` : ''].filter(Boolean).join(' e ');
+const siteUrl = () => (typeof window === 'undefined' ? '' : window.location.origin);
+
+async function copyText(text: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+}
 
 /** Cupons de desconto e campanhas de cashback. Só o administrador vê esta tela. */
 export function PromotionsAdminView({ notify }: { notify: Notify }) {
@@ -39,11 +45,11 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
   const [uses, setUses] = useState<{ codigo: string; items: Rec[] } | null>(null);
   // Cupom
   const [code, setCode] = useState(''); const [description, setDescription] = useState(''); const [kind, setKind] = useState<'percentual' | 'valor'>('percentual'); const [value, setValue] = useState('');
-  const [maxDiscount, setMaxDiscount] = useState(''); const [minPurchase, setMinPurchase] = useState(''); const [auto, setAuto] = useState(false); const [startAt, setStartAt] = useState(''); const [endAt, setEndAt] = useState('');
+  const [maxDiscount, setMaxDiscount] = useState(''); const [minPurchase, setMinPurchase] = useState(''); const [startAt, setStartAt] = useState(''); const [endAt, setEndAt] = useState('');
   const [limitTotal, setLimitTotal] = useState(''); const [limitClient, setLimitClient] = useState('1');
-  const [pickedGroups, setPickedGroups] = useState<string[]>([]); const [pickedClients, setPickedClients] = useState<Picked[]>([]);
   // Cashback
   const [cName, setCName] = useState(''); const [cPct, setCPct] = useState(''); const [cMin, setCMin] = useState(''); const [cMax, setCMax] = useState(''); const [cBudget, setCBudget] = useState(''); const [cStart, setCStart] = useState(''); const [cEnd, setCEnd] = useState(''); const [cActive, setCActive] = useState(false);
+  const [cSpent, setCSpent] = useState(''); const [cPurchases, setCPurchases] = useState('');
   const [cGroups, setCGroups] = useState<string[]>([]); const [cClients, setCClients] = useState<Picked[]>([]);
 
   const load = useCallback(async () => {
@@ -65,14 +71,15 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
     void run(async () => {
       const number = toNumber(value);
       if (!Number.isFinite(number) || number <= 0) throw new Error('Informe o valor do desconto.');
-      if (!pickedGroups.length && !pickedClients.length) throw new Error('Escolha pelo menos um grupo ou um cliente.');
+      if (kind === 'percentual' && number > 100) throw new Error('A porcentagem não pode passar de 100.');
       const result = await post('/api/v1/admin/cupons', 'POST', {
         ...(code.trim() ? { codigo: code.trim() } : {}), descricao: description.trim() || undefined, tipo: kind, valor: number,
-        descontoMaximoReais: optionalNumber(maxDiscount), valorMinimoReais: optionalNumber(minPurchase), automatico: auto, inicioEm: toIso(startAt), fimEm: toIso(endAt),
-        limiteTotal: limitTotal.trim() ? Math.trunc(Number(limitTotal)) : null, limitePorCliente: limitClient.trim() ? Math.trunc(Number(limitClient)) : null, grupoIds: pickedGroups, usuarioIds: pickedClients.map((client) => client.id),
+        descontoMaximoReais: optionalNumber(maxDiscount), valorMinimoReais: optionalNumber(minPurchase), automatico: false, inicioEm: toIso(startAt), fimEm: toIso(endAt),
+        limiteTotal: limitTotal.trim() ? Math.trunc(Number(limitTotal)) : null, limitePorCliente: limitClient.trim() ? Math.trunc(Number(limitClient)) : null,
       });
-      setCode(''); setDescription(''); setValue(''); setMaxDiscount(''); setMinPurchase(''); setAuto(false); setStartAt(''); setEndAt(''); setLimitTotal(''); setLimitClient('1'); setPickedGroups([]); setPickedClients([]);
-      return `Cupom ${result.codigo} criado. Já vale para quem você escolheu.`;
+      const free = kind === 'percentual' && number >= 100;
+      setCode(''); setDescription(''); setValue(''); setMaxDiscount(''); setMinPurchase(''); setStartAt(''); setEndAt(''); setLimitTotal(''); setLimitClient('1');
+      return free && !limitTotal.trim() ? `Cupom ${result.codigo} criado. Atenção: sem limite total de usos, quem tiver o código pode usar até o limite por cliente.` : `Cupom ${result.codigo} criado. Quem receber o código já pode usar.`;
     });
   }
 
@@ -81,10 +88,11 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
     void run(async () => {
       const pct = toNumber(cPct);
       if (!Number.isFinite(pct) || pct <= 0 || pct > 100) throw new Error('Informe o percentual de cashback (de 0,01 a 100).');
-      if (!cGroups.length && !cClients.length) throw new Error('Escolha pelo menos um grupo ou um cliente.');
-      await post('/api/v1/admin/cashback-campanhas', 'POST', { nome: cName.trim(), percentual: pct, valorMinimoReais: optionalNumber(cMin), maximoPorCompraReais: optionalNumber(cMax), orcamentoReais: optionalNumber(cBudget), inicioEm: toIso(cStart), fimEm: toIso(cEnd), ativa: cActive, grupoIds: cGroups, usuarioIds: cClients.map((client) => client.id) });
+      const spent = optionalNumber(cSpent); const purchases = cPurchases.trim() ? Math.trunc(Number(cPurchases)) : null;
+      if (!cGroups.length && !cClients.length && !(spent && spent > 0) && !(purchases && purchases > 0)) throw new Error('Escolha para quem vale: um grupo, clientes específicos ou um nível de compra/gasto.');
+      await post('/api/v1/admin/cashback-campanhas', 'POST', { nome: cName.trim(), percentual: pct, valorMinimoReais: optionalNumber(cMin), maximoPorCompraReais: optionalNumber(cMax), orcamentoReais: optionalNumber(cBudget), gastoMinimoReais: spent && spent > 0 ? spent : null, comprasMinimas: purchases && purchases > 0 ? purchases : null, inicioEm: toIso(cStart), fimEm: toIso(cEnd), ativa: cActive, grupoIds: cGroups, usuarioIds: cClients.map((client) => client.id) });
       const message = cActive ? 'Campanha criada e ativada.' : 'Campanha criada e pausada. Ative quando quiser começar.';
-      setCName(''); setCPct(''); setCMin(''); setCMax(''); setCBudget(''); setCStart(''); setCEnd(''); setCActive(false); setCGroups([]); setCClients([]);
+      setCName(''); setCPct(''); setCMin(''); setCMax(''); setCBudget(''); setCStart(''); setCEnd(''); setCActive(false); setCSpent(''); setCPurchases(''); setCGroups([]); setCClients([]);
       return message;
     });
   }
@@ -105,11 +113,11 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
       <Kpi label="Campanhas de cashback ativas" value={activeCampaigns} tone="green" />
       <Kpi label="Cashback já creditado" value={cents(campaigns.reduce((sum, campaign) => sum + Number(campaign.creditadoCentavos ?? 0), 0))} tone="violet" />
     </div>
-    <div className="notice"><strong>Como funciona</strong><span>Desconto e cashback saem só da taxa de administração do BL. O valor do bolão (custo dos jogos) nunca diminui, e o desconto nunca passa da taxa. Cada cupom ou campanha vale só para os grupos e clientes que você escolher.</span></div>
+    <div className="notice"><strong>Como funciona</strong><span>Cupom e cashback são coisas separadas. <b>Cupom:</b> qualquer pessoa que receber o código tem o desconto que você definiu, até 100% (cota grátis, confirmada na hora). <b>Cashback:</b> você escolhe quem recebe — grupos, cotistas específicos ou clientes por nível de compra e gasto — e o valor cai na carteira depois do pagamento. Descontos acima da taxa do BL saem do caixa do BL (aparecem como “custo para o BL”).</span></div>
     <div className="admin-tabs" role="tablist"><button role="tab" aria-selected={tab === 'cupons'} className={`admin-button admin-button-small ${tab === 'cupons' ? 'admin-button-primary' : 'admin-button-ghost'}`} onClick={() => setTab('cupons')}>Cupons de desconto</button><button role="tab" aria-selected={tab === 'cashback'} className={`admin-button admin-button-small ${tab === 'cashback' ? 'admin-button-primary' : 'admin-button-ghost'}`} onClick={() => setTab('cashback')}>Cashback por campanha</button></div>
 
     {tab === 'cupons' && <>
-      <Panel title="Criar cupom" description="O cupom é calculado sozinho na compra, só para quem você escolher.">
+      <Panel title="Criar cupom" description="Vale para qualquer pessoa que tiver o código. Você envia o código (ou o link) para quem quiser.">
         <form className="admin-form-grid" onSubmit={createCoupon} aria-label="Criar cupom">
           <label className="admin-field"><span>Código (deixe vazio para gerar)</span><input value={code} maxLength={40} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="Ex.: COTISTA10" /></label>
           <label className="admin-field"><span>Descrição (opcional)</span><input value={description} maxLength={200} onChange={(event) => setDescription(event.target.value)} /></label>
@@ -121,8 +129,7 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
           <label className="admin-field"><span>Termina em (opcional)</span><input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></label>
           <label className="admin-field"><span>Limite total de usos (opcional)</span><input inputMode="numeric" value={limitTotal} onChange={(event) => setLimitTotal(event.target.value.replace(/\D/g, ''))} /></label>
           <label className="admin-field"><span>Usos por cliente</span><input inputMode="numeric" value={limitClient} onChange={(event) => setLimitClient(event.target.value.replace(/\D/g, ''))} /></label>
-          <label className="check-line admin-field-wide"><input type="checkbox" checked={auto} onChange={(event) => setAuto(event.target.checked)} /><span>Aplicar automaticamente (o cliente não precisa digitar o código)</span></label>
-          <AudiencePicker groups={groups} pickedGroups={pickedGroups} setPickedGroups={setPickedGroups} pickedClients={pickedClients} setPickedClients={setPickedClients} />
+          {kind === 'percentual' && Number(value.replace(',', '.')) >= 100 && <div className="notice admin-field-wide"><strong>Cota grátis</strong><span>Com esse desconto a cota sai por R$ 0,00 e é confirmada na hora, sem pagamento. Defina o limite total de usos para controlar quantas cotas grátis podem sair.</span></div>}
           <button className="admin-button admin-button-primary" disabled={busy}>Criar cupom</button>
         </form>
       </Panel>
@@ -130,16 +137,18 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
         <Table minWidth={1000}><thead><tr><th>Código</th><th>Desconto</th><th>Quem recebe</th><th>Usos</th><th>Situação</th><th>Ações</th></tr></thead><tbody>{coupons.map((coupon) => <tr key={coupon.id}>
           <td><strong>{coupon.codigo}</strong><small>{coupon.descricao ?? ''}{coupon.automatico ? ' · automático' : ''}</small></td>
           <td>{coupon.resumo}<small>{coupon.descontoMaximoCentavos ? `até ${cents(coupon.descontoMaximoCentavos)}` : ''}{coupon.valorMinimoCentavos ? ` · mín. ${cents(coupon.valorMinimoCentavos)}` : ''}</small></td>
-          <td>{audienceText(coupon)}</td>
-          <td>{coupon.usosPagos} pagos · {coupon.usosEmAberto} em aberto{coupon.limiteTotal ? ` / limite ${coupon.limiteTotal}` : ''}<small>Desconto dado: {cents(coupon.descontoTotalCentavos)}</small></td>
+          <td>{audienceText(coupon) || 'Qualquer pessoa com o código'}{coupon.automatico ? <small>aplicado sozinho</small> : null}</td>
+          <td>{coupon.usosPagos} pagos · {coupon.usosEmAberto} em aberto{coupon.limiteTotal ? ` / limite ${coupon.limiteTotal}` : ''}<small>Desconto dado: {cents(coupon.descontoTotalCentavos)}{coupon.subsidioTotalCentavos ? ` · custo para o BL: ${cents(coupon.subsidioTotalCentavos)}` : ''}</small></td>
           <td>{stateChip(coupon.estado)}<small>{coupon.fimEm ? `até ${dateTime(coupon.fimEm)}` : ''}</small></td>
           <td className="admin-row-actions">
+            <button className="admin-button admin-button-small admin-button-ghost" onClick={() => void copyText(coupon.codigo).then((ok) => notify(ok ? 'success' : 'error', ok ? `Código ${coupon.codigo} copiado.` : 'Não foi possível copiar. Selecione o código e copie.'))}>Copiar código</button>
+            <button className="admin-button admin-button-small admin-button-ghost" onClick={() => void copyText(`${siteUrl()}/?cupom=${encodeURIComponent(coupon.codigo)}`).then((ok) => notify(ok ? 'success' : 'error', ok ? 'Link com o cupom copiado.' : 'Não foi possível copiar o link.'))}>Copiar link</button>
             <button className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void showUses(coupon)}>Usos</button>
             {coupon.ativo ? <button className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void run(async () => { await post(`/api/v1/admin/cupons/${coupon.id}/pausar`, 'POST'); return `Cupom ${coupon.codigo} pausado.`; })}>Pausar</button>
               : <button className="admin-button admin-button-small admin-button-primary" disabled={busy} onClick={() => void run(async () => { await post(`/api/v1/admin/cupons/${coupon.id}/ativar`, 'POST'); return `Cupom ${coupon.codigo} ativado.`; })}>Ativar</button>}
             {coupon.usosPagos + coupon.usosEmAberto === 0 && <button className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => { if (window.confirm(`Apagar o cupom ${coupon.codigo}?`)) void run(async () => { await post(`/api/v1/admin/cupons/${coupon.id}`, 'DELETE'); return 'Cupom apagado.'; }); }}>Apagar</button>}
           </td></tr>)}</tbody></Table>
-        {!coupons.length && <Empty text="Nenhum cupom criado ainda" hint="Crie o primeiro acima. Ele só vale para os grupos e clientes escolhidos." />}
+        {!coupons.length && <Empty text="Nenhum cupom criado ainda" hint="Crie o primeiro acima e envie o código para quem quiser." />}
       </Panel>
       {uses && <Panel title={`Usos do cupom ${uses.codigo}`} action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setUses(null)}>Fechar</button>}>
         <Table minWidth={720}><thead><tr><th>Quando</th><th>Cliente</th><th>Bolão</th><th>Cotas</th><th>Desconto</th><th>Situação</th></tr></thead><tbody>{uses.items.map((row) => <tr key={row.id}><td>{dateTime(row.em)}</td><td><strong>{row.cliente}</strong><small>{row.email}</small></td><td>{row.bolao}</td><td>{row.cotas}</td><td>{cents(row.descontoCentavos)}</td><td>{row.situacao}</td></tr>)}</tbody></Table>
@@ -158,7 +167,13 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
           <label className="admin-field"><span>Começa em (opcional)</span><input type="datetime-local" value={cStart} onChange={(event) => setCStart(event.target.value)} /></label>
           <label className="admin-field"><span>Termina em (opcional)</span><input type="datetime-local" value={cEnd} onChange={(event) => setCEnd(event.target.value)} /></label>
           <label className="check-line admin-field-wide"><input type="checkbox" checked={cActive} onChange={(event) => setCActive(event.target.checked)} /><span>Ativar agora (se não marcar, a campanha fica pausada até você ativar)</span></label>
-          <AudiencePicker groups={groups} pickedGroups={cGroups} setPickedGroups={setCGroups} pickedClients={cClients} setPickedClients={setCClients} />
+          <AudiencePicker label="Quem recebe: grupos e/ou clientes escolhidos" groups={groups} pickedGroups={cGroups} setPickedGroups={setCGroups} pickedClients={cClients} setPickedClients={setCClients} />
+          <div className="admin-field admin-field-wide"><span>Ou por nível do cliente (opcional — vale para quem já atingiu o nível, somando com os grupos e clientes acima)</span>
+            <div className="admin-form-grid">
+              <label className="admin-field"><span>Já gastou pelo menos (R$)</span><input inputMode="decimal" value={cSpent} onChange={(event) => setCSpent(event.target.value)} placeholder="Ex.: 200" /></label>
+              <label className="admin-field"><span>Já fez pelo menos (compras)</span><input inputMode="numeric" value={cPurchases} onChange={(event) => setCPurchases(event.target.value.replace(/\D/g, ''))} placeholder="Ex.: 5" /></label>
+            </div>
+            <small>Se preencher os dois, o cliente precisa atingir os dois. Conta só compras confirmadas.</small></div>
           <button className="admin-button admin-button-primary" disabled={busy}>Criar campanha</button>
         </form>
       </Panel>
@@ -166,7 +181,7 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
         <Table minWidth={1000}><thead><tr><th>Campanha</th><th>Cashback</th><th>Quem recebe</th><th>Creditado</th><th>Situação</th><th>Ações</th></tr></thead><tbody>{campaigns.map((campaign) => <tr key={campaign.id}>
           <td><strong>{campaign.nome}</strong></td>
           <td>{String(campaign.percentual).replace('.', ',')}%<small>{campaign.maximoPorCompraCentavos ? `até ${cents(campaign.maximoPorCompraCentavos)} por compra` : ''}{campaign.valorMinimoCentavos ? ` · mín. ${cents(campaign.valorMinimoCentavos)}` : ''}</small></td>
-          <td>{audienceText(campaign)}</td>
+          <td>{[audienceText(campaign), levelText(campaign) ? `Nível: ${levelText(campaign)}` : ''].filter(Boolean).join(' · ') || '—'}</td>
           <td>{cents(campaign.creditadoCentavos)} em {campaign.compras} {campaign.compras === 1 ? 'compra' : 'compras'}<small>{campaign.restanteCentavos === null ? 'sem teto de orçamento' : `restam ${cents(campaign.restanteCentavos)}`}</small></td>
           <td>{stateChip(campaign.estado)}<small>{campaign.fimEm ? `até ${dateTime(campaign.fimEm)}` : ''}</small></td>
           <td className="admin-row-actions">

@@ -32,6 +32,9 @@ export class CampaignBaseDto {
   @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(100) percentual?: number;
   @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(1_000_000) valorMinimoReais?: number | null;
   @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(100_000) maximoPorCompraReais?: number | null;
+  /** Nível do cliente: já gastou pelo menos isto (em reais) e/ou já pagou pelo menos esta quantidade de compras. */
+  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(10_000_000) gastoMinimoReais?: number | null;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100_000) comprasMinimas?: number | null;
   /** Quanto a campanha pode dar de cashback no total, em reais. Sem isso, não há teto de orçamento. */
   @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(10_000_000) orcamentoReais?: number | null;
   @IsOptional() @IsBoolean() ativa?: boolean;

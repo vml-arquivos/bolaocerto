@@ -162,3 +162,34 @@ describe('festa com hora do sorteio', () => {
     expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date(`${day}T10:00:00-03:00`).toISOString());
   });
 });
+
+describe('hora oficial já preenchida', () => {
+  const mk = () => { const db = makeDb([]); return { db, service: new LotteriesService(db as never, { get: () => undefined } as unknown as ConfigService) }; };
+  beforeAll(() => { jest.useFakeTimers({ now: new Date('2026-11-11T12:00:00-03:00') }); });
+  afterAll(() => { jest.useRealTimers(); });
+
+  it('Mega da Virada sem hora informada usa a hora oficial (10h) e fecha as apostas 1h antes', async () => {
+    const { service, db } = mk();
+    await service.createFestival({ especial: 'mega-da-virada', dataSorteio: '2027-01-01' }, 'a1');
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date('2027-01-01T10:00:00-03:00').toISOString());
+    expect((db.rows[0] as unknown as { cutoffAt: Date }).cutoffAt.toISOString()).toBe(new Date('2027-01-01T09:00:00-03:00').toISOString());
+  });
+  it('hora informada vale mais que a oficial', async () => {
+    const { service, db } = mk();
+    await service.createFestival({ especial: 'mega-da-virada', dataSorteio: '2027-01-01', horaSorteio: '11:00' }, 'a1');
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date('2027-01-01T11:00:00-03:00').toISOString());
+  });
+  it('concurso manual no dia da Mega da Virada nasce marcado como festa, com número oficial e hora oficial', async () => {
+    const { service, db } = mk();
+    const out = await service.createManual({ modalidade: 'megasena', numeroConcurso: 3100, dataSorteio: '2027-01-01' } as never);
+    expect(out).toMatchObject({ numeroConcurso: 3100, especial: 'mega-da-virada', nomeEspecial: 'Mega da Virada', numeroDefinido: true });
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date('2027-01-01T10:00:00-03:00').toISOString());
+    expect((db.rows[0] as unknown as { cutoffAt: Date }).cutoffAt.toISOString()).toBe(new Date('2027-01-01T09:00:00-03:00').toISOString());
+  });
+  it('concurso manual em dia comum continua às 20h e sem marca de festa', async () => {
+    const { service, db } = mk();
+    await service.createManual({ modalidade: 'quina', numeroConcurso: 7001, dataSorteio: '2026-12-02' } as never);
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date('2026-12-02T20:00:00-03:00').toISOString());
+    expect(db.rows[0]!.especial ?? null).toBeNull();
+  });
+});

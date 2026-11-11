@@ -153,8 +153,8 @@ export class NfseService {
   async settings() {
     const [byStatus, withoutNote, withoutNoteSum] = await Promise.all([
       this.prisma.notaFiscal.groupBy({ by: ['status'], _count: true, _sum: { valor: true } }),
-      this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, notaFiscal: null } }),
-      this.prisma.pagamento.aggregate({ where: { status: StatusPagamento.confirmado, notaFiscal: null }, _sum: { valorTaxaAdmin: true, valorBruto: true } }),
+      this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) } } }),
+      this.prisma.pagamento.aggregate({ where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) } }, _sum: { valorTaxaAdmin: true, valorBruto: true } }),
     ]);
     const issuer = this.issuerConfig();
     const focus = this.provider === 'focus';
@@ -450,7 +450,7 @@ export class NfseService {
         take: 300,
       }),
       this.prisma.pagamento.findMany({
-        where: { status: StatusPagamento.confirmado, notaFiscal: null },
+        where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) } },
         orderBy: { confirmadoEm: 'desc' },
         take: 200,
         select: { id: true, valorBruto: true, valorTaxaAdmin: true, metodo: true, confirmadoEm: true, pspProvedor: true, cota: { select: { titularNome: true, bolaoId: true, comprador: { select: { email: true, enderecoCep: true, enderecoLogradouro: true, enderecoNumero: true, enderecoBairro: true, enderecoCidade: true, enderecoUf: true } } } } },

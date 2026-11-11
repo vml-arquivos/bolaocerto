@@ -25,8 +25,12 @@ test('o servidor recebe o modo e a porcentagem para refazer a conta', () => {
   assert.match(wizard, /precoPct: plan\.precoPct/);
 });
 
-test('festa com número oficial aparece na lista de concursos do assistente', () => {
-  assert.match(wizard, /contest\.numeroDefinido !== false/);
+test('festa (com ou sem número oficial) aparece na lista de concursos do assistente, vinda do servidor por modalidade', () => {
+  assert.match(wizard, /status: 'bolao', modalidade: modality/);
+  assert.doesNotMatch(wizard, /contest\.numeroDefinido !== false/, 'festa sem número oficial não é mais escondida');
+  assert.match(wizard, /query\.set\('busca'/);
+  assert.match(wizard, /query\.set\('mes'/);
+  assert.match(wizard, /dateAndTime\(contest\.dataSorteio\)/, 'mostra dia e hora do sorteio');
 });
 
 test('afiliado define os números do próprio bolão e a página mostra o aviso sem números', () => {

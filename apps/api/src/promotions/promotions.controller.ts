@@ -8,10 +8,10 @@ import { RolesGuard } from '../auth/roles.guard';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
 import { amountsForPool } from '../payments/payments.service';
-import { campaignSpentCents } from './cashback';
+import { buyerStats, campaignCandidatesWhere, campaignSpentCents } from './cashback';
 import { checkCoupon, holdsCouponUse, resolveCoupon, userGroupIds } from './coupons';
 import { CreateCampaignDto, CreateCouponDto, UpdateCouponDto, CampaignBaseDto } from './promotions.dto';
-import { describeCoupon, inAudience, inPeriod, normalizeCouponCode, toCents } from './promo-math';
+import { campaignApplies, describeCoupon, hasLevel, inPeriod, minPayableCents, normalizeCouponCode, toCents } from './promo-math';
 
 const PAID: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -21,10 +21,10 @@ const dateOrNull = (value: string | null | undefined) => (value ? new Date(value
 
 type Audience = { grupoIds?: string[]; usuarioIds?: string[] };
 
-/** Confere que os grupos e clientes escolhidos existem e que há pelo menos um: cupom e cashback nunca valem para todos. */
-async function checkAudience(prisma: PrismaService, audience: { grupoIds: string[]; usuarioIds: string[] }) {
+/** Confere que os grupos e clientes escolhidos existem. `required`: pelo menos um (cashback nunca vale para todos; o cupom vale para quem tiver o código). */
+async function checkAudience(prisma: PrismaService, audience: { grupoIds: string[]; usuarioIds: string[] }, required: boolean, message = 'Escolha pelo menos um grupo ou um cliente.') {
   const grupoIds = [...new Set(audience.grupoIds)]; const usuarioIds = [...new Set(audience.usuarioIds)];
-  if (!grupoIds.length && !usuarioIds.length) throw new BadRequestException('Escolha pelo menos um grupo ou um cliente. Cupom e cashback não valem para todos.');
+  if (required && !grupoIds.length && !usuarioIds.length) throw new BadRequestException(message);
   if (grupoIds.length && await prisma.grupo.count({ where: { id: { in: grupoIds } } }) !== grupoIds.length) throw new BadRequestException('Um dos grupos escolhidos não existe mais.');
   if (usuarioIds.length && await prisma.usuario.count({ where: { id: { in: usuarioIds }, desativadoEm: null } }) !== usuarioIds.length) throw new BadRequestException('Um dos clientes escolhidos não existe ou está desativado.');
   return { grupoIds, usuarioIds };
@@ -60,7 +60,7 @@ export class CouponsAdminController {
     const ids = coupons.map((coupon) => coupon.id);
     const [live, paid, names] = await Promise.all([
       ids.length ? this.prisma.cupomUso.groupBy({ by: ['cupomId'], where: { cupomId: { in: ids }, cota: holdsCouponUse(now) }, _count: { _all: true } }) : [],
-      ids.length ? this.prisma.cupomUso.groupBy({ by: ['cupomId'], where: { cupomId: { in: ids }, cota: { status: { in: PAID } } }, _count: { _all: true }, _sum: { descontoCentavos: true } }) : [],
+      ids.length ? this.prisma.cupomUso.groupBy({ by: ['cupomId'], where: { cupomId: { in: ids }, cota: { status: { in: PAID } } }, _count: { _all: true }, _sum: { descontoCentavos: true, subsidioCentavos: true } }) : [],
       nameAudience(this.prisma, coupons),
     ]);
     return {
@@ -73,7 +73,7 @@ export class CouponsAdminController {
           descontoMaximoCentavos: coupon.descontoMaximoCentavos, valorMinimoCentavos: coupon.valorMinimoCentavos, automatico: coupon.automatico, ativo: coupon.ativo, estado: state,
           inicioEm: coupon.inicioEm, fimEm: coupon.fimEm, limiteTotal: coupon.limiteTotal, limitePorCliente: coupon.limitePorCliente,
           grupos: coupon.grupoIds.map((id) => names.groups.get(id) ?? { id, nome: 'Grupo removido' }), clientes: coupon.usuarioIds.map((id) => names.users.get(id) ?? { id, nome: 'Cliente removido', email: '' }),
-          usosEmAberto: used, usosPagos: settled?._count._all ?? 0, descontoTotalCentavos: settled?._sum.descontoCentavos ?? 0, criadoPor: coupon.criador.nome, criadoEm: coupon.criadoEm,
+          usosEmAberto: used, usosPagos: settled?._count._all ?? 0, descontoTotalCentavos: settled?._sum.descontoCentavos ?? 0, subsidioTotalCentavos: settled?._sum.subsidioCentavos ?? 0, publico: coupon.grupoIds.length + coupon.usuarioIds.length > 0 ? 'escolhido' : 'qualquer', criadoPor: coupon.criador.nome, criadoEm: coupon.criadoEm,
         };
       }),
     };
@@ -82,7 +82,8 @@ export class CouponsAdminController {
   @Post()
   async create(@Body() dto: CreateCouponDto, @CurrentUser() admin: AuthUser) {
     if (dto.tipo === 'percentual' && dto.valor > 100) throw new BadRequestException('O desconto em porcentagem vai de 0,01% a 100%.');
-    const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? [], usuarioIds: dto.usuarioIds ?? [] });
+    // Cupom vale para quem tiver o código. Só o cupom automático (sem digitar código) precisa de público escolhido.
+    const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? [], usuarioIds: dto.usuarioIds ?? [] }, dto.automatico === true, 'O cupom automático precisa de um grupo ou cliente escolhido, senão valeria para todo mundo.');
     const inicioEm = dateOrNull(dto.inicioEm); const fimEm = dateOrNull(dto.fimEm);
     checkPeriod(inicioEm, fimEm, true);
     const codigo = dto.codigo ? normalizeCouponCode(dto.codigo) : randomCode();
@@ -96,7 +97,7 @@ export class CouponsAdminController {
           grupoIds: audience.grupoIds, usuarioIds: audience.usuarioIds, criadoPor: admin.id,
         },
       });
-      await this.audit.record(tx, { entidade: 'cupom', entidadeId: row.id, evento: 'cupom.criado', atorId: admin.id, payloadDepois: { codigo, tipo: dto.tipo, valor: dto.valor, grupos: audience.grupoIds.length, clientes: audience.usuarioIds.length } });
+      await this.audit.record(tx, { entidade: 'cupom', entidadeId: row.id, evento: 'cupom.criado', atorId: admin.id, payloadDepois: { codigo, tipo: dto.tipo, valor: dto.valor, gratis: dto.tipo === 'percentual' && dto.valor >= 100, limiteTotal: dto.limiteTotal ?? null, grupos: audience.grupoIds.length, clientes: audience.usuarioIds.length } });
       return row;
     });
     return { id: created.id, codigo: created.codigo };
@@ -122,8 +123,9 @@ export class CouponsAdminController {
       data.limiteTotal = dto.limiteTotal;
     }
     if (dto.limitePorCliente !== undefined) data.limitePorCliente = dto.limitePorCliente;
-    if (dto.grupoIds !== undefined || dto.usuarioIds !== undefined) {
-      const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? current.grupoIds, usuarioIds: dto.usuarioIds ?? current.usuarioIds });
+    const automatic = dto.automatico ?? current.automatico;
+    if (dto.grupoIds !== undefined || dto.usuarioIds !== undefined || (dto.automatico === true && !current.automatico)) {
+      const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? current.grupoIds, usuarioIds: dto.usuarioIds ?? current.usuarioIds }, automatic, 'O cupom automático precisa de um grupo ou cliente escolhido, senão valeria para todo mundo.');
       data.grupoIds = audience.grupoIds; data.usuarioIds = audience.usuarioIds;
     }
     await this.prisma.$transaction(async (tx) => {
@@ -164,7 +166,7 @@ export class CouponsAdminController {
   @Get(':id/usos')
   async uses(@Param('id', ParseUUIDPipe) id: string) {
     const rows = await this.prisma.cupomUso.findMany({ where: { cupomId: id }, orderBy: { criadoEm: 'desc' }, take: 300, include: { usuario: { select: { nome: true, email: true } }, cota: { select: { status: true, quantidade: true, bolao: { select: { concurso: { select: { modalidade: true, numeroConcurso: true } } } } } } } });
-    return { items: rows.map((row) => ({ id: row.id, cliente: row.usuario.nome, email: row.usuario.email, descontoCentavos: row.descontoCentavos, situacao: PAID.includes(row.cota.status) ? 'pago' : row.cota.status === StatusCota.reservada ? 'aguardando pagamento' : 'cancelado', cotas: row.cota.quantidade, bolao: `${row.cota.bolao.concurso.modalidade} #${row.cota.bolao.concurso.numeroConcurso}`, em: row.criadoEm })) };
+    return { items: rows.map((row) => ({ id: row.id, cliente: row.usuario.nome, email: row.usuario.email, descontoCentavos: row.descontoCentavos, subsidioCentavos: row.subsidioCentavos, situacao: PAID.includes(row.cota.status) ? 'pago' : row.cota.status === StatusCota.reservada ? 'aguardando pagamento' : 'cancelado', cotas: row.cota.quantidade, bolao: `${row.cota.bolao.concurso.modalidade} #${row.cota.bolao.concurso.numeroConcurso}`, em: row.criadoEm })) };
   }
 }
 
@@ -185,7 +187,7 @@ export class CashbackCampaignsAdminController {
       const credits = await this.prisma.carteiraMovimento.count({ where: { chave: { startsWith: `camp:${campaign.id}:` } } });
       const state = !campaign.ativa ? 'pausada' : campaign.fimEm && campaign.fimEm < now ? 'vencida' : campaign.inicioEm && campaign.inicioEm > now ? 'agendada' : campaign.orcamentoCentavos !== null && spent >= campaign.orcamentoCentavos ? 'esgotada' : 'ativa';
       return {
-        id: campaign.id, nome: campaign.nome, percentual: Number(campaign.percentual), valorMinimoCentavos: campaign.valorMinimoCentavos, maximoPorCompraCentavos: campaign.maximoPorCompraCentavos, orcamentoCentavos: campaign.orcamentoCentavos,
+        id: campaign.id, nome: campaign.nome, percentual: Number(campaign.percentual), valorMinimoCentavos: campaign.valorMinimoCentavos, maximoPorCompraCentavos: campaign.maximoPorCompraCentavos, orcamentoCentavos: campaign.orcamentoCentavos, gastoMinimoCentavos: campaign.gastoMinimoCentavos, comprasMinimas: campaign.comprasMinimas,
         ativa: campaign.ativa, estado: state, inicioEm: campaign.inicioEm, fimEm: campaign.fimEm,
         grupos: campaign.grupoIds.map((id) => names.groups.get(id) ?? { id, nome: 'Grupo removido' }), clientes: campaign.usuarioIds.map((id) => names.users.get(id) ?? { id, nome: 'Cliente removido', email: '' }),
         creditadoCentavos: spent, compras: credits, restanteCentavos: campaign.orcamentoCentavos === null ? null : Math.max(0, campaign.orcamentoCentavos - spent), criadoPor: campaign.criador.nome, criadoEm: campaign.criadoEm,
@@ -196,14 +198,16 @@ export class CashbackCampaignsAdminController {
 
   @Post()
   async create(@Body() dto: CreateCampaignDto, @CurrentUser() admin: AuthUser) {
-    const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? [], usuarioIds: dto.usuarioIds ?? [] });
+    const level = { gastoMinimoCentavos: reaisToCents(dto.gastoMinimoReais), comprasMinimas: dto.comprasMinimas ?? null };
+    // Cashback nunca vale para todos: grupos, clientes e/ou nível de gasto e de compras.
+    const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? [], usuarioIds: dto.usuarioIds ?? [] }, !hasLevel(level), 'Escolha grupos, clientes ou um nível de gasto/compras. O cashback não vale para todos.');
     const inicioEm = dateOrNull(dto.inicioEm); const fimEm = dateOrNull(dto.fimEm);
     checkPeriod(inicioEm, fimEm, true);
     const created = await this.prisma.$transaction(async (tx) => {
       const row = await tx.cashbackCampanha.create({
-        data: { nome: dto.nome.trim(), percentual: new Prisma.Decimal(dto.percentual), valorMinimoCentavos: reaisToCents(dto.valorMinimoReais), maximoPorCompraCentavos: reaisToCents(dto.maximoPorCompraReais), orcamentoCentavos: reaisToCents(dto.orcamentoReais), ativa: dto.ativa === true, inicioEm, fimEm, grupoIds: audience.grupoIds, usuarioIds: audience.usuarioIds, criadoPor: admin.id },
+        data: { nome: dto.nome.trim(), percentual: new Prisma.Decimal(dto.percentual), valorMinimoCentavos: reaisToCents(dto.valorMinimoReais), maximoPorCompraCentavos: reaisToCents(dto.maximoPorCompraReais), orcamentoCentavos: reaisToCents(dto.orcamentoReais), ...level, ativa: dto.ativa === true, inicioEm, fimEm, grupoIds: audience.grupoIds, usuarioIds: audience.usuarioIds, criadoPor: admin.id },
       });
-      await this.audit.record(tx, { entidade: 'cashback_campanha', entidadeId: row.id, evento: 'cashback.campanha_criada', atorId: admin.id, payloadDepois: { nome: row.nome, percentual: dto.percentual, ativa: row.ativa, grupos: audience.grupoIds.length, clientes: audience.usuarioIds.length } });
+      await this.audit.record(tx, { entidade: 'cashback_campanha', entidadeId: row.id, evento: 'cashback.campanha_criada', atorId: admin.id, payloadDepois: { nome: row.nome, percentual: dto.percentual, ativa: row.ativa, grupos: audience.grupoIds.length, clientes: audience.usuarioIds.length, gastoMinimoCentavos: level.gastoMinimoCentavos, comprasMinimas: level.comprasMinimas } });
       return row;
     });
     return { id: created.id };
@@ -226,10 +230,14 @@ export class CashbackCampaignsAdminController {
     if (dto.ativa !== undefined) data.ativa = dto.ativa;
     const inicioEm = dto.inicioEm !== undefined ? dateOrNull(dto.inicioEm) : current.inicioEm; const fimEm = dto.fimEm !== undefined ? dateOrNull(dto.fimEm) : current.fimEm;
     if (dto.inicioEm !== undefined || dto.fimEm !== undefined) { checkPeriod(inicioEm, fimEm, dto.fimEm !== undefined); data.inicioEm = inicioEm; data.fimEm = fimEm; }
-    if (dto.grupoIds !== undefined || dto.usuarioIds !== undefined) {
-      const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? current.grupoIds, usuarioIds: dto.usuarioIds ?? current.usuarioIds });
-      data.grupoIds = audience.grupoIds; data.usuarioIds = audience.usuarioIds;
-    }
+    const level = {
+      gastoMinimoCentavos: dto.gastoMinimoReais !== undefined ? reaisToCents(dto.gastoMinimoReais) : current.gastoMinimoCentavos,
+      comprasMinimas: dto.comprasMinimas !== undefined ? dto.comprasMinimas : current.comprasMinimas,
+    };
+    if (dto.gastoMinimoReais !== undefined) data.gastoMinimoCentavos = level.gastoMinimoCentavos;
+    if (dto.comprasMinimas !== undefined) data.comprasMinimas = level.comprasMinimas;
+    const audience = await checkAudience(this.prisma, { grupoIds: dto.grupoIds ?? current.grupoIds, usuarioIds: dto.usuarioIds ?? current.usuarioIds }, !hasLevel(level), 'A campanha precisa de grupos, clientes ou um nível de gasto/compras. O cashback não vale para todos.');
+    if (dto.grupoIds !== undefined || dto.usuarioIds !== undefined) { data.grupoIds = audience.grupoIds; data.usuarioIds = audience.usuarioIds; }
     await this.prisma.$transaction(async (tx) => {
       await tx.cashbackCampanha.update({ where: { id }, data });
       await this.audit.record(tx, { entidade: 'cashback_campanha', entidadeId: id, evento: 'cashback.campanha_alterada', atorId: admin.id, payloadDepois: JSON.parse(JSON.stringify(dto)) as Prisma.InputJsonValue });
@@ -305,13 +313,14 @@ export class CouponsClientController {
     const now = new Date();
     const groups = await userGroupIds(this.prisma, user.id);
     // Cashback ativo para esta pessoa (só o percentual: o valor final depende da taxa na hora do pagamento).
-    const campaigns = await this.prisma.cashbackCampanha.findMany({ where: { ativa: true, OR: [{ usuarioIds: { has: user.id } }, ...(groups.length ? [{ grupoIds: { hasSome: groups } }] : [])] }, take: 20 });
-    const cashback = campaigns.filter((campaign) => inPeriod(campaign, now) && inAudience({ grupoIds: campaign.grupoIds, usuarioIds: campaign.usuarioIds }, user.id, groups)).sort((a, b) => Number(b.percentual) - Number(a.percentual))[0];
+    const campaigns = await this.prisma.cashbackCampanha.findMany({ where: campaignCandidatesWhere(user.id, groups), take: 100 });
+    const stats = campaigns.some((campaign) => hasLevel(campaign)) ? await buyerStats(this.prisma, user.id) : null;
+    const cashback = campaigns.filter((campaign) => inPeriod(campaign, now) && campaignApplies(campaign, user.id, groups, stats)).sort((a, b) => Number(b.percentual) - Number(a.percentual))[0];
     const cashbackInfo = cashback ? { nome: cashback.nome, percentual: Number(cashback.percentual) } : null;
     try {
-      const coupon = await resolveCoupon(this.prisma, { userId: user.id, code, grossCents, feeCents: toCents(base.adminFee), lock: false });
+      const coupon = await resolveCoupon(this.prisma, { userId: user.id, code, grossCents, feeCents: toCents(base.adminFee), minPayableCents: minPayableCents(process.env.CORA_MIN_AMOUNT), lock: false });
       if (!coupon) return { aplicado: false, totalCentavos: grossCents, totalComDescontoCentavos: grossCents, cashback: cashbackInfo };
-      return { aplicado: true, codigo: coupon.codigo, descricao: coupon.descricao, automatico: coupon.automatico, descontoCentavos: coupon.descontoCentavos, totalCentavos: grossCents, totalComDescontoCentavos: grossCents - coupon.descontoCentavos, cashback: cashbackInfo };
+      return { aplicado: true, codigo: coupon.codigo, descricao: coupon.descricao, automatico: coupon.automatico, descontoCentavos: coupon.descontoCentavos, totalCentavos: grossCents, totalComDescontoCentavos: grossCents - coupon.descontoCentavos, gratis: grossCents - coupon.descontoCentavos === 0, cashback: cashbackInfo };
     } catch (error) {
       if (code?.trim() && error instanceof ConflictException) return { aplicado: false, erro: error.message, totalCentavos: grossCents, totalComDescontoCentavos: grossCents, cashback: cashbackInfo };
       return { aplicado: false, totalCentavos: grossCents, totalComDescontoCentavos: grossCents, cashback: cashbackInfo };

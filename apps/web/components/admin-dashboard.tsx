@@ -44,6 +44,18 @@ import { PromotionsAdminView } from './admin-promotions';
 const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos', 'funil']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
+const MONTH_LABELS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+/** Meses (AAAA-MM) de `from` até `to` em relação ao mês atual (Brasília), do mais novo para o mais antigo quando for histórico. */
+function filterMonths(from: number, to: number) {
+  const base = new Date(Date.now() - 3 * 3600_000);
+  const list = [];
+  for (let offset = from; offset <= to; offset += 1) {
+    const date = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + offset, 1));
+    list.push({ key: date.toISOString().slice(0, 7), label: `${MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCFullYear()}` });
+  }
+  return to <= 0 ? list.reverse() : list;
+}
+
 function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   const searchParams = useSearchParams();
   const view = searchParams.get('view') || 'visao-geral';
@@ -61,6 +73,8 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [contestScope, setContestScope] = useState<'aberto' | 'festas' | 'historico'>('aberto');
   const [contestMonth, setContestMonth] = useState<string>(() => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7));
+  const [modalityFilter, setModalityFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selectedCommissions, setSelectedCommissions] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -84,8 +98,12 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
       const query = view === 'visao-geral' ? new URLSearchParams({ periodo: period }) : new URLSearchParams({ page: String(page), pageSize: view === 'concursos' ? '30' : '50' });
       if (view !== 'visao-geral') {
         if (search) query.set('busca', search);
-        if (view === 'concursos') { query.set('status', contestScope); if (contestScope === 'aberto') { query.set('mes', contestMonth); query.set('pageSize', '100'); } }
-        else if (statusFilter) query.set('status', statusFilter);
+        if (view === 'concursos') {
+          query.set('status', contestScope);
+          if (contestScope === 'aberto') { query.set('mes', contestMonth); query.set('pageSize', '100'); } else if (monthFilter) query.set('mes', monthFilter);
+          if (modalityFilter) query.set('modalidade', modalityFilter);
+        } else if (statusFilter) query.set('status', statusFilter);
+        if (view === 'boloes') { if (modalityFilter) query.set('modalidade', modalityFilter); if (monthFilter) query.set('mes', monthFilter); }
         if (view === 'usuarios' && roleTab !== 'todos') query.set('papel', roleTab);
       }
       const endpointView = view === 'pagamentos' ? 'recebimentos' : view === 'jogos' ? 'boloes' : view === 'comprovantes' ? 'operacao' : view;
@@ -114,9 +132,12 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [contestScope, contestMonth, page, period, roleTab, search, statusFilter, view]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [contestScope, contestMonth, modalityFilter, monthFilter, page, period, roleTab, search, statusFilter, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { setPage(1); }, [view, contestScope, statusFilter, search, roleTab]);
+  useEffect(() => { setPage(1); }, [view, contestScope, statusFilter, search, roleTab, modalityFilter, monthFilter]);
+  // Filtros de modalidade e mês valem só dentro da tela em que foram escolhidos.
+  useEffect(() => { setModalityFilter(''); setMonthFilter(''); }, [view]);
+  useEffect(() => { setMonthFilter(''); }, [contestScope]);
   useEffect(() => { void load(); return () => { requestSequence.current++; }; }, [load]);
   useEffect(() => {
     const refresh = () => { if (['visao-geral', 'boloes', 'cotas', 'pagamentos', 'recebimentos'].includes(view) && !busy && !editingPool && !attachFor && !showPoolForm && document.visibilityState === 'visible') void load(true); };
@@ -222,7 +243,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     return <DashboardView ctx={ctx} />;
   }
 
-  return <AdminShell testMode={testMode}>{selectedUser && <AdminUserEditor key={selectedUser} id={selectedUser} onClose={() => setSelectedUser(null)} onDone={async () => { setCrmRefresh((value) => value + 1); await load(); }} />}{viewsWithTables.has(view) && <div className="admin-toolbar"><div className="admin-toolbar-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Buscar neste módulo…" aria-label="Buscar" /></div><div className="admin-toolbar-filters">{view !== 'concursos' && <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">{view === 'usuarios' ? 'Contas ativas' : 'Todos os status'}</option>{view === 'usuarios' && <><option value="inativo">Acesso removido</option><option value="todos">Todas as contas</option></>}{view !== 'usuarios' && <><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="pendente">Pendente</option><option value="paga">Paga</option><option value="confirmado">Confirmado</option><option value="aprovado">Aprovado</option></>}</select>}<button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button></div></div>}{toast && <div className={`admin-toast ${toast.type === 'error' ? 'admin-toast-error' : ''}`}>{toast.text}</div>}{poolFor && <AdminModal title={`Novo bolão · ${modalityNames[poolFor.modalidade] ?? poolFor.modalidade}${poolFor.nomeEspecial ? ` · ${poolFor.nomeEspecial}` : ''}`} onClose={() => setPoolFor(null)}><SimplePoolWizard contests={contests} groupId={groupId} initialContestId={poolFor.id} onContestCreated={async () => { await load(); }} onSuccess={async (created) => { setPoolFor(null); await load(); if (created?.id) setAttachFor({ pool: poolForAttachments(created) }); }} /></AdminModal>}{attachFor && (attachFor.share ? <AdminModal title={`Recibo · ${attachFor.share.titularNome}`} onClose={() => setAttachFor(null)}><AttachmentsPanel poolId={attachFor.pool.id} shares={[attachFor.share]} forceShareId={attachFor.share.id} notify={notify} /></AdminModal> : <RegisterBetDialog pool={attachFor.pool} onClose={() => setAttachFor(null)} onDone={() => void load()} notify={notify} />)}<AdminHubTabs view={view} />{loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando…</p></div> : renderView()}{view !== 'concursos' && viewsWithTables.has(view) && (payload.pagination?.pages ?? 0) > 1 && <nav className="admin-toolbar" aria-label="Paginação"><button className="admin-button" disabled={loading || page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button><span>Página {page} de {payload.pagination?.pages} · {payload.pagination?.total} registros</span><button className="admin-button" disabled={loading || page >= (payload.pagination?.pages ?? 1)} onClick={() => setPage(p => p + 1)}>Próxima</button></nav>}</AdminShell>;
+  return <AdminShell testMode={testMode}>{selectedUser && <AdminUserEditor key={selectedUser} id={selectedUser} onClose={() => setSelectedUser(null)} onDone={async () => { setCrmRefresh((value) => value + 1); await load(); }} />}{viewsWithTables.has(view) && <div className="admin-toolbar"><div className="admin-toolbar-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Buscar neste módulo…" aria-label="Buscar" /></div><div className="admin-toolbar-filters">{(view === 'concursos' || view === 'boloes') && <select value={modalityFilter} onChange={(event) => setModalityFilter(event.target.value)} aria-label="Filtrar por modalidade"><option value="">Todas as modalidades</option>{Object.entries(modalityNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select>}{(view === 'boloes' || (view === 'concursos' && contestScope !== 'aberto')) && <select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)} aria-label="Filtrar por mês do sorteio"><option value="">Todos os meses</option>{filterMonths(view === 'concursos' && contestScope === 'historico' ? -12 : -3, view === 'concursos' && contestScope === 'historico' ? 0 : 12).map((month) => <option key={month.key} value={month.key}>{month.label}</option>)}</select>}{view !== 'concursos' && <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filtrar por status"><option value="">{view === 'usuarios' ? 'Contas ativas' : 'Todos os status'}</option>{view === 'usuarios' && <><option value="inativo">Acesso removido</option><option value="todos">Todas as contas</option></>}{view !== 'usuarios' && <><option value="aberto">Aberto</option><option value="fechado">Fechado</option><option value="pendente">Pendente</option><option value="paga">Paga</option><option value="confirmado">Confirmado</option><option value="aprovado">Aprovado</option></>}</select>}<button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button></div></div>}{toast && <div className={`admin-toast ${toast.type === 'error' ? 'admin-toast-error' : ''}`}>{toast.text}</div>}{poolFor && <AdminModal title={`Novo bolão · ${modalityNames[poolFor.modalidade] ?? poolFor.modalidade}${poolFor.nomeEspecial ? ` · ${poolFor.nomeEspecial}` : ''}`} onClose={() => setPoolFor(null)}><SimplePoolWizard contests={contests} groupId={groupId} initialContestId={poolFor.id} onContestCreated={async () => { await load(); }} onSuccess={async (created) => { setPoolFor(null); await load(); if (created?.id) setAttachFor({ pool: poolForAttachments(created) }); }} /></AdminModal>}{attachFor && (attachFor.share ? <AdminModal title={`Recibo · ${attachFor.share.titularNome}`} onClose={() => setAttachFor(null)}><AttachmentsPanel poolId={attachFor.pool.id} shares={[attachFor.share]} forceShareId={attachFor.share.id} notify={notify} /></AdminModal> : <RegisterBetDialog pool={attachFor.pool} onClose={() => setAttachFor(null)} onDone={() => void load()} notify={notify} />)}<AdminHubTabs view={view} />{loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando…</p></div> : renderView()}{view !== 'concursos' && viewsWithTables.has(view) && (payload.pagination?.pages ?? 0) > 1 && <nav className="admin-toolbar" aria-label="Paginação"><button className="admin-button" disabled={loading || page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button><span>Página {page} de {payload.pagination?.pages} · {payload.pagination?.total} registros</span><button className="admin-button" disabled={loading || page >= (payload.pagination?.pages ?? 1)} onClick={() => setPage(p => p + 1)}>Próxima</button></nav>}</AdminShell>;
 }
 
 export function AdminDashboard({ testMode = false }: { testMode?: boolean }) {

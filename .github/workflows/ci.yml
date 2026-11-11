@@ -176,13 +176,18 @@ jobs:
         env:
           E2E_API_URL: http://localhost:3001
           E2E_BASE_URL: http://localhost:3000
-      - name: Cupom de desconto e cashback (só administrador, só para o público escolhido)
+      - name: Cupom (qualquer pessoa, até 100%) e cashback (grupos, clientes e nível), só administrador
         run: NODE_PATH=$(npm root -g) node --test e2e/cupons-cashback.test.mjs
         env:
           E2E_API_URL: http://localhost:3001
           E2E_BASE_URL: http://localhost:3000
-      - name: Telas de cupom e cashback (painel e compra)
+      - name: Telas de cupom e cashback (painel, compra e cota grátis)
         run: NODE_PATH=$(npm root -g) node --test e2e/cupons-painel.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+          E2E_BASE_URL: http://localhost:3000
+      - name: Concursos de festa com hora oficial, criação de bolão e filtros
+        run: NODE_PATH=$(npm root -g) node --test e2e/concursos-festas.test.mjs
         env:
           E2E_API_URL: http://localhost:3001
           E2E_BASE_URL: http://localhost:3000

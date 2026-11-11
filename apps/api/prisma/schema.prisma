@@ -927,6 +927,8 @@ model CupomUso {
   cotaId           String   @unique @map("cota_id") @db.Uuid
   usuarioId        String   @map("usuario_id") @db.Uuid
   descontoCentavos Int      @map("desconto_centavos")
+  /// Parte do desconto que passou da taxa de administração (o BL banca).
+  subsidioCentavos Int      @default(0) @map("subsidio_centavos")
   criadoEm         DateTime @default(now()) @map("criado_em")
   cupom            Cupom    @relation(fields: [cupomId], references: [id])
   cota             Cota     @relation(fields: [cotaId], references: [id], onDelete: Cascade)
@@ -945,6 +947,9 @@ model CashbackCampanha {
   valorMinimoCentavos     Int?     @map("valor_minimo_centavos")
   maximoPorCompraCentavos Int?     @map("maximo_por_compra_centavos")
   orcamentoCentavos       Int?     @map("orcamento_centavos")
+  /// Nível do cliente: já gastou pelo menos isto (centavos) e/ou já pagou pelo menos esta quantidade de compras.
+  gastoMinimoCentavos     Int?     @map("gasto_minimo_centavos")
+  comprasMinimas          Int?     @map("compras_minimas")
   ativa                   Boolean  @default(false)
   inicioEm                DateTime? @map("inicio_em")
   fimEm                   DateTime? @map("fim_em")

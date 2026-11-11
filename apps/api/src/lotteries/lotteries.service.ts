@@ -380,18 +380,41 @@ export class LotteriesService {
     return { removido: true };
   }
 
-  /** Cadastro manual de concurso (contingência quando a API da CAIXA está indisponível). */
+  /**
+   * Cadastro manual de concurso (contingência quando a API da CAIXA está indisponível, ou concurso que a CAIXA ainda não publicou).
+   * Se o dia e a modalidade batem com uma festa de data confirmada (ex.: Mega da Virada), o concurso já nasce marcado como festa,
+   * com o horário oficial do sorteio. Se já existe a mesma festa sem número oficial, ela ganha este número (sem duplicar).
+   */
   async createManual(dto: CreateManualContestDto) {
     const modalidade = this.assertModalidade(dto.modalidade);
     const config = await this.prisma.configLoteria.findUnique({ where: { modalidade } });
     if (!config) throw new BadRequestException('Modalidade sem configuração cadastrada.');
-    const drawDate = new Date(`${dto.dataSorteio}T20:00:00-03:00`);
-    if (Number.isNaN(drawDate.getTime())) throw new BadRequestException('Data do sorteio inválida.');
-    if (drawDate.getTime() < Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
+    // Festa conhecida para este dia (data confirmada pela CAIXA): traz nome e horário oficiais.
+    const known = FESTAS_PRESETS.filter((preset) => preset.modalidade === modalidade)
+      .map((preset) => ({ preset, draw: proximoSorteioFesta(preset.chave, new Date(`${dto.dataSorteio}T00:00:00-03:00`)) }))
+      .find((item) => item.draw?.confirmado && item.draw.data === dto.dataSorteio);
+    const hora = dto.horaSorteio ?? known?.draw?.hora ?? '20:00';
+    const drawDate = new Date(`${dto.dataSorteio}T${hora}:00-03:00`);
+    if (Number.isNaN(drawDate.getTime()) || brazilDayKey(drawDate) !== dto.dataSorteio) throw new BadRequestException('Data do sorteio inválida.');
+    if (drawDate.getTime() <= Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
+    const cutoffAt = known ? festivalCutoff(drawDate, config.horarioCorteLocal) : calculateBrazilCutoff(drawDate, config.horarioCorteLocal);
     const exists = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: dto.numeroConcurso } } });
     if (exists) throw new ConflictException('Este concurso já está cadastrado.');
+    // Festa criada antes do número oficial (provisória) no mesmo dia: vira este concurso, com os bolões que já tiver.
+    const adopted = await this.prisma.$transaction((tx) => adoptProvisionalContests(tx as unknown as FestaTx, modalidade, dto.numeroConcurso, drawDate));
+    if (adopted > 0) {
+      const merged = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: dto.numeroConcurso } } });
+      if (merged) {
+        const updated = await this.prisma.concurso.update({ where: { id: merged.id }, data: { ...(dto.valorEstimadoPremio !== undefined ? { valorEstimadoPremio: dto.valorEstimadoPremio } : {}), acumulado: Boolean(dto.acumulado) || merged.acumulado, sincronizadoEm: new Date() } });
+        return this.toPublicContest(updated);
+      }
+    }
     const contest = await this.prisma.concurso.create({
-      data: { modalidade, numeroConcurso: dto.numeroConcurso, dataSorteio: drawDate, cutoffAt: calculateBrazilCutoff(drawDate, config.horarioCorteLocal), acumulado: Boolean(dto.acumulado), status: 'aberto', fonteSincronizacao: 'manual' },
+      data: {
+        modalidade, numeroConcurso: dto.numeroConcurso, dataSorteio: drawDate, cutoffAt, acumulado: Boolean(dto.acumulado), status: 'aberto', fonteSincronizacao: 'manual',
+        valorEstimadoPremio: dto.valorEstimadoPremio ?? null,
+        ...(known ? { especial: known.preset.chave, nomeEspecial: known.preset.nome, numeroDefinido: true } : {}),
+      },
     });
     return this.toPublicContest(contest);
   }
@@ -412,7 +435,9 @@ export class LotteriesService {
     if (!nome) throw new BadRequestException('Informe o nome da festa (ex.: Mega da Virada).');
     const config = await this.prisma.configLoteria.findUnique({ where: { modalidade } });
     if (!config) throw new BadRequestException('Modalidade sem configuração cadastrada.');
-    const hora = dto.horaSorteio ?? '20:00';
+    // Sem hora informada, vale o horário oficial da festa naquele dia (ex.: Mega da Virada); sem festa conhecida, 20:00.
+    const knownDraw = preset ? proximoSorteioFesta(preset.chave, new Date(`${dto.dataSorteio}T00:00:00-03:00`)) : null;
+    const hora = dto.horaSorteio ?? (knownDraw && knownDraw.data === dto.dataSorteio ? knownDraw.hora : '20:00');
     const drawDate = new Date(`${dto.dataSorteio}T${hora}:00-03:00`);
     if (Number.isNaN(drawDate.getTime())) throw new BadRequestException('Data do sorteio inválida.');
     if (brazilDayKey(drawDate) !== dto.dataSorteio) throw new BadRequestException('Data do sorteio inválida.');

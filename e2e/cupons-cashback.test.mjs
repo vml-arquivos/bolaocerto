@@ -1,4 +1,4 @@
-// Cupom de desconto e cashback por campanha: só administrador cria; vale só para grupo/cliente escolhido; sai só da taxa do BL.
+// Cupom (qualquer pessoa com o código, até 100% = cota grátis) e cashback por campanha (grupos, clientes ou nível). Só o administrador cria.
 // Uso: E2E_API_URL=http://localhost:3001 node --test e2e/cupons-cashback.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -65,55 +65,49 @@ test('só o administrador mexe em cupom e cashback', async () => {
   ok(await call('PATCH', `/admin/usuarios/${staff.id}/papel`, { papel: 'operacao' }), 'virar operação');
   ok(await call('POST', '/auth/login', { email: staff.email, senha: 'Senha123' }, staff.jar), 'login operação');
   for (const path of ['/admin/cupons', '/admin/cashback-campanhas', '/admin/promocoes/grupos']) assert.equal((await call('GET', path, undefined, staff.jar)).status, 403, `${path} operação`);
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 5, grupoIds: [state.group.id] }, staff.jar)).status, 403, 'operação não cria cupom');
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 5, grupoIds: [state.group.id] }, state.a.jar)).status, 403, 'cliente não cria cupom');
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 5 }, staff.jar)).status, 403, 'operação não cria cupom');
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 5 }, state.a.jar)).status, 403, 'cliente não cria cupom');
   assert.equal((await call('POST', '/admin/cashback-campanhas', { nome: 'Hack', percentual: 5, grupoIds: [state.group.id] }, state.a.jar)).status, 403, 'cliente não cria campanha');
 });
 
-test('cupom: validações na criação (nunca para todos)', async () => {
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 5 })).status, 400, 'sem grupo nem cliente');
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 5, grupoIds: [], usuarioIds: [] })).status, 400, 'listas vazias');
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 150, grupoIds: [state.group.id] })).status, 400, 'mais de 100%');
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 0, grupoIds: [state.group.id] })).status, 400, 'zero');
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'sorteio', valor: 5, grupoIds: [state.group.id] })).status, 400, 'tipo inválido');
+test('cupom: validações na criação', async () => {
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 150 })).status, 400, 'mais de 100%');
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 0 })).status, 400, 'zero');
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'sorteio', valor: 5 })).status, 400, 'tipo inválido');
   assert.equal((await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, grupoIds: ['00000000-0000-4000-8000-000000000000'] })).status, 400, 'grupo que não existe');
   assert.equal((await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, usuarioIds: ['00000000-0000-4000-8000-000000000000'] })).status, 400, 'cliente que não existe');
-  assert.equal((await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, grupoIds: [state.group.id], inicioEm: '2030-02-01T00:00:00Z', fimEm: '2030-01-01T00:00:00Z' })).status, 400, 'fim antes do início');
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, inicioEm: '2030-02-01T00:00:00Z', fimEm: '2030-01-01T00:00:00Z' })).status, 400, 'fim antes do início');
+  assert.equal((await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, automatico: true })).status, 400, 'automático sem público valeria para todo mundo');
 });
 
-test('cupom: criado para o grupo e para o Bruno; vale só para eles', async () => {
+test('cupom de qualquer pessoa: criado sem público, vale para todo mundo que tiver o código', async () => {
   state.code = `E2E${String(stamp).slice(-6)}`;
-  const created = await call('POST', '/admin/cupons', { codigo: state.code.toLowerCase(), descricao: 'teste', tipo: 'percentual', valor: 5, limiteTotal: 3, limitePorCliente: 1, grupoIds: [state.group.id], usuarioIds: [state.b.id] }); ok(created, 'criar cupom');
+  const created = await call('POST', '/admin/cupons', { codigo: state.code.toLowerCase(), descricao: 'teste', tipo: 'percentual', valor: 5, limiteTotal: 3, limitePorCliente: 1 }); ok(created, 'criar cupom');
   assert.equal(created.data.codigo, state.code, 'código normalizado em maiúsculas');
   state.coupon = created.data;
-  assert.equal((await call('POST', '/admin/cupons', { codigo: state.code, tipo: 'valor', valor: 1, grupoIds: [state.group.id] })).status, 409, 'código repetido');
+  assert.equal((await call('POST', '/admin/cupons', { codigo: state.code, tipo: 'valor', valor: 1 })).status, 409, 'código repetido');
   const list = (await call('GET', '/admin/cupons')).data.items.find((item) => item.id === state.coupon.id);
-  assert.equal(list.estado, 'ativo'); assert.equal(list.grupos[0].id, state.group.id); assert.equal(list.clientes[0].id, state.b.id);
+  assert.equal(list.estado, 'ativo'); assert.equal(list.publico, 'qualquer'); assert.equal(list.grupos.length, 0); assert.equal(list.clientes.length, 0);
 });
 
-test('cliente vê o desconto antes de pagar; quem não é do público não descobre o cupom', async () => {
+test('cliente vê o desconto antes de pagar; sem o código não há desconto', async () => {
   const query = `bolaoId=${state.pool.id}&quantidade=1&codigo=${state.code}`;
-  const a = await call('GET', `/cupons/aplicavel?${query}`, undefined, state.a.jar); ok(a, 'preview Alice');
-  assert.equal(a.data.aplicado, true); assert.equal(a.data.totalCentavos, 2000); assert.equal(a.data.descontoCentavos, 100); assert.equal(a.data.totalComDescontoCentavos, 1900);
+  for (const [label, client] of [['Alice', state.a], ['Bruno', state.b], ['Carla', state.c]]) {
+    const r = await call('GET', `/cupons/aplicavel?${query}`, undefined, client.jar); ok(r, `preview ${label}`);
+    assert.equal(r.data.aplicado, true, `${label} usa o cupom`); assert.equal(r.data.totalCentavos, 2000); assert.equal(r.data.descontoCentavos, 100); assert.equal(r.data.totalComDescontoCentavos, 1900); assert.equal(r.data.gratis, false);
+  }
   const two = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=2&codigo=${state.code}`, undefined, state.a.jar);
   assert.equal(two.data.descontoCentavos, 200, '5% de 2 cotas');
-  const b = await call('GET', `/cupons/aplicavel?${query}`, undefined, state.b.jar); assert.equal(b.data.aplicado, true, 'Bruno é cliente escolhido');
-  const c = await call('GET', `/cupons/aplicavel?${query}`, undefined, state.c.jar);
-  assert.equal(c.data.aplicado, false); assert.equal(c.data.totalComDescontoCentavos, 2000);
   const wrong = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1&codigo=NAOEXISTE`, undefined, state.a.jar);
-  assert.equal(wrong.data.erro, c.data.erro, 'mesma mensagem para cupom que não existe e cupom de outro público');
+  assert.equal(wrong.data.aplicado, false); assert.ok(wrong.data.erro, 'mensagem para código que não existe');
   const none = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1`, undefined, state.a.jar);
   assert.equal(none.data.aplicado, false, 'sem código e sem automático não aplica nada');
 });
 
 test('reserva com cupom: desconto sai da taxa, custo do bolão intacto, baixa pelo valor com desconto', async () => {
-  const outsider = await reserve(state.c, { cupom: state.code });
-  assert.equal(outsider.status, 409, 'Carla não pode usar'); assert.match(String(outsider.data.message), /não é válido/);
   const mine = await reserve(state.a, { cupom: state.code }); ok(mine, 'Alice reserva com cupom');
   assert.equal(mine.data.cupom.descontoCentavos, 100); state.shareA = mine.data.id;
   ok(await call('POST', `/admin/cotas/${state.shareA}/baixa`, { forma: 'pix_direto' }), 'baixa');
-  const receipts = await call('GET', `/admin/recebimentos?busca=${encodeURIComponent(state.a.email)}`);
-  const row = (receipts.data.items ?? receipts.data).find?.((item) => item.cotaId === state.shareA || item.id === state.shareA || item.cota?.id === state.shareA);
   const payment = await call('GET', `/cotas/${state.shareA}/pagamento`, undefined, state.a.jar); ok(payment, 'pagamento');
   const p = payment.data;
   assert.equal(Math.round(Number(p.valorBruto) * 100), 1900, 'cobra o valor com desconto');
@@ -121,18 +115,21 @@ test('reserva com cupom: desconto sai da taxa, custo do bolão intacto, baixa pe
     assert.equal(Math.round(Number(p.valorTaxaAdmin) * 100), 82, 'taxa do BL (R$ 1,82) reduzida em R$ 1,00');
     assert.equal(Math.round(Number(p.valorCustoBilhete) * 100), 1818, 'custo do bolão não muda');
   }
-  void row;
   const uses = (await call('GET', `/admin/cupons/${state.coupon.id}/usos`)).data.items;
-  assert.equal(uses.length, 1); assert.equal(uses[0].situacao, 'pago'); assert.equal(uses[0].descontoCentavos, 100);
+  assert.equal(uses.length, 1); assert.equal(uses[0].situacao, 'pago'); assert.equal(uses[0].descontoCentavos, 100); assert.equal(uses[0].subsidioCentavos, 0, 'desconto dentro da taxa não custa nada ao BL');
 });
 
-test('limite por cliente e cancelamento devolve o uso', async () => {
+test('limite por cliente, limite total e cancelamento devolve o uso', async () => {
   const again = await reserve(state.a, { cupom: state.code });
   assert.equal(again.status, 409, 'Alice já usou'); assert.match(String(again.data.message), /já usou/);
   const bruno = await reserve(state.b, { cupom: state.code }); ok(bruno, 'Bruno reserva');
-  assert.equal((await call('GET', `/admin/cupons`)).data.items.find((item) => item.id === state.coupon.id).usosEmAberto, 2);
+  const carla = await reserve(state.c, { cupom: state.code }); ok(carla, 'Carla também usa (cupom de qualquer pessoa)');
+  assert.equal((await call('GET', `/admin/cupons`)).data.items.find((item) => item.id === state.coupon.id).usosEmAberto, 3, 'conta Alice (paga) + Bruno + Carla');
+  const dana = await newClient('Dana');
+  assert.equal((await reserve(dana, { cupom: state.code })).status, 409, 'limite total de 3 usos esgotado');
   assert.equal((await reserve(state.b, { cupom: state.code })).status, 409, 'Bruno já tem um uso em aberto');
   ok(await call('POST', `/admin/cotas/${bruno.data.id}/cancelar`, { motivo: 'teste' }), 'cancelar reserva');
+  ok(await call('POST', `/admin/cotas/${carla.data.id}/cancelar`, { motivo: 'teste' }), 'cancelar reserva da Carla');
   const free = await reserve(state.b, { cupom: state.code }); ok(free, 'depois de cancelar o uso volta');
   ok(await call('POST', `/admin/cotas/${free.data.id}/cancelar`, { motivo: 'teste' }), 'cancelar de novo');
 });
@@ -147,24 +144,59 @@ test('cupom pausado não vale; apagar com uso é bloqueado; limite não pode fic
   ok(await call('POST', `/admin/cupons/${state.coupon.id}/ativar`), 'ativar');
 });
 
-test('cupom automático e cupom de valor fixo respeitam a taxa', async () => {
-  const auto = await call('POST', '/admin/cupons', { tipo: 'valor', valor: 50, automatico: true, limitePorCliente: 5, usuarioIds: [state.c.id], descricao: 'automático' }); ok(auto, 'criar automático');
+test('cupom de 100%: cota grátis gerada e confirmada na hora, sem pagamento', async () => {
+  const code = `GRATIS${String(stamp).slice(-5)}`;
+  const created = await call('POST', '/admin/cupons', { codigo: code, tipo: 'percentual', valor: 100, limiteTotal: 2, limitePorCliente: 1 }); ok(created, 'criar cupom 100%');
+  state.free = created.data;
+  const preview = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1&codigo=${code}`, undefined, state.a.jar);
+  assert.equal(preview.data.aplicado, true); assert.equal(preview.data.gratis, true); assert.equal(preview.data.totalComDescontoCentavos, 0); assert.equal(preview.data.descontoCentavos, 2000);
+  const reserved = await reserve(state.a, { cupom: code }); ok(reserved, 'reservar com 100%');
+  const paid = await call('POST', `/cotas/${reserved.data.id}/pagamento`, { metodo: 'pix' }, state.a.jar); ok(paid, 'confirmar cota grátis');
+  assert.equal(paid.data.status, 'confirmado', 'confirmada na hora');
+  assert.equal(Math.round(Number(paid.data.valorBruto) * 100), 0);
+  const again = await call('GET', `/cotas/${reserved.data.id}/pagamento`, undefined, state.a.jar);
+  assert.equal(again.data.status, 'confirmado');
+  const uses = (await call('GET', `/admin/cupons/${state.free.id}/usos`)).data.items;
+  assert.equal(uses.length, 1); assert.equal(uses[0].situacao, 'pago'); assert.equal(uses[0].descontoCentavos, 2000); assert.equal(uses[0].subsidioCentavos, 1818, 'o BL paga o custo do jogo (R$ 18,18)');
+  const stats = (await call('GET', '/admin/cupons')).data.items.find((item) => item.id === state.free.id);
+  assert.equal(stats.usosPagos, 1); assert.equal(stats.subsidioTotalCentavos, 1818);
+  // Mesmo cliente não repete; outro cliente usa; o terceiro esbarra no limite total de 2.
+  assert.equal((await reserve(state.a, { cupom: code })).status, 409, 'Alice já usou');
+  const second = await reserve(state.b, { cupom: code }); ok(second, 'Bruno usa o 100%');
+  ok(await call('POST', `/cotas/${second.data.id}/pagamento`, { metodo: 'pix' }, state.b.jar), 'confirmar Bruno');
+  assert.equal((await reserve(state.c, { cupom: code })).status, 409, 'limite total de 2');
+  // Estornar a cota grátis devolve o uso.
+  ok(await call('POST', `/admin/cotas/${second.data.id}/cancelar`, { motivo: 'teste' }), 'cancelar cota grátis');
+  const afterCancel = (await call('GET', '/admin/cupons')).data.items.find((item) => item.id === state.free.id);
+  assert.equal(afterCancel.usosPagos, 1, 'o uso cancelado deixa de contar');
+});
+
+test('valor que cobre a cota inteira também deixa grátis; desconto parcial respeita o mínimo cobrável', async () => {
+  const big = await call('POST', '/admin/cupons', { tipo: 'valor', valor: 50, limitePorCliente: 5 }); ok(big, 'cupom de R$ 50');
+  const p1 = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1&codigo=${big.data.codigo}`, undefined, state.c.jar);
+  assert.equal(p1.data.gratis, true); assert.equal(p1.data.totalComDescontoCentavos, 0);
+  const near = await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 99, limitePorCliente: 5 }); ok(near, 'cupom de 99%');
+  const p2 = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1&codigo=${near.data.codigo}`, undefined, state.c.jar);
+  assert.equal(p2.data.gratis, false); assert.equal(p2.data.totalComDescontoCentavos, 500, 'nunca abaixo do mínimo de R$ 5,00');
+  const capped = await call('POST', '/admin/cupons', { tipo: 'percentual', valor: 100, descontoMaximoReais: 5, limitePorCliente: 5 }); ok(capped, 'cupom 100% com teto');
+  const p3 = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1&codigo=${capped.data.codigo}`, undefined, state.c.jar);
+  assert.equal(p3.data.gratis, false); assert.equal(p3.data.descontoCentavos, 500, 'o teto do cupom vale');
+  for (const coupon of [big, near, capped]) ok(await call('DELETE', `/admin/cupons/${coupon.data.id}`), 'apagar cupom de teste');
+});
+
+test('cupom automático (com público escolhido) aplica sem digitar', async () => {
+  const auto = await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, automatico: true, limitePorCliente: 5, usuarioIds: [state.c.id], descricao: 'automático' }); ok(auto, 'criar automático');
   state.auto = auto.data;
   const preview = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1`, undefined, state.c.jar);
-  assert.equal(preview.data.aplicado, true, 'automático aplica sem digitar'); assert.equal(preview.data.descontoCentavos, 182, 'R$ 50 é limitado à taxa de R$ 1,82');
-  assert.equal(preview.data.totalComDescontoCentavos, 1818, 'nunca abaixo do custo do bolão');
+  assert.equal(preview.data.aplicado, true, 'automático aplica sem digitar'); assert.equal(preview.data.descontoCentavos, 100);
+  assert.equal(preview.data.totalComDescontoCentavos, 1900);
   const noAuto = await call('GET', `/cupons/aplicavel?bolaoId=${state.pool.id}&quantidade=1`, undefined, state.b.jar);
   assert.equal(noAuto.data.aplicado, false, 'quem não é do público não recebe');
-  const reserved = await reserve(state.c); ok(reserved, 'Carla reserva sem digitar');
-  assert.equal(reserved.data.cupom.descontoCentavos, 182); state.shareC = reserved.data.id;
-  ok(await call('POST', `/admin/cotas/${state.shareC}/baixa`, { forma: 'pix_direto' }), 'baixa da Carla');
-  const payment = await call('GET', `/cotas/${state.shareC}/pagamento`, undefined, state.c.jar);
-  assert.equal(Math.round(Number(payment.data.valorBruto) * 100), 1818);
   ok(await call('POST', `/admin/cupons/${state.auto.id}/pausar`), 'pausar automático');
 });
 
 test('cashback: campanha nasce pausada, só vale para o público, respeita teto e orçamento', async () => {
-  assert.equal((await call('POST', '/admin/cashback-campanhas', { nome: 'Sem público', percentual: 5 })).status, 400, 'não vale para todos');
+  assert.equal((await call('POST', '/admin/cashback-campanhas', { nome: 'Sem público', percentual: 5 })).status, 400, 'precisa de grupo, cliente ou nível');
   assert.equal((await call('POST', '/admin/cashback-campanhas', { nome: 'Muito', percentual: 101, grupoIds: [state.group.id] })).status, 400);
   const created = await call('POST', '/admin/cashback-campanhas', { nome: `Cashback E2E ${stamp}`, percentual: 5, orcamentoReais: 1.5, grupoIds: [state.group.id], usuarioIds: [state.b.id] }); ok(created, 'criar campanha');
   state.campaign = created.data;
@@ -214,6 +246,22 @@ test('cashback é desfeito quando o pagamento é estornado; campanha com crédit
   ok(await call('DELETE', `/admin/cashback-campanhas/${unused.data.id}`), 'apagar campanha sem uso');
   const couponUnused = await call('POST', '/admin/cupons', { tipo: 'valor', valor: 1, usuarioIds: [state.c.id] }); ok(couponUnused, 'cupom sem uso');
   ok(await call('DELETE', `/admin/cupons/${couponUnused.data.id}`), 'apagar cupom sem uso');
+});
+
+test('cashback por nível de compra: só quem já comprou o mínimo recebe', async () => {
+  const created = await call('POST', '/admin/cashback-campanhas', { nome: `Nível E2E ${stamp}`, percentual: 5, comprasMinimas: 2, ativa: true }); ok(created, 'criar campanha por nível');
+  const dana = await newClient('Nivel');
+  const buy = async () => { const r = await reserve(dana); ok(r, 'reserva'); ok(await call('POST', `/admin/cotas/${r.data.id}/baixa`, { forma: 'pix_direto' }), 'baixa'); return (await wallet(dana)).saldoCentavos; };
+  assert.equal(await buy(), 0, '1ª compra: ainda sem nível');
+  assert.equal(await buy(), 0, '2ª compra: tinha só 1 antes');
+  assert.equal(await buy(), 100, '3ª compra: já tinha 2 compras, ganha 5% de R$ 20,00');
+  const listed = (await call('GET', '/admin/cashback-campanhas')).data.items.find((item) => item.id === created.data.id);
+  assert.equal(listed.comprasMinimas, 2);
+  ok(await call('POST', `/admin/cashback-campanhas/${created.data.id}/pausar`), 'pausar');
+  assert.equal((await call('POST', '/admin/cashback-campanhas', { nome: 'Gasto', percentual: 5, gastoMinimoReais: 100 })).status, 201, 'só por gasto mínimo também vale');
+  const spend = (await call('GET', '/admin/cashback-campanhas')).data.items.find((item) => item.nome === 'Gasto');
+  assert.equal(spend.gastoMinimoCentavos, 10000);
+  ok(await call('DELETE', `/admin/cashback-campanhas/${spend.id}`), 'apagar');
 });
 
 test('seletores do painel: grupos e busca de clientes', async () => {

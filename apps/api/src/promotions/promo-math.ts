@@ -1,8 +1,9 @@
 /**
  * Contas de cupom e cashback, em centavos inteiros (nada de ponto flutuante em dinheiro).
  *
- * Regra de ouro: o desconto e o cashback saem SEMPRE da taxa de administração do BL. O dinheiro do bolão
- * (o custo dos jogos) nunca diminui, e nenhum valor passa do que a taxa permite.
+ * Cupom: vale para quem tiver o código, de 0,01% até 100%. Enquanto o desconto cabe na taxa de administração do BL, o custo dos
+ * jogos não muda. Acima da taxa (ex.: cupom de 100%), o BL banca a diferença: a taxa fica em zero e o custo registrado cai junto.
+ * Cashback: sai SEMPRE da taxa de administração do BL, nunca passa do que sobra dela.
  */
 
 export type CouponKind = 'percentual' | 'valor';
@@ -20,43 +21,78 @@ export const MAX_CASHBACK_PERCENT = 100;
 
 export const toCents = (reais: number): number => Math.round(reais * 100);
 
-/** Desconto de um cupom numa compra, em centavos. 0 quando não se aplica. */
-export function couponDiscountCents(terms: CouponTerms, grossCents: number, feeCents: number): number {
-  if (![grossCents, feeCents].every(Number.isInteger) || grossCents <= 0 || feeCents <= 0) return 0;
+/** Menor valor que o provedor de pagamento aceita cobrar (R$ 5,00 por padrão, igual ao Pix/boleto da Cora), em centavos. */
+export const DEFAULT_MIN_PAYABLE_CENTS = 500;
+export function minPayableCents(raw: string | number | null | undefined): number {
+  const value = Number(raw ?? DEFAULT_MIN_PAYABLE_CENTS / 100);
+  return Number.isFinite(value) && value > 0 ? Math.round(value * 100) : DEFAULT_MIN_PAYABLE_CENTS;
+}
+
+/**
+ * Desconto de um cupom numa compra, em centavos. 0 quando não se aplica.
+ * Desconto que cobre o total (100%) deixa a cota grátis. Qualquer outro desconto nunca deixa o total abaixo do mínimo cobrável.
+ */
+export function couponDiscountCents(terms: CouponTerms, grossCents: number, minPayable: number = DEFAULT_MIN_PAYABLE_CENTS): number {
+  if (!Number.isInteger(grossCents) || grossCents <= 0) return 0;
   if (!Number.isFinite(terms.valor) || terms.valor <= 0) return 0;
   if (terms.valorMinimoCentavos && grossCents < terms.valorMinimoCentavos) return 0;
   let discount = terms.tipo === 'percentual'
     ? Math.floor((grossCents * Math.min(terms.valor, MAX_COUPON_PERCENT)) / 100)
     : toCents(terms.valor);
   if (terms.descontoMaximoCentavos && terms.descontoMaximoCentavos > 0) discount = Math.min(discount, terms.descontoMaximoCentavos);
-  // Nunca passa da taxa de administração e nunca zera a compra.
-  discount = Math.min(discount, feeCents, grossCents - 1);
-  return Math.max(0, discount);
+  if (discount >= grossCents) return grossCents;
+  const room = grossCents - Math.max(0, Math.trunc(minPayable) || 0);
+  return Math.max(0, Math.min(discount, room));
 }
+
+/** Parte do desconto que passou da taxa de administração (quem paga é o BL). */
+export const subsidyCents = (discountCents: number, feeCents: number): number => Math.max(0, Math.trunc(discountCents) - Math.max(0, Math.trunc(feeCents)));
 
 export interface Money { gross: number; cost: number; adminFee: number; affiliateCommission: number }
 
 const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 /**
- * Aplica o desconto aos valores de uma cota. O custo dos jogos não muda; o total pago e a taxa caem juntos,
- * então `gross = cost + adminFee` continua fechando. A comissão do afiliado acompanha a taxa que sobrou.
+ * Aplica o desconto aos valores de uma cota. O total pago cai pelo desconto. A taxa cai primeiro (o custo dos jogos não muda);
+ * se o desconto passar da taxa, o resto sai do custo registrado, e `gross = cost + adminFee` continua fechando.
+ * A comissão do afiliado acompanha a taxa que sobrou.
  */
 export function applyDiscount(amounts: Money, discountCents: number, affiliatePct: number): Money {
-  const feeCents = toCents(amounts.adminFee);
-  const discount = Math.min(Math.max(Math.trunc(discountCents) || 0, 0), feeCents, Math.max(toCents(amounts.gross) - 1, 0));
+  const grossCents = toCents(amounts.gross);
+  const discount = Math.min(Math.max(Math.trunc(discountCents) || 0, 0), grossCents);
   if (discount === 0) return amounts;
-  const gross = round2(amounts.gross - discount / 100);
-  const adminFee = round2(amounts.adminFee - discount / 100);
-  return { gross, cost: amounts.cost, adminFee, affiliateCommission: round2(adminFee * (affiliatePct / 100)) };
+  const newGross = grossCents - discount;
+  const newFee = Math.max(0, toCents(amounts.adminFee) - discount);
+  const adminFee = newFee / 100;
+  return { gross: newGross / 100, cost: (newGross - newFee) / 100, adminFee, affiliateCommission: round2(adminFee * (affiliatePct / 100)) };
 }
 
 export interface Audience { grupoIds: string[]; usuarioIds: string[] }
 
-/** Cupom e campanha só valem para os grupos e clientes escolhidos. Sem ninguém escolhido, não vale para ninguém. */
+/** Público escolhido (grupos e clientes). Sem ninguém escolhido, não vale para ninguém. */
 export function inAudience(audience: Audience, userId: string, userGroupIds: readonly string[]): boolean {
   if (audience.usuarioIds.includes(userId)) return true;
   return audience.grupoIds.some((id) => userGroupIds.includes(id));
+}
+
+/** Nível do cliente para o cashback: quanto já gastou e quantas compras já pagou (sem contar a compra de agora). */
+export interface BuyerLevel { gastoMinimoCentavos?: number | null; comprasMinimas?: number | null }
+export interface BuyerStats { spentCents: number; purchases: number }
+
+export const hasLevel = (level: BuyerLevel): boolean => Boolean(level.gastoMinimoCentavos) || Boolean(level.comprasMinimas);
+
+/** Atingiu o nível: quando há gasto e compras mínimos, precisa dos dois. */
+export function meetsLevel(level: BuyerLevel, stats: BuyerStats): boolean {
+  if (!hasLevel(level)) return false;
+  if (level.gastoMinimoCentavos && stats.spentCents < level.gastoMinimoCentavos) return false;
+  if (level.comprasMinimas && stats.purchases < level.comprasMinimas) return false;
+  return true;
+}
+
+/** Campanha de cashback vale para quem está nos grupos/clientes escolhidos OU atingiu o nível de gasto/compras da campanha. */
+export function campaignApplies(campaign: Audience & BuyerLevel, userId: string, userGroupIds: readonly string[], stats: BuyerStats | null): boolean {
+  if (inAudience(campaign, userId, userGroupIds)) return true;
+  return stats !== null && meetsLevel(campaign, stats);
 }
 
 export function inPeriod(period: { inicioEm?: Date | null; fimEm?: Date | null }, now: Date): boolean {

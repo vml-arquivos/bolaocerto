@@ -167,19 +167,23 @@ export class AdminService {
     const dateRange = this.dateRange({ de: query.de, ate: query.ate });
     const now = new Date();
     // Toda modalidade precisa de um concurso aberto: se a CAIXA ainda não publicou o seguinte, entra o concurso previsto.
-    if (query.status === 'aberto') await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
-    if (query.status === 'aberto' && query.mes) return this.listContestsOfMonth(query.mes, query.modalidade, now);
+    if (query.status === 'aberto' || query.status === 'bolao') await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
+    if (query.status === 'aberto' && query.mes) return this.listContestsOfMonth(query.mes, query.modalidade, now, query.busca);
+    const search = this.contestSearch(query.busca);
     const scope: Prisma.ConcursoWhereInput =
       query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now }, especial: null }
       : query.status === 'festas' ? { status: 'aberto', cutoffAt: { gt: now }, especial: { not: null } }
+      // Para criar bolão: todo concurso com venda aberta, inclusive festa (com ou sem número oficial) e concurso previsto.
+      : query.status === 'bolao' ? { status: 'aberto', cutoffAt: { gt: now } }
       : query.status === 'historico' ? { OR: [{ status: { not: 'aberto' } }, { cutoffAt: { lte: now } }] }
       : query.status ? { status: query.status } : {};
     const where: Prisma.ConcursoWhereInput = {
       ...scope,
       ...(query.modalidade ? { modalidade: query.modalidade } : {}),
-      ...(Object.keys(dateRange).length ? { dataSorteio: dateRange } : {}),
+      ...(query.mes ? this.monthRange(query.mes) : Object.keys(dateRange).length ? { dataSorteio: dateRange } : {}),
+      ...(search ? { OR: search } : {}),
     };
-    const order: Prisma.SortOrder = query.status === 'aberto' || query.status === 'festas' ? 'asc' : 'desc';
+    const order: Prisma.SortOrder = query.status === 'aberto' || query.status === 'festas' || query.status === 'bolao' ? 'asc' : 'desc';
     const [items, total] = await Promise.all([
       this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: [{ dataSorteio: order }, { modalidade: 'asc' }], skip, take }),
       this.prisma.concurso.count({ where }),
@@ -191,19 +195,44 @@ export class AdminService {
    * Concursos em aberto de um mês (AAAA-MM). Mostra os que já estão no sistema (CAIXA ou previstos) e completa o mês com os
    * sorteios previstos pelo calendário da modalidade, marcados como `previsto` e sem id (ainda não dá para criar bolão neles).
    */
-  private async listContestsOfMonth(mes: string, modalidade: string | undefined, now: Date) {
+  private matchesContestSearch(row: { modalidade: string; numeroConcurso: number }, raw?: string): boolean {
+    const text = (raw ?? '').trim();
+    if (!text) return true;
+    const key = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    return (/^\d{1,9}$/.test(text) && row.numeroConcurso === Number(text)) || (key.length > 0 && row.modalidade.includes(key));
+  }
+
+  /** Busca de concurso: número, nome da festa ou modalidade. */
+  private contestSearch(raw?: string): Prisma.ConcursoWhereInput[] | null {
+    const text = (raw ?? '').trim();
+    if (!text) return null;
+    const key = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const conditions: Prisma.ConcursoWhereInput[] = [{ nomeEspecial: { contains: text, mode: 'insensitive' } }];
+    if (/^\d{1,9}$/.test(text)) conditions.push({ numeroConcurso: Number(text) });
+    if (key) conditions.push({ modalidade: { contains: key } });
+    return conditions;
+  }
+
+  private async listContestsOfMonth(mes: string, modalidade: string | undefined, now: Date, busca?: string) {
     const [year, month] = mes.split('-').map(Number) as [number, number];
     const start = new Date(`${mes}-01T00:00:00-03:00`);
     const next = new Date(`${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01T00:00:00-03:00`);
-    const where: Prisma.ConcursoWhereInput = { status: 'aberto', cutoffAt: { gt: now }, especial: null, dataSorteio: { gte: start, lt: next }, ...(modalidade ? { modalidade } : {}) };
+    const search = this.contestSearch(busca);
+    const where: Prisma.ConcursoWhereInput = { status: 'aberto', cutoffAt: { gt: now }, especial: null, dataSorteio: { gte: start, lt: next }, ...(modalidade ? { modalidade } : {}), ...(search ? { OR: search } : {}) };
     const real = await this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: [{ dataSorteio: 'asc' }, { modalidade: 'asc' }] });
     const known = new Set((await this.prisma.concurso.findMany({ where: { numeroConcurso: { gt: 0 }, dataSorteio: { gte: start } }, select: { modalidade: true, numeroConcurso: true } })).map((row) => `${row.modalidade}:${row.numeroConcurso}`));
     const horizon = new Date(next.getTime() - 1);
     const projected = (await projectUpcomingUntil(this.prisma as never, calculateBrazilCutoff, horizon, now))
-      .filter((row) => row.dataSorteio >= start && row.dataSorteio < next && (!modalidade || row.modalidade === modalidade) && !known.has(`${row.modalidade}:${row.numeroConcurso}`))
+      .filter((row) => row.dataSorteio >= start && row.dataSorteio < next && (!modalidade || row.modalidade === modalidade) && !known.has(`${row.modalidade}:${row.numeroConcurso}`) && this.matchesContestSearch(row, busca))
       .map((row) => ({ id: `previsto-${row.modalidade}-${row.numeroConcurso}`, modalidade: row.modalidade, numeroConcurso: row.numeroConcurso, dataSorteio: row.dataSorteio, cutoffAt: row.cutoffAt, valorEstimadoPremio: null, status: 'aberto', fonteSincronizacao: 'projetado', sincronizadoEm: null, especial: null, nomeEspecial: null, numeroDefinido: true, previstoCalendario: true, _count: { boloes: 0 } }));
     const items = [...real, ...projected].sort((a, b) => a.dataSorteio.getTime() - b.dataSorteio.getTime() || a.modalidade.localeCompare(b.modalidade));
     return { items, pagination: { page: 1, pageSize: items.length || 1, total: items.length, pages: 1 } };
+  }
+
+  /** Sorteios dentro de um mês (AAAA-MM, horário de Brasília). */
+  private monthRange(mes: string): { dataSorteio: { gte: Date; lt: Date } } {
+    const [year, month] = mes.split('-').map(Number) as [number, number];
+    return { dataSorteio: { gte: new Date(`${mes}-01T00:00:00-03:00`), lt: new Date(`${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01T00:00:00-03:00`) } };
   }
 
   async listPools(query: AdminListQueryDto = {}) {
@@ -211,8 +240,8 @@ export class AdminService {
     const isUuidSearch = Boolean(query.busca && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query.busca));
     const where: Prisma.BolaoWhereInput = {
       ...(query.status ? { status: query.status as StatusBolao } : {}),
-      ...(query.busca ? (isUuidSearch ? { id: query.busca } : { grupo: { nome: { contains: query.busca, mode: 'insensitive' } } }) : {}),
-      ...(query.modalidade ? { concurso: { modalidade: query.modalidade } } : {}),
+      ...(query.busca ? (isUuidSearch ? { id: query.busca } : { OR: [{ grupo: { nome: { contains: query.busca.trim(), mode: 'insensitive' } } }, { concurso: { nomeEspecial: { contains: query.busca.trim(), mode: 'insensitive' } } }, ...(/^\d{1,9}$/.test(query.busca.trim()) ? [{ concurso: { numeroConcurso: Number(query.busca.trim()) } }] : [])] }) : {}),
+      ...(query.modalidade || query.mes ? { concurso: { ...(query.modalidade ? { modalidade: query.modalidade } : {}), ...(query.mes ? this.monthRange(query.mes) : {}) } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),

@@ -14,6 +14,14 @@ export class CreateManualContestDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Use a data no formato AAAA-MM-DD.' })
   dataSorteio!: string;
 
+  /** Hora do sorteio em Brasília (HH:mm). Sem informar: a hora da festa conhecida para o dia, ou 20:00. */
+  @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Use a hora no formato HH:mm.' })
+  horaSorteio?: string;
+
+  /** Prêmio estimado, se já houver. */
+  @IsOptional() @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100_000_000_000)
+  valorEstimadoPremio?: number;
+
   @IsOptional()
   @IsBoolean()
   acumulado?: boolean;
