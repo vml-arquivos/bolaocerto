@@ -102,8 +102,8 @@ export function NfseIntegrationView({ notify }: { notify: Notify }) {
       <div className="integration-copy"><span>Endereço</span><code>{hook}</code><button type="button" className="admin-button admin-button-small" onClick={() => copy(hook)}>Copiar</button></div>
       <ol className="integration-steps">
         <li>Na Focus NFe: <strong>Painel API → Webhooks → Adicionar webhook</strong>.</li>
-        <li>Evento: <strong>NFSe Nacional</strong>. URL: o endereço acima.</li>
-        <li>Para proteger com senha: em &quot;Header de Autorização&quot; escreva <code>X-Focus-Segredo</code> e em &quot;Chave de Autorização&quot; uma senha inventada por você. Coloque a mesma senha no servidor em <code>NFSE_FOCUS_WEBHOOK_SECRET</code>.</li>
+        <li>Empresa: a sua, no ambiente <strong>Produção</strong>. Evento: <strong>NFSe</strong> (padrão) enquanto a empresa estiver sem &quot;Ambiente da NFSe Nacional&quot; marcado; use <strong>NFSe Nacional</strong> só se essa opção for marcada. URL: o endereço acima.</li>
+        <li>Para proteger com senha: em &quot;Header de Autorização&quot; escreva <code>X-Focus-Segredo</code> e em &quot;Chave de Autorização&quot; uma senha inventada por você. Coloque a mesma senha no servidor em <code>NFSE_FOCUS_WEBHOOK_SECRET</code>. É opcional: o aviso só manda o sistema consultar a Focus, então não dá para forjar uma nota.</li>
       </ol>
     </Panel>}
   </>;
