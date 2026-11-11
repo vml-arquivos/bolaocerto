@@ -1,4 +1,4 @@
-import { approvalAlert, betAlert, betBucket, paymentReminderText, reminderStep, settlementAlert } from './reminders';
+import { approvalAlert, betAlert, betBucket, proofAlert, paymentReminderText, reminderStep, settlementAlert } from './reminders';
 import { RemindersWatcher } from './reminders.watcher';
 
 const MIN = 60_000;
@@ -55,6 +55,28 @@ describe('avisos de tarefas da equipe', () => {
   });
 });
 
+describe('proofAlert (bolão à venda sem comprovante do jogo)', () => {
+  const now = new Date('2026-11-11T12:00:00Z');
+  const at = (hours: number) => new Date(now.getTime() + hours * 3_600_000);
+  const pool = { id: 'p1', modalidade: 'megasena', numero: 10, cotasPagas: 0 };
+  it('avisa todo dia enquanto falta tempo e muda a chave de um dia para o outro', () => {
+    const a = proofAlert({ ...pool, cutoffAt: at(100) }, now);
+    const b = proofAlert({ ...pool, cutoffAt: at(100) }, new Date(now.getTime() + 25 * 3_600_000));
+    expect(a.chave).toMatch(/^registro:p1:novo-/);
+    expect(a.chave).not.toBe(b.chave);
+    expect(a.urgente).toBe(false);
+    expect(a.titulo).toBe('Falta o comprovante do jogo');
+  });
+  it('sobe a urgência perto do sorteio e diz quando passou do prazo', () => {
+    expect(proofAlert({ ...pool, cutoffAt: at(1) }, now)).toMatchObject({ chave: 'registro:p1:2h', urgente: true, titulo: 'Falta registrar o jogo agora' });
+    expect(proofAlert({ ...pool, cutoffAt: at(-1) }, now)).toMatchObject({ urgente: true, titulo: 'Registro do jogo atrasado!' });
+  });
+  it('quando os números ainda não foram definidos, o aviso pede os dois', () => {
+    expect(proofAlert({ ...pool, cutoffAt: at(30), semNumeros: true }, now).mensagem).toContain('Definir os números');
+    expect(proofAlert({ ...pool, cutoffAt: at(30) }, now).mensagem).not.toContain('Definir os números');
+  });
+});
+
 function watcherSetup() {
   const notifs: any[] = [];
   const shares: any[] = [];
@@ -90,3 +112,25 @@ describe('RemindersWatcher', () => {
     expect(await watcher.alertStaff()).toBe(0);
   });
 });
+
+describe('RemindersWatcher: bolão à venda sem comprovante', () => {
+  const build = (paid: boolean) => {
+    const cutoffAt = new Date(Date.now() + 5 * 24 * 3_600_000);
+    const open = { id: 'np1', numerosApostados: [], concurso: { modalidade: 'quina', numeroConcurso: 9, cutoffAt }, _count: { jogos: 0 } };
+    const prisma: any = {
+      bolao: { findMany: async ({ where }: any) => where.status === 'aberto' ? [open] : where.status?.in ? (paid ? [{ id: 'np1', concurso: { modalidade: 'quina', numeroConcurso: 9, cutoffAt }, cotas: [{ quantidade: 1 }] }] : []) : [] },
+    };
+    return new RemindersWatcher(prisma, { notify: async () => undefined } as any);
+  };
+  it('sem cota paga: pede o comprovante e os números', async () => {
+    const alerts = await build(false).collectTaskAlerts();
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ titulo: 'Falta o comprovante do jogo' });
+    expect(alerts[0]!.mensagem).toContain('Definir os números');
+  });
+  it('com cota paga já existe o aviso de apostar: não repete o de registro', async () => {
+    const alerts = await build(true).collectTaskAlerts();
+    expect(alerts.map((alert) => alert.chave.split(':')[0])).toEqual(['apostar']);
+  });
+});
+

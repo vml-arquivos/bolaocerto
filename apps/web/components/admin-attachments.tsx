@@ -170,10 +170,11 @@ export function RegisterBetDialog({ pool, shares, onClose, onDone, notify }: { p
     <AttachmentsPanel poolId={pool.id} shares={shares} notify={notify} onChange={setCount} />
     {isDraft && <div className="attach-confirm">
       <h3>Abrir as vendas</h3>
-      <button type="button" className="admin-button admin-button-primary" disabled={busy || count === 0} onClick={() => void publish()}>{busy ? 'Publicando…' : 'Publicar bolão e abrir vendas'}</button>
-      <p className="admin-help">{count === 0 ? 'Envie o comprovante para liberar a publicação. Se este bolão é de pré-venda, publique pela lista de bolões.' : 'Comprovante enviado. Pode publicar.'}</p>
+      <button type="button" className="admin-button admin-button-primary" disabled={busy} onClick={() => void publish()}>{busy ? 'Publicando…' : count === 0 ? 'Publicar agora e enviar o comprovante depois' : 'Publicar bolão e abrir vendas'}</button>
+      <p className="admin-help">{count === 0 ? 'Ainda não tem o comprovante do jogo ou os números? Sem problema: publique agora e envie o comprovante depois, pelo botão "Registro" do bolão. Ele fica em "Para fazer" e você recebe aviso até o sorteio. O jogo precisa estar registrado antes do sorteio.' : 'Comprovante enviado. Pode publicar.'}</p>
+      <button type="button" className="admin-button admin-button-ghost" onClick={onClose}>Deixar como rascunho e fazer depois</button>
     </div>}
-    
+    {pool.status === 'aberto' && count === 0 && <p className="admin-note" role="status">Este bolão já está à venda e ainda não tem o comprovante do jogo. Envie o arquivo aqui assim que o jogo for registrado; enquanto isso ele aparece em "Para fazer".</p>}
     {['fechado', 'registrado'].includes(pool.status) && <div className="attach-confirm">
       <h3>{alreadyDone ? 'Atualizar dados da aposta' : 'Confirmar que a aposta foi feita'}</h3>
       <div className="admin-form-grid">

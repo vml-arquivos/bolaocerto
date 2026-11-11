@@ -166,6 +166,16 @@ jobs:
         env:
           E2E_API_URL: http://localhost:3001
           E2E_BASE_URL: http://localhost:3000
+      - name: Publicar bolão sem comprovante e sem números (registro depois)
+        run: NODE_PATH=$(npm root -g) node --test e2e/publicar-sem-comprovante.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+          E2E_BASE_URL: http://localhost:3000
+      - name: Sessão encerra por inatividade e ao fechar a janela
+        run: NODE_PATH=$(npm root -g) node --test e2e/sessao-ociosa.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+          E2E_BASE_URL: http://localhost:3000
       - name: App do afiliado (entrada própria, instalação, menu de baixo e aba Cotas)
         run: NODE_PATH=$(npm root -g) node --test e2e/affiliate-app.test.mjs
         env:

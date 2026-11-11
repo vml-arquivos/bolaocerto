@@ -1,6 +1,7 @@
 import { assertCanManage, isSuperAdmin } from '../admin/superadmin';
 import { ConflictException, ForbiddenException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { sessionIdleMinutes } from './session-policy';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
 import { legalDocument } from '../legal/documents';
@@ -361,6 +362,9 @@ export class AuthService {
     return { ...user, superadmin: isSuperAdmin(user) };
   }
 
+  /** Minutos sem uso até pedir login de novo, para a tela avisar e encerrar a sessão no tempo certo. */
+  idleMinutes(papel: string): number { return sessionIdleMinutes(papel, (key) => this.config.get<string>(key)); }
+
   async refresh(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
     try {
       const payload = await this.jwt.verifyAsync<AuthUser & { typ: string; tv?: number }>(refreshToken, {
@@ -388,7 +392,8 @@ export class AuthService {
     });
     const refreshToken = await this.jwt.signAsync({ sub: user.id, id: user.id, email: user.email, papel: user.papel, tv: user.tokenVersion, typ: 'refresh' }, {
       secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.config.get<string>('JWT_REFRESH_TTL', '30d') as any,
+      // Renovação deslizante: cada renovação vale só pelo tempo máximo sem uso; passou disso, precisa entrar de novo.
+      expiresIn: sessionIdleMinutes(user.papel, (key) => this.config.get<string>(key)) * 60,
     });
     return { accessToken, refreshToken, user: { id: user.id, email: user.email, papel: user.papel } };
   }

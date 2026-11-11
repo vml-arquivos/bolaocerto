@@ -6,6 +6,7 @@ import type { Metadata, Viewport } from 'next';
 import { ClientAppNav } from '../components/client-app-nav';
 import { PwaRegister } from '../components/pwa-register';
 import { LegalGate } from '../components/legal-gate';
+import { IdleSessionGuard } from '../components/idle-session-guard';
 
 export const metadata: Metadata = {
   title: { default: 'BL — Bolão Livre', template: '%s | BL — Bolão Livre' },
@@ -39,5 +40,5 @@ export const viewport: Viewport = {
 const themeInitScript = `(function(){try{var s=localStorage.getItem('bl-theme');var t=s==='light'||s==='dark'?s:(window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}<LegalGate /><ClientAppNav /><PwaRegister /></body></html>;
+  return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head><body suppressHydrationWarning>{children}<IdleSessionGuard /><LegalGate /><ClientAppNav /><PwaRegister /></body></html>;
 }

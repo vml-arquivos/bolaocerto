@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../common/prisma.service';
 import { NotificationsService } from './notifications.service';
-import { approvalAlert, betAlert, paymentReminderText, reminderStep, settlementAlert, TIPO_LEMBRETE_PAGAMENTO, TIPO_TAREFA_EQUIPE, type TaskAlert } from './reminders';
+import { approvalAlert, betAlert, proofAlert, paymentReminderText, reminderStep, settlementAlert, TIPO_LEMBRETE_PAGAMENTO, TIPO_TAREFA_EQUIPE, type TaskAlert } from './reminders';
 
 const MAX_TASK_ALERTS_PER_RUN = 12;
 
@@ -68,6 +68,17 @@ export class RemindersWatcher {
     for (const pool of toBet) {
       const cotasPagas = pool.cotas.reduce((sum, cota) => sum + cota.quantidade, 0);
       if (cotasPagas > 0) alerts.push(betAlert({ id: pool.id, modalidade: pool.concurso.modalidade, numero: pool.concurso.numeroConcurso, cutoffAt: pool.concurso.cutoffAt, cotasPagas }, now));
+    }
+    // Bolão já à venda mas sem comprovante do jogo (ou sem números): a venda abre antes, o registro vem depois e não pode passar do sorteio.
+    const noProof = await this.prisma.bolao.findMany({
+      where: { status: 'aberto', concurso: { cutoffAt: { gte: new Date(now.getTime() - 3_600_000) } }, anexos: { none: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } }, comprovanteUrl: null },
+      select: { id: true, numerosApostados: true, concurso: { select: { modalidade: true, numeroConcurso: true, cutoffAt: true } }, _count: { select: { jogos: true } } },
+      orderBy: { concurso: { cutoffAt: 'asc' } }, take: 50,
+    });
+    const alreadyBet = new Set(alerts.filter((alert) => alert.chave.startsWith('apostar:')).map((alert) => alert.chave.split(':')[1]));
+    for (const pool of noProof) {
+      if (alreadyBet.has(pool.id)) continue;
+      alerts.push(proofAlert({ id: pool.id, modalidade: pool.concurso.modalidade, numero: pool.concurso.numeroConcurso, cutoffAt: pool.concurso.cutoffAt, cotasPagas: 0, semNumeros: pool._count.jogos === 0 && !pool.numerosApostados?.length }, now));
     }
     const approvals = await this.prisma.bolao.findMany({ where: { status: 'rascunho', aprovacaoSolicitadaEm: { not: null } }, select: { id: true, aprovacaoSolicitadaEm: true }, take: 50 });
     for (const pool of approvals) if (pool.aprovacaoSolicitadaEm) alerts.push(approvalAlert({ id: pool.id, solicitadaEm: pool.aprovacaoSolicitadaEm }, now));

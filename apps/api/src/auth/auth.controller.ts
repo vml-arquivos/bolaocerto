@@ -66,8 +66,8 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@CurrentUser() user: AuthUser) {
-    return this.auth.profile(user.id);
+  async me(@CurrentUser() user: AuthUser) {
+    return { ...(await this.auth.profile(user.id)), sessaoOciosaMin: this.auth.idleMinutes(user.papel) };
   }
 
   @Post('logout')

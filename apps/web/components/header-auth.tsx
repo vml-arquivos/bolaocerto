@@ -5,7 +5,7 @@ import { homeForRole, isStaff } from '../lib/roles';
 
 const HINT = 'bl-session-hint';
 /** Chamado após o login para o cabeçalho passar a mostrar "Minha conta". */
-export function rememberLogin() { try { localStorage.setItem(HINT, '1'); } catch { /* navegação privada */ } }
+export function rememberLogin() { try { localStorage.setItem(HINT, '1'); localStorage.setItem('bl-last-activity', String(Date.now())); localStorage.setItem('bl-last-refresh', String(Date.now())); } catch { /* navegação privada */ } }
 
 /** Entrar / Criar conta para visitantes; "Minha conta" (ou "Painel") para quem já entrou. */
 export function HeaderAuth() {

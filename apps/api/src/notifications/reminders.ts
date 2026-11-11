@@ -59,6 +59,25 @@ export function betAlert(pool: PoolTaskInput, now: Date = new Date()): TaskAlert
   };
 }
 
+/**
+ * Bolão aberto para venda sem comprovante do jogo registrado (ou sem os números definidos). A venda pode começar antes,
+ * mas o registro precisa existir antes do sorteio: lembra todo dia e, perto do fim do prazo, a cada faixa de urgência.
+ */
+export function proofAlert(pool: PoolTaskInput & { semNumeros?: boolean }, now: Date = new Date()): TaskAlert {
+  const { faixa, urgente } = betBucket(pool.cutoffAt, now);
+  const nome = `${modalName(pool.modalidade)} #${pool.numero}`;
+  const atrasado = pool.cutoffAt.getTime() <= now.getTime();
+  const falta = pool.semNumeros ? 'Definir os números e enviar o comprovante do jogo registrado' : 'Enviar o comprovante do jogo registrado';
+  const dia = faixa === 'novo' ? `novo-${Math.floor(now.getTime() / (24 * 60 * MIN))}` : faixa;
+  return {
+    chave: `registro:${pool.id}:${dia}`,
+    titulo: atrasado ? 'Registro do jogo atrasado!' : urgente ? 'Falta registrar o jogo agora' : 'Falta o comprovante do jogo',
+    mensagem: atrasado ? `${nome} passou do prazo e o jogo não foi registrado.` : `${nome} já está à venda. ${falta} até ${when(pool.cutoffAt)}.`,
+    link: '/admin?view=operacao',
+    urgente,
+  };
+}
+
 export function approvalAlert(pool: { id: string; solicitadaEm: Date }, now: Date = new Date()): TaskAlert {
   const bloco = Math.max(0, Math.floor((now.getTime() - pool.solicitadaEm.getTime()) / (12 * 60 * MIN)));
   return { chave: `aprovar:${pool.id}:${bloco}`, titulo: 'Bolão aguardando aprovação', mensagem: 'Um afiliado pediu para abrir a venda de um bolão. Analise e libere.', link: '/admin?view=boloes', urgente: false };

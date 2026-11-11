@@ -1,17 +1,20 @@
 'use client';
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { PasswordField } from './password-field';
 import { rememberLogin } from './header-auth';
 import { passwordProblem } from '../lib/password';
 import { FunnelBeacon } from './funnel-beacon';
 
 import { isStaff, landingFor } from '../lib/roles';
+import { IDLE_NOTICE } from '../lib/idle-session';
 export type InviteContract = { texto: string; hash: string; versao: string; aprovado: boolean };
 export type InviteView = { codigo: string; tipo: 'afiliado' | 'cliente' | 'indicacao' | 'equipe'; papel?: 'operacao' | 'admin' | null; convidadoPor: string | null; email: string | null; grupo: string | null; comissaoPct?: string | null; contrato?: InviteContract | null };
 
 export function AuthForm({ mode, audience = 'cliente', invite }: { mode: 'login' | 'register'; audience?: 'cliente' | 'admin' | 'afiliado'; invite?: InviteView | null }) {
   const [message, setMessage] = useState('');
+  const [idleNotice, setIdleNotice] = useState(false);
+  useEffect(() => { if (mode === 'login' && new URLSearchParams(window.location.search).get('motivo') === 'inatividade') setIdleNotice(true); }, [mode]);
   const [loading, setLoading] = useState(false);
   const [needs2fa, setNeeds2fa] = useState(false);
   const [contractAccepted, setContractAccepted] = useState(false);
@@ -67,6 +70,7 @@ export function AuthForm({ mode, audience = 'cliente', invite }: { mode: 'login'
       <label className="field-check"><input type="checkbox" name="aceitePrivacidade" required /> <span>Li e aceito a <Link href="/privacidade" target="_blank" rel="noopener">Política de Privacidade (LGPD)</Link>.</span></label>
       <label className="field-check"><input type="checkbox" name="maiorDeIdade" required /> <span>Declaro que tenho 18 anos ou mais.</span></label>
     </fieldset>}
+    {idleNotice && !message && <div className="form-message" role="status">{IDLE_NOTICE}</div>}
     {message && <div className="form-message form-error" role="alert">{message}</div>}<button className="button button-primary" disabled={loading}>{loading ? 'Aguarde…' : audience === 'admin' ? 'Entrar no painel' : audience === 'afiliado' ? 'Entrar como afiliado' : mode === 'login' ? 'Entrar no BL' : asAffiliate ? 'Completar meu cadastro' : 'Criar minha conta'}</button>
     {audience === 'cliente' && <p className="form-foot">{mode === 'login' ? <>Ainda não tem conta? <Link href="/cadastro">Cadastre-se</Link></> : <>Já possui conta? <Link href="/login">Entrar</Link></>}</p>}
   </form>;
