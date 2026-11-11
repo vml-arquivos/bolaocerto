@@ -39,6 +39,26 @@ export async function resolveIbge(cep: string, uf: string | null | undefined): P
   return (uf ?? '').trim().toUpperCase() === 'DF' ? '5300108' : null;
 }
 
+export type CepAddress = { cep: string; logradouro: string; bairro: string; cidade: string; uf: string };
+
+/** Endereço pelo CEP: ViaCEP (Correios) e, se falhar, BrasilAPI. Nulo quando o CEP não existe ou as duas estão fora do ar. */
+export async function lookupCepAddress(cep: string): Promise<CepAddress | null> {
+  const digits = (cep ?? '').replace(/\D/g, '');
+  if (digits.length !== 8) return null;
+  const get = async (url: string) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try { const response = await fetch(url, { signal: controller.signal }); return response.ok ? await response.json() as Record<string, unknown> : null; }
+    catch { return null; } finally { clearTimeout(timer); }
+  };
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  const via = await get(`https://viacep.com.br/ws/${digits}/json/`);
+  if (via && !via.erro && text(via.uf)) return { cep: digits, logradouro: text(via.logradouro), bairro: text(via.bairro), cidade: text(via.localidade), uf: text(via.uf).toUpperCase() };
+  const brasil = await get(`https://brasilapi.com.br/api/cep/v1/${digits}`);
+  if (brasil && text(brasil.state)) return { cep: digits, logradouro: text(brasil.street), bairro: text(brasil.neighborhood), cidade: text(brasil.city), uf: text(brasil.state).toUpperCase() };
+  return null;
+}
+
 /** Início do aviso quando falta o endereço do participante; o painel e a nova tentativa automática reconhecem a nota por ele. */
 export const ADDRESS_MISSING = 'Falta o endereço do participante para a nota.';
 
@@ -269,6 +289,7 @@ export class NfseService {
   /* ------------------------------------------------------------------ */
 
   async saveAddress(userId: string, address: AddressDto) {
+    await this.loadSettings();
     const user = await this.prisma.usuario.update({
       where: { id: userId },
       data: { enderecoCep: address.cep, enderecoLogradouro: address.logradouro, enderecoNumero: address.numero, enderecoComplemento: address.complemento || null, enderecoBairro: address.bairro, enderecoCidade: address.cidade, enderecoUf: address.uf },
@@ -277,7 +298,19 @@ export class NfseService {
     return this.addressView(user);
   }
 
+  /** A nota exige o endereço do participante (Focus com o grupo da reforma tributária) e a emissão está ligada. */
+  addressRequired(): boolean {
+    return this.mode !== 'off' && this.provider === 'focus' && Boolean(this.focusIssuer().issuer?.indicadorOperacao);
+  }
+
+  async findCep(cep: string) {
+    const found = await lookupCepAddress(cep);
+    if (!found) throw new NotFoundException('CEP não encontrado. Confira os números ou preencha o endereço à mão.');
+    return found;
+  }
+
   async getAddress(userId: string) {
+    await this.loadSettings();
     const user = await this.prisma.usuario.findUnique({ where: { id: userId }, select: USER_ADDRESS_SELECT });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     return this.addressView(user);
@@ -285,7 +318,7 @@ export class NfseService {
 
   private addressView(user: AddressUser) {
     const { missing } = toReceiptAddress(user);
-    return { cep: user.enderecoCep, logradouro: user.enderecoLogradouro, numero: user.enderecoNumero, complemento: user.enderecoComplemento, bairro: user.enderecoBairro, cidade: user.enderecoCidade, uf: user.enderecoUf, completo: missing.length === 0, nfseAtiva: this.mode !== 'off' };
+    return { cep: user.enderecoCep, logradouro: user.enderecoLogradouro, numero: user.enderecoNumero, complemento: user.enderecoComplemento, bairro: user.enderecoBairro, cidade: user.enderecoCidade, uf: user.enderecoUf, completo: missing.length === 0, nfseAtiva: this.mode !== 'off', obrigatorio: this.addressRequired() };
   }
 
   /* ------------------------------------------------------------------ */

@@ -4,6 +4,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from '
 import { concursoNo } from '../lib/contest';
 import { authenticatedFetch as authFetch } from '../lib/client-api';
 import { useIsSuperAdmin } from './staff-gate';
+import { AddressFields } from './address-fields';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -358,7 +359,6 @@ export function ManualContestForm({ onDone, notify }: { onDone: () => Promise<vo
 /* -------------------------------------------------------------------------- */
 
 const MODE_TEXT: Record<string, string> = { off: 'Desligada', manual: 'Manual', auto: 'Automática' };
-const ADDRESS_FIELDS: Array<[string, string, number?]> = [['cep', 'CEP', 9], ['logradouro', 'Rua / logradouro'], ['numero', 'Número'], ['complemento', 'Complemento'], ['bairro', 'Bairro'], ['cidade', 'Cidade'], ['uf', 'UF', 2]];
 
 function NoteForm({ kind, onSubmit, onCancel, busy }: { kind: 'emitir' | 'manual' | 'cancelar'; onSubmit: (values: Record<string, string>) => void; onCancel: () => void; busy: boolean }) {
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -367,7 +367,7 @@ function NoteForm({ kind, onSubmit, onCancel, busy }: { kind: 'emitir' | 'manual
     onSubmit(Object.fromEntries([...form.entries()].map(([key, value]) => [key, String(value).trim()]).filter(([, value]) => value)));
   }
   return <form onSubmit={submit} className="admin-form-grid" style={{ marginTop: 12 }}>
-    {kind === 'emitir' && ADDRESS_FIELDS.map(([name, title, max]) => <label key={name} className="admin-field"><span>{title}</span><input name={name} maxLength={max} required={name !== 'complemento'} /></label>)}
+    {kind === 'emitir' && <AddressFields idPrefix="nota-end" variant="admin" />}
     {kind === 'manual' && <>
       <label className="admin-field"><span>Número da nota</span><input name="numero" required maxLength={40} /></label>
       <label className="admin-field"><span>Link do PDF (opcional)</span><input name="pdfUrl" type="url" placeholder="https://" /></label>

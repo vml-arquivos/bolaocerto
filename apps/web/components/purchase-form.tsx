@@ -10,6 +10,7 @@ import { ReleaseMeter } from './release-meter';
 import { NotifyMe } from './notify-me';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { clearStoredCoupon, readStoredCoupon } from './coupon-capture';
+import { AddressFields, readAddress } from './address-fields';
 
 type Method = 'pix' | 'boleto' | 'cartao' | 'pix_automatico';
 const METHOD_LABEL: Record<Method, string> = { pix: 'Pix (confirmação imediata)', boleto: 'Boleto (com Pix incluso)', cartao: 'Cartão de crédito ou débito', pix_automatico: 'Pix Automático (recorrente)' };
@@ -33,6 +34,11 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const [promo, setPromo] = useState<{ aplicado: boolean; codigo?: string; descontoCentavos?: number; totalComDescontoCentavos?: number; gratis?: boolean; erro?: string; cashback?: { nome: string; percentual: number } | null } | null>(null);
   useEffect(() => { const stored = readStoredCoupon(); if (stored) { setCouponInput(stored); setCouponCode(stored); } }, []);
   useEffect(() => { void fetch('/api/v1/auth/me', { credentials: 'include', cache: 'no-store' }).then(async (response) => setMe(response.ok ? await response.json() as { nome: string } : null)).catch(() => setMe(null)); }, []);
+  /** Endereço para a nota fiscal: quando a nota exige e o cadastro não tem, é pedido uma única vez aqui e fica salvo. */
+  const [address, setAddress] = useState<{ completo: boolean; obrigatorio?: boolean } | null>(null);
+  useEffect(() => { if (!me) return; void fetch('/api/v1/usuarios/me/endereco', { credentials: 'include', cache: 'no-store' }).then(async (response) => setAddress(response.ok ? await response.json() : null)).catch(() => setAddress(null)); }, [me]);
+  const needsAddress = Boolean(address?.obrigatorio && !address.completo);
+  const [savingAddress, setSavingAddress] = useState(false);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
   const [created, setCreated] = useState<{ shareId: string; payment: PaymentView } | null>(null);
@@ -67,10 +73,19 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const free = Boolean(promo?.aplicado && (promo.gratis || Number(promo.totalComDescontoCentavos ?? 1) === 0));
 
   /** Passo 1: confere os dados e mostra o resumo. Nada é reservado nem cobrado ainda. */
-  function goReview(event: FormEvent<HTMLFormElement>) {
+  async function goReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setMessage('');
     if (!contract?.aprovado || !accepted) { setMessage('Leia e aceite o contrato vigente antes de continuar.'); return; }
     if (otherHolder && (holderName.trim().length < 2 || !/^\d{11}$/.test(holderCpf))) { setMessage('Informe o nome e o CPF (11 números) do titular.'); return; }
+    if (needsAddress) {
+      setSavingAddress(true);
+      try {
+        const response = await fetch('/api/v1/usuarios/me/endereco', { method: 'PUT', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(readAddress(event.currentTarget)) });
+        const data = await response.json().catch(() => ({})) as { completo?: boolean; obrigatorio?: boolean; message?: string | string[] };
+        if (!response.ok) throw new Error((Array.isArray(data.message) ? data.message.join(' ') : data.message) || 'Não foi possível salvar o endereço.');
+        setAddress({ completo: Boolean(data.completo), obrigatorio: data.obrigatorio });
+      } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível salvar o endereço.'); return; } finally { setSavingAddress(false); }
+    }
     setReview(true);
   }
 
@@ -120,7 +135,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
           <button type="button" className="button button-ghost" disabled={loading} onClick={() => setReview(false)}>Voltar e alterar</button>
         </div>
       </div>
-      : enabled ? <form onSubmit={goReview}>
+      : enabled ? <form onSubmit={(event) => void goReview(event)}>
         <div className="buy-qty"><label htmlFor="quantidade">Cotas</label>
           <div className="stepper"><button type="button" aria-label="Menos uma cota" onClick={() => setQty((value) => Math.max(1, value - 1))} disabled={qty <= 1}>−</button>
             <input id="quantidade" name="quantidade" type="number" inputMode="numeric" min={1} {...(maxQuantity === undefined ? {} : { max: maxQuantity })} value={qty} onChange={(event) => setQty(Math.max(1, Math.trunc(Number(event.target.value) || 1)))} required />
@@ -134,9 +149,10 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
           : <div className="buy-holder-fields"><div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required value={holderName} onChange={(event) => setHolderName(event.target.value)} /></div>
             <div className="field"><label htmlFor="titularCpf">CPF do titular</label><input id="titularCpf" name="titularCpf" inputMode="numeric" pattern="[0-9]{11}" maxLength={11} required value={holderCpf} onChange={(event) => setHolderCpf(event.target.value.replace(/\D/g, ''))} /></div>
             <button type="button" className="text-link" onClick={() => setOtherHolder(false)}>Usar meu cadastro</button></div>}
+        {needsAddress && <fieldset className="buy-address"><legend>Endereço para a nota fiscal</legend><small className="muted">Pedimos uma vez só e fica salvo no seu cadastro. Digite o CEP e o resto aparece sozinho.</small><AddressFields idPrefix="compra-end" /></fieldset>}
         {methods.length > 1 && !free && <div className="field"><label htmlFor="metodo">Forma de pagamento</label><select id="metodo" value={method} onChange={(event) => setMethod(event.target.value as Method)}>{methods.map((item) => <option key={item} value={item}>{METHOD_LABEL[item]}</option>)}</select></div>}
         <details className="buy-contract"><summary>Ler o contrato desta compra</summary><div className="legal-text">{contract?.texto}</div></details>{contract && !contract.aprovado && <p className="notice">Contratação aguardando revisão dos documentos pelo operador.</p>}<label className="check-line"><input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>Li e aceito o <Link href="/termos" target="_blank"><u>contrato de participação</u></Link> e confirmo ter mais de 18 anos.</span></label>
-        <button className="button button-primary" disabled={!accepted || !contract?.aprovado}>Revisar e continuar</button>
+        <button className="button button-primary" disabled={!accepted || !contract?.aprovado || savingAddress}>{savingAddress ? 'Salvando endereço…' : 'Revisar e continuar'}</button>
       </form> : ruleState === 'em_breve' ? <div className="notice"><strong>A venda ainda não começou</strong><span>As cotas abrem em {when(rules?.inicioEm)}.</span></div>
         : locked ? <div className="notice"><strong>Cotas ainda não liberadas</strong><span>Assim que o prêmio estimado atingir o valor de gatilho, as cotas serão abertas automaticamente nesta página.</span></div>
         : <div className="notice"><strong>Participação indisponível</strong><span>Este bolão não aceita novas reservas.</span></div>}

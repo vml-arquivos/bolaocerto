@@ -94,6 +94,7 @@ export class AuthService {
           telefone: dto.telefone.replace(/\D/g, ''),
           dataNascimento,
           ...(pix ? { chavePixRecebimento: pix.valor } : {}),
+          ...(dto.endereco ? { enderecoCep: dto.endereco.cep, enderecoLogradouro: dto.endereco.logradouro, enderecoNumero: dto.endereco.numero, enderecoComplemento: dto.endereco.complemento || null, enderecoBairro: dto.endereco.bairro, enderecoCidade: dto.endereco.cidade, enderecoUf: dto.endereco.uf } : {}),
           senhaHash: passwordHash,
           papel,
           indicadoPorAfiliadoId: originAffiliateId ?? undefined,
@@ -258,7 +259,7 @@ export class AuthService {
     }
     // Senha aleatória forte (a pessoa entra pelo Google; se quiser senha própria, usa "Esqueci minha senha").
     const randomPassword = `Gg1${randomBytes(18).toString('hex')}`;
-    const result = await this.register({ nome: (payload.nome ?? payload.email.split('@')[0]!).slice(0, 150), cpf: dto.cpf, email: payload.email, telefone: dto.telefone, maiorDeIdade: dto.maiorDeIdade, senha: randomPassword, confirmarSenha: randomPassword, aceiteTermos: dto.aceiteTermos, aceitePrivacidade: dto.aceitePrivacidade, ...(code ? { codigoAfiliado: code } : {}), ...(dto.chavePix ? { chavePix: dto.chavePix } : {}) } as RegisterDto, meta);
+    const result = await this.register({ nome: (payload.nome ?? payload.email.split('@')[0]!).slice(0, 150), cpf: dto.cpf, email: payload.email, telefone: dto.telefone, maiorDeIdade: dto.maiorDeIdade, senha: randomPassword, confirmarSenha: randomPassword, aceiteTermos: dto.aceiteTermos, aceitePrivacidade: dto.aceitePrivacidade, ...(code ? { codigoAfiliado: code } : {}), ...(dto.chavePix ? { chavePix: dto.chavePix } : {}), ...(dto.endereco ? { endereco: dto.endereco } : {}) } as RegisterDto, meta);
     await this.prisma.usuario.update({ where: { id: result.user.id }, data: { googleSub: payload.gsub } });
     await this.audit?.record(this.prisma, { entidade: 'usuario', entidadeId: result.user.id, evento: 'auth.cadastro_google', atorId: result.user.id }).catch(() => undefined);
     return result;

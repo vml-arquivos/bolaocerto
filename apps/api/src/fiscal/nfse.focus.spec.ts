@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, StatusNotaFiscal, StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
 import { FocusNfseClient, brazilStamp, buildFocusBody, defaultIbsCbs, defaultMunicipalCode, defaultNbs, explainFocusError, mapFocusStatus } from './nfse.focus';
-import { ADDRESS_MISSING, NfseService } from './nfse.service';
+import { ADDRESS_MISSING, lookupCepAddress, NfseService } from './nfse.service';
 
 const admin = { id: 'admin-1', papel: 'admin' } as AuthUser;
 const issuer = { cnpj: '11222333000181', inscricaoMunicipal: '1234567', codigoMunicipio: '5300108', codigoTributacaoNacional: '170901', opcaoSimples: 3, percentualTributos: 0 };
@@ -252,6 +252,32 @@ describe('NfseService com a Focus NFe', () => {
   it('a configuração diz quando o endereço é obrigatório', async () => {
     expect(await setup({ values: { NFSE_TRIB_NACIONAL: '190101' } }).service.settings()).toMatchObject({ enderecoObrigatorio: true });
     expect(await setup().service.settings()).toMatchObject({ enderecoObrigatorio: false });
+  });
+
+  it('busca o endereço pelo CEP no ViaCEP e, se falhar, na BrasilAPI', async () => {
+    const ok = (body: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response);
+    const spy = jest.spyOn(global, 'fetch');
+    try {
+      spy.mockImplementationOnce(() => ok({ cep: '70040-010', logradouro: 'SBS Quadra 2', bairro: 'Asa Sul', localidade: 'Brasília', uf: 'df' }));
+      expect(await lookupCepAddress('70040-010')).toEqual({ cep: '70040010', logradouro: 'SBS Quadra 2', bairro: 'Asa Sul', cidade: 'Brasília', uf: 'DF' });
+      spy.mockImplementationOnce(() => Promise.reject(new Error('fora do ar'))).mockImplementationOnce(() => ok({ street: 'Rua A', neighborhood: 'Centro', city: 'Goiânia', state: 'GO' }));
+      expect(await lookupCepAddress('74000000')).toMatchObject({ logradouro: 'Rua A', cidade: 'Goiânia', uf: 'GO' });
+      spy.mockImplementationOnce(() => ok({ erro: true })).mockImplementationOnce(() => Promise.resolve({ ok: false } as Response));
+      expect(await lookupCepAddress('00000000')).toBeNull();
+      expect(await lookupCepAddress('123')).toBeNull();
+    } finally { spy.mockRestore(); }
+  });
+
+  it('o endereço do participante diz quando é obrigatório para a nota', async () => {
+    const required = setup({ values: { NFSE_TRIB_NACIONAL: '190101' } });
+    required.prisma.usuario.findUnique.mockResolvedValue(BUYER);
+    expect(await required.service.getAddress('u1')).toMatchObject({ completo: false, obrigatorio: true });
+    const optional = setup();
+    optional.prisma.usuario.findUnique.mockResolvedValue(BUYER);
+    expect(await optional.service.getAddress('u1')).toMatchObject({ obrigatorio: false });
+    const off = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_MODE: 'off' } });
+    off.prisma.usuario.findUnique.mockResolvedValue(BUYER);
+    expect(await off.service.getAddress('u1')).toMatchObject({ obrigatorio: false });
   });
 
   it('a configuração informa provedor, ambiente e pendências', async () => {

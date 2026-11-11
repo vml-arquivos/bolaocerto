@@ -60,6 +60,15 @@ export class NfseAdminController {
   }
 }
 
+/** Busca de endereço pelo CEP (ViaCEP, com BrasilAPI de reserva). Aberta: o cadastro usa antes de a conta existir. */
+@Controller('cep')
+export class CepController {
+  constructor(private readonly nfse: NfseService) {}
+
+  @Get(':cep')
+  find(@Param('cep') cep: string) { return this.nfse.findCep(cep); }
+}
+
 /** Endereço do participante (necessário para a emissão da nota). */
 @Controller('usuarios/me')
 @UseGuards(JwtAuthGuard)

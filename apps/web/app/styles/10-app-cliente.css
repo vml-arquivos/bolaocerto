@@ -129,6 +129,8 @@
 .buy-total { justify-self: end; color: var(--text-primary); font-size: 1.15rem; }
 .buy-holder { margin: 0; color: var(--text-secondary); font-size: .84rem; }
 .buy-holder-fields { display: grid; gap: 10px; }
+.buy-address { display: grid; gap: 10px; margin: 12px 0; padding: 12px; border: 1px solid var(--border-strong); border-radius: 12px; }
+.buy-address legend { padding: 0 6px; font-weight: 600; }
 .buy-contract summary { cursor: pointer; color: var(--text-muted); font-size: .8rem; }
 .buy-login { display: grid; gap: 10px; }
 .buy-login p { margin: 0; color: var(--text-secondary); font-size: .9rem; }
@@ -143,7 +145,7 @@
 }
 
 /* Campos dos formulários dentro do app: mesmo acabamento em todo lugar */
-.app-row-body input:not([type=checkbox]):not([type=radio]), .app-row-body select, .buy-holder-fields input, .purchase-card select { width: 100%; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: .92rem; }
+.app-row-body input:not([type=checkbox]):not([type=radio]), .app-row-body select, .buy-holder-fields input, .buy-address input, .purchase-card select { width: 100%; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-muted); color: var(--text-primary); font: inherit; font-size: .92rem; }
 .app-row-body input:focus, .app-row-body select:focus, .purchase-card select:focus { outline: none; border-color: var(--primary); box-shadow: var(--focus-ring); }
 .app-row-body .profile-fixed { padding: 10px 12px; border-radius: 12px; background: var(--surface-muted); display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
 .app-row-body .profile-fixed small { grid-column: 1 / -1; }
@@ -162,6 +164,8 @@
 }
 
 /* Cadastro: aceites obrigatórios */
+.register-address { display: grid; gap: 10px; margin: 8px 0; padding: 12px; border: 1px solid var(--border-strong); border-radius: 12px; min-width: 0; }
+.register-address legend { padding: 0 6px; font-weight: 600; }
 .register-accepts { border: 0; padding: 0; margin: 4px 0 8px; min-width: 0; }
 
 /* Aceite de termos para contas já existentes */

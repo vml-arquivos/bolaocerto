@@ -203,5 +203,13 @@ describe('AuthService indicação entre clientes', () => {
     await service.register(base as any);
     expect(prisma.usuario.create.mock.calls[0][0].data.chavePixRecebimento).toBeUndefined();
   });
+  it('endereço do cadastro fica salvo para a nota fiscal', async () => {
+    const { service, prisma } = make(null);
+    await service.register({ ...base, endereco: { cep: '70040010', logradouro: 'SBS Quadra 2', numero: '10', bairro: 'Asa Sul', cidade: 'Brasília', uf: 'DF' } } as any);
+    expect(prisma.usuario.create.mock.calls[0][0].data).toMatchObject({ enderecoCep: '70040010', enderecoLogradouro: 'SBS Quadra 2', enderecoNumero: '10', enderecoComplemento: null, enderecoBairro: 'Asa Sul', enderecoCidade: 'Brasília', enderecoUf: 'DF' });
+    const without = make(null);
+    await without.service.register(base as any);
+    expect(without.prisma.usuario.create.mock.calls[0][0].data.enderecoCep).toBeUndefined();
+  });
 });
 

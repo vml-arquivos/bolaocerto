@@ -1,4 +1,6 @@
-import { Equals, IsBoolean, IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { Equals, IsBoolean, IsDateString, IsEmail, IsOptional, IsString, Length, Matches, MinLength, ValidateNested } from 'class-validator';
+import { AddressDto } from '../fiscal/nfse.dto';
 import { NEW_PASSWORD_MIN_LENGTH, NEW_PASSWORD_MAX_LENGTH, NEW_PASSWORD_MESSAGE, NEW_PASSWORD_PATTERN } from './password-policy';
 
 export class RegisterDto {
@@ -56,6 +58,12 @@ export class RegisterDto {
   @IsString()
   @Length(0, 140)
   chavePix?: string;
+
+  /** Endereço do cliente (vai na nota fiscal do serviço). A tela de cadastro do cliente pede; fica salvo e não é pedido de novo. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AddressDto)
+  endereco?: AddressDto;
 
   /** Chave Pix para receber comissões (convite de afiliado). */
   @IsOptional()
@@ -136,4 +144,10 @@ export class GoogleSignupDto {
   @IsString()
   @Length(0, 140)
   chavePix?: string;
+
+  /** Endereço do cliente (vai na nota fiscal do serviço). A tela de cadastro do cliente pede; fica salvo e não é pedido de novo. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AddressDto)
+  endereco?: AddressDto;
 }

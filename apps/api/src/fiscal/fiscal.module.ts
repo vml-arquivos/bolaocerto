@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PaymentsModule } from '../payments/payments.module';
-import { NfseAdminController, NfseWebhookController, UserAddressController } from './nfse.controller';
+import { CepController, NfseAdminController, NfseWebhookController, UserAddressController } from './nfse.controller';
 import { NfseJob } from './nfse.job';
 import { NfseService } from './nfse.service';
 
 @Module({
   imports: [ConfigModule, PaymentsModule],
-  controllers: [NfseAdminController, UserAddressController, NfseWebhookController],
+  controllers: [NfseAdminController, UserAddressController, CepController, NfseWebhookController],
   providers: [NfseService, NfseJob],
   exports: [NfseService],
 })

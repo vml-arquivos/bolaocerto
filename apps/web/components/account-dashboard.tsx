@@ -10,6 +10,7 @@ import { ReceiptPanel } from './receipt-panel';
 import { PushToggle } from './push-toggle';
 import { ModalityAlertsCard } from './modality-alerts-card';
 import { ProfilePanel } from './profile-panel';
+import { AddressFields, readAddress } from './address-fields';
 import { NotificationsCard, PasswordCard, PrivacyCard, ReceiptsCard, ResponsiblePlayCard, TwoFactorCard } from './account-extras';
 import { concursoNo } from '../lib/contest';
 import { brl, ReferralTab, WalletData, WalletTab } from './account-wallet';
@@ -23,7 +24,7 @@ type Share = {
   cancelamento?: { tipo: 'reserva' | 'pedido' | 'nenhum'; pode: boolean; ate: string | null; motivoBloqueio: string | null; pedido: { status: string; devolucao: string | null; resposta: string | null; criadoEm: string } | null };
 };
 type Perfil = { telefone: string | null; chavePix: string | null };
-type Address = { cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; completo: boolean; nfseAtiva: boolean };
+type Address = { cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cidade: string | null; uf: string | null; completo: boolean; nfseAtiva: boolean; obrigatorio?: boolean };
 const NOTE_TEXT: Record<string, string> = { aguardando: 'em processamento', aguardando_certificado: 'em processamento', emitida: 'emitida', erro: 'em análise' };
 
 const PAID = ['paga', 'registrada', 'apurada', 'premiada'];
@@ -107,8 +108,7 @@ function AddressCard({ address, onSaved }: { address: Address; onSaved: () => vo
   const [message, setMessage] = useState('');
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setMessage('');
-    const form = new FormData(event.currentTarget);
-    const body = Object.fromEntries(['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'].map((key) => [key, String(form.get(key) ?? '').trim()]).filter(([, value]) => value));
+    const body = readAddress(event.currentTarget);
     try {
       const response = await authenticatedFetch('/api/v1/usuarios/me/endereco', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
@@ -119,13 +119,7 @@ function AddressCard({ address, onSaved }: { address: Address; onSaved: () => vo
   return <article className="dashboard-card wide keep-title"><h2>{address.nfseAtiva ? 'Endereço para nota fiscal' : 'Meu endereço'}</h2>
     
     <form onSubmit={submit} className="admin-form-grid">
-      <div className="field"><label htmlFor="end-cep">CEP</label><input id="end-cep" name="cep" inputMode="numeric" maxLength={9} defaultValue={address.cep ?? ''} required /></div>
-      <div className="field"><label htmlFor="end-logradouro">Rua / logradouro</label><input id="end-logradouro" name="logradouro" defaultValue={address.logradouro ?? ''} required /></div>
-      <div className="field"><label htmlFor="end-numero">Número</label><input id="end-numero" name="numero" defaultValue={address.numero ?? ''} required /></div>
-      <div className="field"><label htmlFor="end-complemento">Complemento</label><input id="end-complemento" name="complemento" defaultValue={address.complemento ?? ''} /></div>
-      <div className="field"><label htmlFor="end-bairro">Bairro</label><input id="end-bairro" name="bairro" defaultValue={address.bairro ?? ''} required /></div>
-      <div className="field"><label htmlFor="end-cidade">Cidade</label><input id="end-cidade" name="cidade" defaultValue={address.cidade ?? ''} required /></div>
-      <div className="field"><label htmlFor="end-uf">UF</label><input id="end-uf" name="uf" maxLength={2} defaultValue={address.uf ?? ''} required /></div>
+      <AddressFields idPrefix="end" defaults={address} />
       <div className="field" style={{ alignSelf: 'end' }}><button className="button button-primary" disabled={saving}>{saving ? 'Salvando…' : 'Salvar endereço'}</button></div>
     </form>
     {message && <div className={`form-message ${message.startsWith('Endereço salvo') ? 'form-success' : 'form-error'}`}>{message}</div>}
