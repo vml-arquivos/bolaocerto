@@ -35,6 +35,8 @@ export const NOTIFICATION_TITLES: Record<string, string> = {
   'pagamento.lembrete': 'Seu pagamento ainda não foi feito',
   'equipe.tarefa': 'Tarefa para fazer',
   'cota.transferida': 'Sua cota mudou de bolão',
+  'bolao.distribuido': 'Novo bolão para você vender',
+  'bolao.distribuicao_aceita': 'Afiliado aceitou o bolão',
 };
 
 /** Texto padrão do e-mail para cada tipo de aviso. */

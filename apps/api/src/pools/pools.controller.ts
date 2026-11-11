@@ -6,6 +6,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreatePoolDto, DefinePoolNumbersDto, GenerateGamesDto, UpdatePoolDto } from './pools.dto';
+import { PoolDistributionService } from './pool-distribution.service';
 import { PoolTransferService } from './pool-transfer.service';
 import { PoolsService } from './pools.service';
 
@@ -21,6 +22,9 @@ class RejectPoolDto {
 
 class OfferToBlDto { @IsUUID() grupoId!: string; }
 
+class CreateDistributionDto { @IsOptional() @IsUUID() afiliadoId?: string; }
+class AcceptDistributionDto { @IsString() @Length(6, 40) codigo!: string; }
+
 class TransferSharesDto {
   @IsUUID() destinoBolaoId!: string;
   @IsOptional() @IsArray() @ArrayMaxSize(500) @IsUUID('all', { each: true }) cotaIds?: string[];
@@ -31,7 +35,7 @@ class TransferSharesDto {
 
 @Controller()
 export class PoolsController {
-  constructor(private readonly pools: PoolsService, private readonly pricing: PricingService, private readonly transfers: PoolTransferService) {}
+  constructor(private readonly pools: PoolsService, private readonly pricing: PricingService, private readonly transfers: PoolTransferService, private readonly distribution: PoolDistributionService) {}
 
   @Get('loterias/precos')
   prices() { return this.pricing.catalog(); }
@@ -139,6 +143,54 @@ export class PoolsController {
   @Roles('admin')
   release(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.pools.release(id, user);
+  }
+
+  // ---- Distribuição de bolão para afiliados ----
+  @Get('admin/boloes/:id/distribuicao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'operacao')
+  distributionOverview(@Param('id') id: string) {
+    return this.distribution.overview(id);
+  }
+
+  @Post('admin/boloes/:id/distribuicao')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'operacao')
+  createDistribution(@Param('id') id: string, @Body() dto: CreateDistributionDto, @CurrentUser() user: AuthUser) {
+    return this.distribution.createLink(id, dto, user);
+  }
+
+  @Delete('admin/boloes/:id/distribuicao/:linkId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'operacao')
+  revokeDistribution(@Param('id') id: string, @Param('linkId') linkId: string, @CurrentUser() user: AuthUser) {
+    return this.distribution.revokeLink(id, linkId, user);
+  }
+
+  @Delete('admin/boloes/:id/distribuicao/afiliados/:afiliadoId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'operacao')
+  removeDistributionAffiliate(@Param('id') id: string, @Param('afiliadoId') afiliadoId: string, @CurrentUser() user: AuthUser) {
+    return this.distribution.removeAffiliate(id, afiliadoId, user);
+  }
+
+  @Get('bolao-distribuicao/:codigo')
+  distributionPreview(@Param('codigo') codigo: string) {
+    return this.distribution.preview(codigo);
+  }
+
+  @Post('afiliados/me/boloes-recebidos/aceitar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  acceptDistribution(@Body() dto: AcceptDistributionDto, @CurrentUser() user: AuthUser) {
+    return this.distribution.accept(dto.codigo, user);
+  }
+
+  @Get('afiliados/me/boloes-recebidos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('afiliado')
+  receivedPools(@CurrentUser() user: AuthUser) {
+    return this.distribution.received(user);
   }
 
   @Get('admin/boloes/:id/destinos-transferencia')

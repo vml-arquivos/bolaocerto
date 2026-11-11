@@ -223,9 +223,30 @@ export class AdminService {
       const rows = await this.prisma.bolaoInteresse.groupBy({ by: ['bolaoId'], where: { bolaoId: { in: items.map((pool) => pool.id) } }, _count: { _all: true } });
       for (const row of rows) interested.set(row.bolaoId, row._count._all);
     } catch { /* contagem de "avise-me" é informativa */ }
+    // Distribuição para afiliados: quem enviou o link e quantos afiliados já receberam o bolão.
+    const distributed = new Map<string, { afiliados: number; links: number; enviadoPor: string[] }>();
+    try {
+      const ids = items.map((pool) => pool.id);
+      const [links, receivers] = await Promise.all([
+        this.prisma.distribuicaoBolao.findMany({ where: { bolaoId: { in: ids }, revogadoEm: null }, select: { bolaoId: true, criador: { select: { nome: true } } } }),
+        this.prisma.bolaoAfiliado.groupBy({ by: ['bolaoId'], where: { bolaoId: { in: ids }, removidoEm: null }, _count: { _all: true } }),
+      ]);
+      for (const link of links) {
+        const row = distributed.get(link.bolaoId) ?? { afiliados: 0, links: 0, enviadoPor: [] };
+        row.links += 1;
+        if (!row.enviadoPor.includes(link.criador.nome)) row.enviadoPor.push(link.criador.nome);
+        distributed.set(link.bolaoId, row);
+      }
+      for (const receiver of receivers) {
+        const row = distributed.get(receiver.bolaoId) ?? { afiliados: 0, links: 0, enviadoPor: [] };
+        row.afiliados = receiver._count._all;
+        distributed.set(receiver.bolaoId, row);
+      }
+    } catch { /* informativo */ }
     return {
       items: items.map((pool) => ({
         ...pool,
+        distribuicao: distributed.get(pool.id) ?? { afiliados: 0, links: 0, enviadoPor: [] },
         valorCota: pool.valorCota.toFixed(2),
         taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
         cotas: undefined,

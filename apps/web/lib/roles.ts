@@ -22,7 +22,7 @@ export const SUPERADMIN_VIEWS = ['conexoes', 'auditoria', 'configuracoes'] as co
 const SHARED_PREFIXES = ['/boloes', '/aplicativo', '/minha-conta', '/resultados', '/estatisticas', '/checkout'];
 const ALLOWED_NEXT: Record<Papel, string[]> = {
   cotista: SHARED_PREFIXES,
-  afiliado: [...SHARED_PREFIXES, '/afiliado'],
+  afiliado: [...SHARED_PREFIXES, '/afiliado', '/bolao-afiliado'],
   operacao: ['/admin'],
   admin: ['/admin', ...SHARED_PREFIXES, '/afiliado'],
 };

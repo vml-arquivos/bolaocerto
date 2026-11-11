@@ -163,6 +163,8 @@ model Usuario {
   tokensSenha           TokenSenha[]
   bolaoInteresses       BolaoInteresse[]
   anexosEnviados        Anexo[]          @relation("anexo_enviado_por")
+  distribuicoesCriadas  DistribuicaoBolao[] @relation("distribuicao_criador")
+  boloesEnviados        BolaoAfiliado[]  @relation("bolao_afiliado_enviado_por")
   gruposMembro          GrupoMembro[]
 
   @@index([desativadoEm, criadoEm])
@@ -271,6 +273,8 @@ model Afiliado {
   convites             Convite[]      @relation("convites_afiliado")
   usuariosIndicados    Usuario[]      @relation("usuarios_indicados")
   cotasReferenciadas   Cota[]
+  boloesRecebidos      BolaoAfiliado[]
+  distribuicoesAlvo    DistribuicaoBolao[]
   comissoes            Comissao[]
 
   @@index([parentAfiliadoId])
@@ -373,6 +377,8 @@ model Bolao {
   lotericaParceira      LotericaParceira?  @relation(fields: [lotericaParceiraId], references: [id])
   editor                Usuario?           @relation("editor_bolao", fields: [editadoPor], references: [id])
   cotas                 Cota[]
+  distribuicoes         DistribuicaoBolao[]
+  afiliadosRecebedores  BolaoAfiliado[]
   jogos                 JogoBolao[]
   interesses            BolaoInteresse[]
   anexos                Anexo[]
@@ -841,4 +847,42 @@ model CarteiraMovimento {
 
   @@index([usuarioId, criadoEm])
   @@map("carteira_movimentos")
+}
+
+/// Link de distribuição: a equipe envia o bolão para afiliados venderem (um link pode ter vários afiliados).
+model DistribuicaoBolao {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bolaoId       String    @map("bolao_id") @db.Uuid
+  codigo        String    @unique @db.VarChar(40)
+  criadoPor     String    @map("criado_por") @db.Uuid
+  afiliadoAlvoId String?  @map("afiliado_alvo_id") @db.Uuid
+  revogadoEm    DateTime? @map("revogado_em")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+  bolao         Bolao     @relation(fields: [bolaoId], references: [id], onDelete: Cascade)
+  criador       Usuario   @relation("distribuicao_criador", fields: [criadoPor], references: [id])
+  afiliadoAlvo  Afiliado? @relation(fields: [afiliadoAlvoId], references: [id], onDelete: SetNull)
+  recebedores   BolaoAfiliado[]
+
+  @@index([bolaoId])
+  @@map("bolao_distribuicoes")
+}
+
+/// Afiliado que recebeu o bolão e pode vender (aparece no painel dele). As vendas dele são as cotas com o código dele.
+model BolaoAfiliado {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bolaoId        String    @map("bolao_id") @db.Uuid
+  afiliadoId     String    @map("afiliado_id") @db.Uuid
+  distribuicaoId String?   @map("distribuicao_id") @db.Uuid
+  enviadoPor     String    @map("enviado_por") @db.Uuid
+  aceitoEm       DateTime  @default(now()) @map("aceito_em")
+  removidoEm     DateTime? @map("removido_em")
+  removidoPor    String?   @map("removido_por") @db.Uuid
+  bolao          Bolao     @relation(fields: [bolaoId], references: [id], onDelete: Cascade)
+  afiliado       Afiliado  @relation(fields: [afiliadoId], references: [id], onDelete: Cascade)
+  distribuicao   DistribuicaoBolao? @relation(fields: [distribuicaoId], references: [id], onDelete: SetNull)
+  remetente      Usuario   @relation("bolao_afiliado_enviado_por", fields: [enviadoPor], references: [id])
+
+  @@unique([bolaoId, afiliadoId])
+  @@index([afiliadoId])
+  @@map("bolao_afiliados")
 }

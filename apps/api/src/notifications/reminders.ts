@@ -60,7 +60,7 @@ export function betAlert(pool: PoolTaskInput, now: Date = new Date()): TaskAlert
 }
 
 export function approvalAlert(pool: { id: string; solicitadaEm: Date }, now: Date = new Date()): TaskAlert {
-  const bloco = Math.floor((now.getTime() - pool.solicitadaEm.getTime()) / (12 * 60 * MIN));
+  const bloco = Math.max(0, Math.floor((now.getTime() - pool.solicitadaEm.getTime()) / (12 * 60 * MIN)));
   return { chave: `aprovar:${pool.id}:${bloco}`, titulo: 'Bolão aguardando aprovação', mensagem: 'Um afiliado pediu para abrir a venda de um bolão. Analise e libere.', link: '/admin?view=boloes', urgente: false };
 }
 
