@@ -125,12 +125,21 @@ export function defaultNbs(nacional: string): string | undefined {
   return nacional === '190101' || nacional === '190102' ? '109051100' : undefined;
 }
 
+/**
+ * Grupo IBS/CBS (reforma tributária) para o item 19.01, igual ao exemplo oficial da Focus para Brasília e à tabela de correlação:
+ * indicador da operação 100301, CST 000 e classificação 000001. A validação do DF recusa a nota com o grupo ausente ou incompleto,
+ * então ele vai sempre completo. NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST e NFSE_IBS_CBS_CLASS têm prioridade se preenchidas.
+ */
+export function defaultIbsCbs(nacional: string): { indicadorOperacao: string; ibsCbsSituacao: string; ibsCbsClassificacao: string } | undefined {
+  return nacional === '190101' || nacional === '190102' ? { indicadorOperacao: '100301', ibsCbsSituacao: '000', ibsCbsClassificacao: '000001' } : undefined;
+}
+
 /** Traduz a recusa técnica (validação do XML) para o que falta preencher, em português simples. Devolve vazio se não reconhece. */
 export function explainFocusError(raw: string): string {
   const text = raw.toLowerCase();
   const hints: string[] = [];
   if (text.includes('ctribmun')) hints.push('Falta o código de tributação municipal do serviço (NFSE_TRIB_MUNICIPAL).');
-  if (text.includes('cindop') || text.includes('inddest') || text.includes('ibscbs')) hints.push('O fisco recusou o grupo da reforma tributária (IBS/CBS): ou ele vai completo (NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST, NFSE_IBS_CBS_CLASS e NFSE_NBS) ou não vai.');
+  if (text.includes('cindop') || text.includes('inddest') || text.includes('ibscbs')) hints.push('O fisco recusou o grupo da reforma tributária (IBS/CBS): ele precisa ir completo (indicador da operação, CST e classificação, além do NBS). Confira NFSE_TRIB_NACIONAL=190101 ou preencha NFSE_NBS, NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST e NFSE_IBS_CBS_CLASS.');
   if (/inscri[cç][aã]o municipal/.test(text)) hints.push('Confira a inscrição municipal (NFSE_MUNICIPAL_REGISTER) e se ela está cadastrada na Focus.');
   if (text.includes('certificado')) hints.push('Confira o certificado digital A1 no painel da Focus (validade e senha).');
   return hints.join(' ');

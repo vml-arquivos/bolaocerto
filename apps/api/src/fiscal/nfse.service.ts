@@ -9,7 +9,7 @@ import { PrismaService } from '../common/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { AddressDto, CancelNoteDto, ManualNoteDto, NoteQueryDto } from './nfse.dto';
 import { CoraFiscalClient, ReceiptAddress, ReceiptStatus } from './nfse.client';
-import { FocusIssuer, FocusNfseClient, FocusTomador, defaultMunicipalCode, defaultNbs, focusFetch } from './nfse.focus';
+import { FocusIssuer, FocusNfseClient, FocusTomador, defaultIbsCbs, defaultMunicipalCode, defaultNbs, focusFetch } from './nfse.focus';
 
 export const FISCAL_CLIENT_OVERRIDE = 'FISCAL_CLIENT_OVERRIDE';
 export const FOCUS_CLIENT_OVERRIDE = 'FOCUS_CLIENT_OVERRIDE';
@@ -149,6 +149,7 @@ export class NfseService {
     if (!/^\d{6}$/.test(get('NFSE_TRIB_NACIONAL'))) missing.push('NFSE_TRIB_NACIONAL');
     if (missing.length) return { issuer: null, missing };
     const optionOf = get('NFSE_SIMPLES_OPCAO', '3');
+    const ibs = get('NFSE_IBS_CBS_ENVIAR') === 'false' ? undefined : defaultIbsCbs(get('NFSE_TRIB_NACIONAL'));
     return {
       missing,
       issuer: {
@@ -160,9 +161,9 @@ export class NfseService {
         opcaoSimples: [1, 2, 3].includes(Number(optionOf)) ? Number(optionOf) : 3,
         percentualTributos: Number(get('NFSE_SIMPLES_PCT', '0')) || 0,
         nbs: get('NFSE_NBS') || defaultNbs(get('NFSE_TRIB_NACIONAL')),
-        indicadorOperacao: get('NFSE_INDICADOR_OPERACAO') || undefined,
-        ibsCbsSituacao: get('NFSE_IBS_CBS_CST') || undefined,
-        ibsCbsClassificacao: get('NFSE_IBS_CBS_CLASS') || undefined,
+        indicadorOperacao: get('NFSE_INDICADOR_OPERACAO') || ibs?.indicadorOperacao,
+        ibsCbsSituacao: get('NFSE_IBS_CBS_CST') || ibs?.ibsCbsSituacao,
+        ibsCbsClassificacao: get('NFSE_IBS_CBS_CLASS') || ibs?.ibsCbsClassificacao,
       },
     };
   }

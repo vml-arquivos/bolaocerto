@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ServiceUnavailableException } f
 import { ConfigService } from '@nestjs/config';
 import { Prisma, StatusNotaFiscal, StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
-import { FocusNfseClient, brazilStamp, buildFocusBody, defaultMunicipalCode, defaultNbs, explainFocusError, mapFocusStatus } from './nfse.focus';
+import { FocusNfseClient, brazilStamp, buildFocusBody, defaultIbsCbs, defaultMunicipalCode, defaultNbs, explainFocusError, mapFocusStatus } from './nfse.focus';
 import { NfseService } from './nfse.service';
 
 const admin = { id: 'admin-1', papel: 'admin' } as AuthUser;
@@ -43,6 +43,13 @@ describe('buildFocusBody', () => {
     expect(defaultNbs('190101')).toBe('109051100');
     expect(defaultNbs('170901')).toBeUndefined();
     expect(defaultMunicipalCode('5300108', '190101')).toBe('1901');
+  });
+
+  it('item 19.01 manda o grupo IBS/CBS completo por padrão (100301 / 000 / 000001)', () => {
+    expect(defaultIbsCbs('190101')).toEqual({ indicadorOperacao: '100301', ibsCbsSituacao: '000', ibsCbsClassificacao: '000001' });
+    expect(defaultIbsCbs('170901')).toBeUndefined();
+    const body = buildFocusBody({ issuer: { ...issuer, codigoTributacaoNacional: '190101', nbs: '109051100', ...defaultIbsCbs('190101')! }, tomador, valor: 10.8, descricao: 'x' });
+    expect(body).toMatchObject({ codigo_nbs: '109051100', codigo_indicador_operacao: '100301', ibs_cbs_situacao_tributaria: '000', ibs_cbs_classificacao_tributaria: '000001', indicador_destinatario: 0, finalidade_emissao: 0, consumidor_final: 1 });
   });
 
   it('explica em português o que falta quando o fisco recusa o XML', () => {

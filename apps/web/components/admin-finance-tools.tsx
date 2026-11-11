@@ -490,7 +490,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       <Panel title="Notas emitidas e em andamento">
         <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody>{(data.notas ?? []).map((note: Rec) => <tr key={note.id}>
           <td>{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
-          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{splitNoteError(note.erro).resumo}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
+          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{splitNoteError(note.erro).resumo}{splitNoteError(note.erro).tecnico ? <details><summary>Texto técnico da Focus</summary>{splitNoteError(note.erro).tecnico}</details> : null}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
           <td>{note.pdfUrl ? <a className="text-link" href={note.pdfUrl} target="_blank" rel="noreferrer">PDF</a> : '—'}{note.xmlUrl ? <> · <a className="text-link" href={note.xmlUrl} target="_blank" rel="noreferrer">XML</a></> : null}</td>
           <td><div className="admin-row-actions">
             <button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(busy)} onClick={() => void viewNote(note)}>{busy === `view-${note.id}` ? 'Abrindo…' : 'Ver nota'}</button>
