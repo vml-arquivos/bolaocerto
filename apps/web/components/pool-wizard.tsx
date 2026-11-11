@@ -439,7 +439,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         : <select value={specialValue} onChange={(event) => setSpecialValue(event.target.value)}><option value="">Escolha o mês</option>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>}
         </label>}
       {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
-        <button type="button" className="admin-button festa-toggle" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}>{newDate ? 'Fechar' : 'Criar para uma data comemorativa (sem concurso aberto)'}</button>
+        <button type="button" className="festa-toggle" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">🎉</span><span className="festa-toggle-text"><strong>{newDate ? 'Fechar data comemorativa' : 'Criar para uma data comemorativa (sem concurso aberto)'}</strong><small>{newDate ? 'Voltar para a lista de concursos abertos.' : 'Use quando a data não está na lista acima: Mega da Virada, São João, Natal…'}</small></span><span className="festa-toggle-go" aria-hidden="true">{newDate ? 'Fechar ▴' : 'Abrir ▾'}</span></button>
         {newDate && <div className="festa-inline-body">
           
           <div className="admin-form-grid admin-form-grid-three">
@@ -542,6 +542,6 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     <label className="admin-field"><span>Descrição pública</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique a estratégia, transparência e operação do bolão." /></label>
     <div className="simple-form-summary"><span>Concurso <strong>{selectedContest ? (selectedContest.nomeEspecial ? `${selectedContest.nomeEspecial}${selectedContest.numeroConcurso > 0 ? ` #${selectedContest.numeroConcurso}` : ' (número a definir)'}` : `#${selectedContest.numeroConcurso}`) : '—'}</strong></span><span>Disponibilidade <strong>{unlimited ? 'Ilimitada' : `${totalCotas || 0} cotas`}</strong></span><span>Receita prevista <strong>{finiteRevenue === null ? 'Sob demanda' : money(finiteRevenue)}</strong></span></div>
     {role === 'admin' && <LotteryPriceAdmin />}
-    <div className="wizard-actions"><button className="admin-button admin-button-primary" disabled={saving || (!editing && !modalMode && automatic && !quote) || (modeUi && !plan?.ok) || Boolean(affiliateCapError)}>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
+    <div className="wizard-actions"><button className="admin-cta admin-cta-block" disabled={saving || (!editing && !modalMode && automatic && !quote) || (modeUi && !plan?.ok) || Boolean(affiliateCapError)}><span className="admin-cta-icon" aria-hidden="true">{editing ? '✓' : '+'}</span>{saving ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar bolão'}</button></div>
   </form>;
 }

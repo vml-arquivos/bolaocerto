@@ -93,10 +93,10 @@
 }
 .admin-heading-actions select:focus, .admin-toolbar select:focus, .admin-inline-select:focus, .admin-field input:focus, .admin-field textarea:focus, .admin-field select:focus { border-color: var(--primary); box-shadow: var(--focus-ring); }
 
-.admin-button { border: 0; border-radius: var(--radius-sm); min-height: 40px; padding: 0 15px; font: inherit; font-size: 13px; font-weight: 560; cursor: pointer; transition: transform .15s, box-shadow .15s, background .15s, opacity .15s; }
+.admin-button { border: 1px solid var(--border-strong); background: var(--surface-hover); color: var(--text-primary); border-radius: var(--radius-sm); min-height: 40px; padding: 0 15px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: transform .15s, box-shadow .15s, background .15s, opacity .15s; }
 .admin-button:hover { transform: translateY(-1px); }
 .admin-button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-.admin-button-primary { background: linear-gradient(100deg, var(--primary-solid), var(--accent-solid)); color: #fff; box-shadow: 0 8px 18px rgba(0, 40, 180, .3); }
+.admin-button-primary { border-color: transparent; background: linear-gradient(100deg, var(--primary-solid), var(--accent-solid)); color: #fff; box-shadow: 0 8px 18px rgba(0, 40, 180, .3); }
 .admin-button-ghost { background: var(--surface); border: 1px solid var(--border-strong); color: var(--text-secondary); }
 .admin-button-ghost:hover { background: var(--surface-hover); }
 .admin-button-secondary { border: 1px solid var(--border-strong); background: var(--primary-soft); color: var(--primary); }

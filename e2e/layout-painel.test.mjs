@@ -55,7 +55,18 @@ test('painel: sem rolagem lateral, contraste e meses de concursos', async () => 
     // 2) Botão "Criar para uma data comemorativa": contraste nos dois temas.
     await page.setViewportSize({ width: 1366, height: 900 });
     await page.goto(`${BASE}/admin?view=boloes`, { waitUntil: 'load', timeout: 90000 });
-    await page.getByRole('button', { name: /Novo bolão/ }).click();
+    const cta = page.getByRole('button', { name: /Novo bolão/ });
+    const box = await cta.boundingBox();
+    assert.ok(box && box.height >= 52 && box.width >= 170, `botão "Novo bolão" grande: ${box?.width}x${box?.height}`);
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+      const stops = await page.evaluate(() => { const style = getComputedStyle(document.documentElement); const hex = (name) => style.getPropertyValue(name).trim(); return [hex('--cta-from'), hex('--cta-to')]; });
+      for (const stop of stops) {
+        const rgb = [1, 3, 5].map((index) => parseInt(stop.slice(index, index + 2), 16));
+        assert.ok(ratio([255, 255, 255], rgb) >= 4.5, `texto branco no botão principal (${theme}, ${stop}): ${ratio([255, 255, 255], rgb).toFixed(2)}`);
+      }
+    }
+    await cta.click();
     const festa = page.locator('button.festa-toggle');
     await festa.waitFor({ timeout: 30000 });
     for (const theme of ['light', 'dark']) {

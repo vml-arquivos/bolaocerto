@@ -128,9 +128,6 @@
 tr.is-selected td { background: rgba(37, 99, 235, .08); }
 
 /* Botão "data comemorativa" do formulário de bolão: legível nos dois temas */
-.festa-toggle { background: var(--surface-muted); color: var(--text-primary); border: 1px solid var(--primary); width: 100%; text-align: left; min-height: 44px; font-weight: 600; }
-.festa-toggle:hover { background: var(--primary-soft, var(--surface-hover)); }
-:root[data-theme='dark'] .festa-toggle:hover { background: var(--surface-hover); }
 .row-actions-main .admin-button-small { padding: 0 10px; min-height: 32px; }
 
 /* Navegação por mês na tela de Concursos */
@@ -143,3 +140,37 @@ tr.is-selected td { background: rgba(37, 99, 235, .08); }
 .transfer-person { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 14px; }
 .transfer-person input { width: 18px; height: 18px; flex: none; }
 .admin-note.is-error { border-color: var(--danger); }
+
+/* ---------- Botões de destaque do painel (ação principal de cada tela) ---------- */
+:root { --cta-from: #1b47d6; --cta-to: #2a63f2; --cta-glow: rgba(77, 141, 255, .5); --cta-border: rgba(255, 255, 255, .45); --cta-ring: #9fc0ff;
+  --festa-bg: #16295f; --festa-border: #7aa6ff; --festa-hover: #1d3578; }
+:root[data-theme='light'] { --cta-from: #0030c8; --cta-to: #0050e6; --cta-glow: rgba(0, 60, 225, .38); --cta-border: rgba(0, 20, 120, .35); --cta-ring: #003ce1;
+  --festa-bg: #e6edff; --festa-border: #003ce1; --festa-hover: #d6e2ff; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) { --cta-from: #0030c8; --cta-to: #0050e6; --cta-glow: rgba(0, 60, 225, .38); --cta-border: rgba(0, 20, 120, .35); --cta-ring: #003ce1;
+    --festa-bg: #e6edff; --festa-border: #003ce1; --festa-hover: #d6e2ff; }
+}
+
+.admin-cta { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 56px; padding: 0 28px 0 16px; border-radius: 16px; border: 2px solid var(--cta-border); background: linear-gradient(100deg, var(--cta-from), var(--cta-to)); color: #fff; font: inherit; font-size: 17px; font-weight: 780; letter-spacing: .01em; cursor: pointer; box-shadow: 0 10px 28px var(--cta-glow); transition: transform .15s, box-shadow .15s, filter .15s; white-space: nowrap; }
+.admin-cta:hover { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 14px 34px var(--cta-glow); }
+.admin-cta:focus-visible { outline: 3px solid var(--cta-ring); outline-offset: 3px; }
+.admin-cta:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+.admin-cta-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 255, 255, .24); font-size: 24px; font-weight: 600; line-height: 1; padding-bottom: 2px; }
+.admin-cta.is-open { background: var(--surface); color: var(--text-primary); border-color: var(--festa-border); box-shadow: none; }
+.admin-cta.is-open .admin-cta-icon { background: var(--festa-bg); color: var(--text-primary); font-size: 20px; }
+.admin-cta-block { width: 100%; min-height: 58px; font-size: 18px; }
+
+/* "Criar para uma data comemorativa": cartão clicável com selo de ação */
+.festa-toggle { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 68px; padding: 12px 16px; border-radius: 16px; border: 2px solid var(--festa-border); background: var(--festa-bg); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: transform .15s, background .15s, box-shadow .15s; box-shadow: 0 6px 18px var(--cta-glow); }
+.festa-toggle:hover { background: var(--festa-hover); transform: translateY(-1px); }
+.festa-toggle:focus-visible { outline: 3px solid var(--cta-ring); outline-offset: 3px; }
+.festa-toggle-icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(100deg, var(--cta-from), var(--cta-to)); color: #fff; font-size: 22px; }
+.festa-toggle-text { display: grid; gap: 2px; min-width: 0; }
+.festa-toggle-text strong { font-size: 15.5px; font-weight: 760; color: var(--text-primary); }
+.festa-toggle-text small { font-size: 12.5px; color: var(--text-secondary); line-height: 1.35; }
+.festa-toggle-go { margin-left: auto; flex: none; padding: 9px 18px; border-radius: 999px; background: linear-gradient(100deg, var(--cta-from), var(--cta-to)); color: #fff; font-size: 14px; font-weight: 760; white-space: nowrap; }
+@media (max-width: 760px) {
+  .admin-cta { width: 100%; }
+  .festa-toggle { flex-wrap: wrap; }
+  .festa-toggle-go { margin-left: 58px; }
+}
