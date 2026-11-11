@@ -40,7 +40,7 @@ const groups = [
       ['usuarios', 'Usuários e acessos', 'US'],
       ['documentos', 'Documentos', 'DC'],
       ['funil', 'Funil de conversão', 'FC'],
-      ['conexoes', 'Conexões', 'CX'],
+      ['conexoes', 'Integrações', 'CX'],
       ['auditoria', 'Histórico', 'HI'],
       ['configuracoes', 'Configurações', 'CF'],
     ],

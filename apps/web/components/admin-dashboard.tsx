@@ -14,7 +14,8 @@ import { FunnelView } from './admin-funnel';
 import { VitrineView } from './admin-vitrine';
 import { AdminModal, AttachmentsPanel, RegisterBetDialog } from './admin-attachments';
 import { ConnectionsView } from './admin-connections';
-import { InvoicesView, PaymentSettingsPanel, ReportsView } from './admin-finance-tools';
+import { InvoicesView, ReportsView } from './admin-finance-tools';
+import { CaixaIntegrationView, NfseIntegrationView, PaymentsIntegrationView } from './admin-integrations';
 import { modalityNames } from '../lib/domain';
 import { fetchAdmin, poolForAttachments } from './admin-views/shared';
 import type { AdminCtx, DashboardPayload, PagePayload, RecordValue, ToastState } from './admin-views/shared';
@@ -41,7 +42,7 @@ import { WalletAdminView } from './admin-wallet';
 import { PromotionsAdminView } from './admin-promotions';
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos', 'funil']);
+const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos', 'funil']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
 const MONTH_LABELS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -243,7 +244,10 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'documentos') return <DocumentsView notify={notify} />;
     if (view === 'funil') return <FunnelView notify={notify} />;
     if (view === 'conexoes') return <ConnectionsView notify={notify} />;
-    if (view === 'configuracoes') return <><SettingsView ctx={ctx} /><PaymentSettingsPanel notify={notify} /></>;
+    if (view === 'integ-nfse') return <NfseIntegrationView notify={notify} />;
+    if (view === 'integ-pagamentos') return <PaymentsIntegrationView notify={notify} />;
+    if (view === 'integ-caixa') return <CaixaIntegrationView />;
+    if (view === 'configuracoes') return <SettingsView ctx={ctx} />;
     return <DashboardView ctx={ctx} />;
   }
 

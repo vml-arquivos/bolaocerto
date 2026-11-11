@@ -39,3 +39,25 @@ test('rodapé do menu é compacto: instalar app discreto e sem repetir "Voltar a
   assert.ok(!shell.includes('admin-footer-note'));
   assert.ok(!shell.includes('Voltar ao site'));
 });
+
+test('configuração de integrações fica em Administração → Integrações; o Financeiro só acompanha', () => {
+  const nav = readFileSync(new URL('../lib/admin-nav.ts', import.meta.url), 'utf8');
+  const hub = nav.slice(nav.indexOf("key: 'integracoes'"), nav.indexOf("key: 'operacao'"));
+  for (const key of ['conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa']) assert.ok(hub.includes(`'${key}'`), `${key} deve ficar em Integrações`);
+  const roles = readFileSync(new URL('../lib/roles.ts', import.meta.url), 'utf8');
+  for (const key of ['integ-nfse', 'integ-pagamentos', 'integ-caixa']) assert.ok(roles.includes(`'${key}'`), `${key} é só do superadmin`);
+  const admin = shell.slice(shell.indexOf("label: 'Administração'"));
+  assert.ok(admin.includes("['conexoes', 'Integrações'"));
+  const finance = readFileSync(new URL('../components/admin-finance-tools.tsx', import.meta.url), 'utf8');
+  const invoices = finance.slice(finance.indexOf('export function InvoicesView'), finance.indexOf('export function CaixaDiagnosticsPanel'));
+  for (const text of ['Como emitir as notas', 'Aviso automático da Focus', 'api/v1/admin/nfse/modo', 'nfse/diagnostico', 'Cadastrar emissor']) assert.ok(!invoices.includes(text), `"${text}" não fica mais em Notas fiscais`);
+  assert.ok(invoices.includes('integ-nfse'), 'Notas fiscais aponta para a configuração em Administração');
+  const dash = readFileSync(new URL('../components/admin-dashboard.tsx', import.meta.url), 'utf8');
+  assert.ok(!dash.includes('<PaymentSettingsPanel'), 'configuração de pagamentos saiu de Configurações');
+});
+
+test('telas de Integrações carregam sozinhas (não pedem lista à API)', () => {
+  const dash = readFileSync(new URL('../components/admin-dashboard.tsx', import.meta.url), 'utf8');
+  const line = dash.split('\n').find((row) => row.startsWith('const selfLoadingViews')) ?? '';
+  for (const key of ['integ-nfse', 'integ-pagamentos', 'integ-caixa']) assert.ok(line.includes(`'${key}'`), `${key} deve carregar sozinha`);
+});

@@ -363,7 +363,6 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [form, setForm] = useState<{ kind: 'emitir' | 'manual' | 'cancelar'; id: string } | null>(null);
-  const [diagnostic, setDiagnostic] = useState<Rec | null>(null);
   const [viewing, setViewing] = useState<Rec | null>(null);
 
   const load = useCallback(async () => {
@@ -388,15 +387,6 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
     if (kind === 'emitir') return run(`emit-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/emitir`, { endereco: values }, () => 'Endereço salvo e nota solicitada à Cora.');
     return run(`manual-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/manual`, values, () => 'Nota registrada.');
   }
-  async function changeMode(modo: 'auto' | 'manual' | 'off') {
-    setBusy('modo');
-    try {
-      await api('/api/v1/admin/nfse/modo', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modo }) });
-      notify('success', modo === 'auto' ? 'Emissão automática ligada. As próximas vendas já saem com nota sozinhas.' : modo === 'manual' ? 'Emissão manual. Nenhuma nota sai sozinha.' : 'Emissão de notas desligada.');
-      await load();
-    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível mudar a emissão.'); }
-    finally { setBusy(''); }
-  }
   /** Abre a nota: atualiza a situação no emissor, abre o PDF quando existe e mostra o resumo da nota aqui mesmo. */
   async function viewNote(note: Rec) {
     setBusy(`view-${note.id}`);
@@ -410,77 +400,37 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
     setBusy('');
     void api('/api/v1/admin/notas-fiscais').then(setData).catch(() => undefined);
   }
-  async function checkAvailability() {
-    setBusy('diag');
-    try { setDiagnostic(await api('/api/v1/admin/nfse/diagnostico')); }
-    catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Falha ao consultar o emissor.'); }
-    finally { setBusy(''); }
-  }
 
   const count = (status: string) => (settings?.porStatus ?? []).find((row: Rec) => row.status === status)?.notas ?? 0;
   const off = settings?.modo === 'off';
   const auto = settings?.modo === 'auto';
   const focus = settings?.provedor === 'focus';
   const emissor = focus ? 'Focus NFe' : 'Cora';
+  const pending = Number(settings?.pagamentosSemNota ?? 0);
   return <>
-    <div className="admin-page-heading"><div><h1>Notas fiscais</h1></div></div>
+    <div className="admin-page-heading"><div><h1>Notas fiscais</h1></div>{!loading && settings && <div className="admin-heading-actions">
+      {(auto || settings.modo === 'manual') && pending > 0 && <button className="admin-button admin-button-primary" disabled={Boolean(busy)} onClick={() => { if (!window.confirm('Emitir agora as notas dos pagamentos que ainda não têm nota (até 50 por vez)?')) return; void run('pending', '/api/v1/admin/notas-fiscais/emitir-pendentes', {}, (result) => result.candidatos ? `${result.emitidas} nota(s) emitida(s)${result.erros ? `; ${result.erros} com problema${result.primeiroErro ? ` (${result.primeiroErro})` : ''}` : ''}.` : 'Não há pagamentos esperando nota.') }}>{busy === 'pending' ? 'Emitindo…' : `Emitir as pendentes (${pending})`}</button>}
+      <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar'}</button>
+      <button className="admin-button admin-button-ghost" disabled={Boolean(busy)} onClick={() => void load()}>Atualizar</button>
+    </div>}</div>
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
     {!loading && settings && <>
+      <div className="invoice-strip" aria-label="Como as notas estão configuradas">
+        <span className={`invoice-strip-item ${settings.pronto || off ? 'is-ok' : 'is-warn'}`}><small>Emissão</small><strong>{MODE_TEXT[settings.modo] ?? settings.modo}</strong></span>
+        <span className="invoice-strip-item"><small>Emissor</small><strong>{emissor} · {['production', 'producao'].includes(settings.ambiente) ? 'Produção' : 'Teste'}</strong></span>
+        <span className={`invoice-strip-item ${settings.emailAoCliente ? 'is-ok' : 'is-warn'}`}><small>E-mail ao cliente</small><strong>{settings.emailAoCliente ? 'Ligado' : 'Desligado'}</strong></span>
+        {superAdmin && <a className="invoice-strip-link" href="/admin?view=integ-nfse">Configurar em Administração →</a>}
+      </div>
+      {!settings.pronto && !off && <p className="admin-note is-error" role="alert">{focus ? `Falta configurar: ${(settings.faltando ?? []).join(', ') || 'dados do emissor'}.` : 'Faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE.'}{superAdmin ? ' Veja em Administração → Integrações → Nota fiscal.' : ''}</p>}
       <div className="admin-kpi-grid">
-        <Kpi label="Emissão" value={MODE_TEXT[settings.modo] ?? settings.modo} hint={settings.pronto || off ? undefined : focus ? `faltam ${(settings.faltando ?? []).join(', ') || 'dados do emissor'}` : 'faltam NFSE_ISS_PCT e NFSE_SERVICE_CODE'} tone={settings.pronto ? 'green' : 'amber'} />
-        <Kpi label="Pagamentos sem nota" value={settings.pagamentosSemNota} tone="amber" />
-        <Kpi label="Serviço a faturar" value={brl(settings.valorServicoSemNota ?? 0)} tone="green" />
-        <Kpi label="Fora da nota (jogos)" value={brl(settings.valorRegistroSemNota ?? 0)} tone="blue" />
+        <Kpi label="A faturar" value={brl(settings.valorServicoSemNota ?? 0)} hint={`${pending} ${pending === 1 ? 'pagamento sem nota' : 'pagamentos sem nota'}`} tone="amber" />
         <Kpi label="Emitidas" value={count('emitida')} tone="green" />
         <Kpi label="Aguardando" value={count('aguardando') + count('aguardando_certificado')} tone="blue" />
         <Kpi label="Com erro" value={count('erro')} tone="rose" />
+        <Kpi label="Fora da nota (jogos)" value={brl(settings.valorRegistroSemNota ?? 0)} hint="custo dos jogos não entra" tone="violet" />
       </div>
-      
-      <Panel title="Como emitir as notas" action={auto || settings.modo === 'manual' ? <button className="admin-button admin-button-primary" disabled={Boolean(busy)} onClick={() => { if (!window.confirm('Emitir agora as notas dos pagamentos que ainda não têm nota (até 50 por vez)?')) return; void run('pending', '/api/v1/admin/notas-fiscais/emitir-pendentes', {}, (result) => result.candidatos ? `${result.emitidas} nota(s) emitida(s)${result.erros ? `; ${result.erros} com problema${result.primeiroErro ? ` (${result.primeiroErro})` : ''}` : ''}.` : 'Não há pagamentos esperando nota.') }}>{busy === 'pending' ? 'Emitindo…' : 'Emitir as pendentes agora'}</button> : undefined}>
-        <div className="invoice-mode" role="radiogroup" aria-label="Como emitir as notas">
-          {([['auto', 'Automática', 'A nota sai sozinha assim que o pagamento é confirmado. O cliente recebe um aviso e baixa o PDF em Minha conta.'], ['manual', 'Manual', 'Nada sai sozinho: você emite cada nota pelo botão ou registra uma nota feita fora do sistema.'], ['off', 'Desligada', 'Nenhuma nota é emitida.']] as const).map(([value, title, text]) => <button key={value} type="button" role="radio" aria-checked={settings.modo === value} className={`invoice-mode-option${settings.modo === value ? ' is-active' : ''}`} disabled={!superAdmin || Boolean(busy)} onClick={() => settings.modo !== value && void changeMode(value)}><strong>{title}</strong><small>{text}</small></button>)}
-        </div>
-        {auto && <p className="admin-note" role="status">Automática ligada{settings.automaticaDesde ? ` desde ${dateTime(settings.automaticaDesde)}` : ''}. Vendas anteriores a essa data ficam na lista abaixo; use "Emitir as pendentes agora" se quiser emitir também essas.</p>}
-        {!superAdmin && <p className="admin-note">Só o administrador principal pode mudar essa opção.</p>}
-        {settings.modoDoPainel === false && <p className="admin-note">Hoje vale o que está configurado no servidor (NFSE_MODE). Ao escolher aqui, passa a valer a escolha do painel.</p>}
-      </Panel>
 
-      <Panel title="E-mail ao cliente e aviso da Focus">
-        <div className="admin-summary-list">
-          <div><span>Nota por e-mail ao cliente</span><strong>{settings.emailAoCliente ? 'Ligado: o PDF vai para o e-mail cadastrado' : 'Desligado: falta SMTP_HOST (e SMTP_USER, SMTP_PASS, MAIL_FROM) no servidor'}</strong></div>
-          {focus && <div><span>Endereço do webhook (cole na Focus NFe)</span><strong className="invoice-webhook"><code>{`${settings.enderecoDoSite ?? (typeof window !== 'undefined' ? window.location.origin : '')}/api/v1/webhooks/focus-nfe`}</code> <button type="button" className="admin-button admin-button-small" onClick={() => { const text = `${settings.enderecoDoSite ?? window.location.origin}/api/v1/webhooks/focus-nfe`; void navigator.clipboard?.writeText(text).then(() => notify('success', 'Endereço copiado.'), () => notify('error', 'Não consegui copiar. Selecione o endereço e copie à mão.')); }}>Copiar</button></strong></div>}
-        </div>
-        {focus && <p className="admin-note">Na Focus NFe: Painel API → Webhooks → Adicionar webhook. Evento: <strong>NFSe Nacional</strong>. URL: o endereço acima. Se quiser proteger com senha: em "Header de Autorização" escreva <code>X-Focus-Segredo</code>, em "Chave de Autorização" uma senha inventada por você, e coloque a mesma senha no servidor em <code>NFSE_FOCUS_WEBHOOK_SECRET</code>. O webhook é opcional: sem ele a nota atualiza a cada minuto.</p>}
-      </Panel>
-
-      <Panel title="Emissor e conexão" action={<div className="admin-row-actions">
-        {superAdmin && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : focus ? 'Conferir configuração' : 'Verificar na Cora'}</button>}
-        {superAdmin && !focus && <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>}
-        <button className="admin-button admin-button-ghost" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar agora'}</button>
-      </div>}>
-        <div className="admin-summary-list">
-          <div><span>Emissor</span><strong>{emissor}</strong></div>
-          <div><span>Ambiente</span><strong>{['production', 'producao'].includes(settings.ambiente) ? 'Produção' : 'Teste (homologação)'}</strong></div>
-          {focus
-            ? <div><span>Configuração do servidor</span><strong>{(settings.faltando ?? []).length ? `Falta: ${settings.faltando.join(', ')}` : 'Completa'}</strong></div>
-            : <>
-              <div><span>Alíquota do ISS</span><strong>{settings.aliquotaIssPct ? `${settings.aliquotaIssPct}%` : 'Não definida (NFSE_ISS_PCT)'}</strong></div>
-              <div><span>Código de serviço</span><strong>{settings.codigoServico ?? 'Não definido (NFSE_SERVICE_CODE)'}</strong></div>
-              <div><span>CNAE</span><strong>{settings.cnae ?? '—'}</strong></div>
-              <div><span>Inscrição municipal cadastrada no servidor</span><strong>{settings.emissorConfigurado ? 'Sim' : 'Não (NFSE_MUNICIPAL_REGISTER)'}</strong></div>
-            </>}
-        </div>
-        {diagnostic && focus && <div className="admin-summary-list" style={{ marginTop: 12 }}>
-          <div><span>Pronto para emitir</span><strong>{diagnostic.disponivel ? 'Sim' : `Não. Falta: ${(diagnostic.faltando ?? []).join(', ')}`}</strong></div>
-        </div>}
-        {diagnostic && !focus && <div className="admin-summary-list" style={{ marginTop: 12 }}>
-          <div><span>Cidade/empresa habilitadas na Cora</span><strong>{diagnostic.disponivel ? 'Sim' : 'Não'}</strong></div>
-          <div><span>CNAE principal</span><strong>{diagnostic.cnaes?.main ? `${diagnostic.cnaes.main.code} — ${diagnostic.cnaes.main.description}` : '—'}</strong></div>
-          <div><span>Códigos de serviço</span><strong>{(diagnostic.codigosServico ?? []).slice(0, 8).map((item: Rec) => `${item.code} (${item.description})`).join(' · ') || '—'}</strong></div>
-        </div>}
-      </Panel>
-
-      <Panel title={auto ? 'Aguardando emissão automática' : 'Pagamentos confirmados sem nota'}>
+      {!(data.semNota ?? []).length ? <p className="admin-note invoice-ok" role="status">{auto ? 'Tudo em dia: as notas saem sozinhas quando o pagamento é confirmado.' : 'Todos os pagamentos confirmados já têm nota.'}</p> : <Panel title={auto ? 'Aguardando emissão automática' : 'Pagamentos confirmados sem nota'}>
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
           <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
           <td><span className={chip(row.enderecoCompleto || focus ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus ? 'opcional' : 'faltando'}</span></td>
@@ -492,8 +442,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
           {form && form.id === row.pagamentoId && (form.kind === 'emitir' || form.kind === 'manual') && <NoteForm kind={form.kind} busy={busy.endsWith(row.pagamentoId)} onCancel={() => setForm(null)}
             onSubmit={(values) => void submitPaymentForm(form.kind, row.pagamentoId, values)} />}
           </td></tr>)}</tbody></Table>
-        {!(data.semNota ?? []).length && <Empty text={auto ? 'Tudo em dia: as notas saem sozinhas quando o pagamento é confirmado' : 'Todos os pagamentos confirmados já têm nota'} />}
-      </Panel>
+      </Panel>}
 
       {viewing && <Panel title={`Nota fiscal${viewing.numero ? ` nº ${viewing.numero}` : ''}`} action={<button className="admin-button admin-button-ghost" onClick={() => setViewing(null)}>Fechar</button>}>
         <div className="admin-summary-list">
@@ -512,7 +461,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
         </div>
       </Panel>}
 
-      <Panel title="Notas emitidas e em andamento" action={<button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button>}>
+      <Panel title="Notas emitidas e em andamento">
         <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody>{(data.notas ?? []).map((note: Rec) => <tr key={note.id}>
           <td>{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
           <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{note.erro}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
