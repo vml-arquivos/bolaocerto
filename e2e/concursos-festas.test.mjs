@@ -47,7 +47,7 @@ test('festa criada sem hora usa a hora oficial e a Mega da Virada aparece na lis
   assert.ok(list.data.items.every((item) => new Date(item.dataSorteio) > new Date() || new Date(item.cutoffAt) > new Date()), 'nada vencido');
 });
 
-test('busca e mês filtram concursos e bolões', async () => {
+test('busca, mês e modalidade filtram concursos e bolões', async () => {
   const byName = await call('GET', '/admin/concursos?status=bolao&busca=Virada&pageSize=100'); ok(byName, 'busca por nome');
   assert.ok(byName.data.items.some((item) => item.id === state.festa.id) && byName.data.items.every((item) => item.nomeEspecial?.includes('Virada')));
   const none = await call('GET', '/admin/concursos?status=bolao&busca=zzzzinexistente&pageSize=100');
@@ -76,6 +76,22 @@ test('bolão pode ser criado no concurso de festa sem número oficial', async ()
   assert.ok(listed.some((item) => item.id === state.pool.id), 'bolão da festa aparece na busca por nome');
 });
 
+test('concurso cadastrado à mão aparece em Em aberto e na lista do bolão; número repetido diz qual é', async () => {
+  const day = new Date(Date.now() + 70 * 864e5).toISOString().slice(0, 10);
+  const number = 90000 + Math.floor(Math.random() * 9000);
+  const made = await call('POST', '/admin/concursos', { modalidade: 'lotofacil', numeroConcurso: number, dataSorteio: day, horaSorteio: '18:00' }); ok(made, 'cadastrar');
+  const month = day.slice(0, 7);
+  const inOpen = (await call('GET', `/admin/concursos?status=aberto&modalidade=lotofacil&mes=${month}&pageSize=100`)).data.items;
+  assert.ok(inOpen.some((item) => item.id === made.data.id), 'aparece em Em aberto');
+  const forPool = (await call('GET', `/admin/concursos?status=bolao&modalidade=lotofacil&pageSize=100&page=1`)).data;
+  const allPages = [...forPool.items];
+  for (let page = 2; page <= forPool.pagination.pages; page += 1) allPages.push(...(await call('GET', `/admin/concursos?status=bolao&modalidade=lotofacil&pageSize=100&page=${page}`)).data.items);
+  assert.ok(allPages.some((item) => item.id === made.data.id), 'aparece na lista de criar bolão');
+  const again = await call('POST', '/admin/concursos', { modalidade: 'lotofacil', numeroConcurso: number, dataSorteio: day });
+  assert.equal(again.status, 409); assert.equal(again.data.existente.id, made.data.id); assert.equal(again.data.existente.vendaAberta, true);
+  const trash = await call('DELETE', `/admin/concursos/${made.data.id}/festa`); void trash;
+});
+
 test('concurso manual aceita a hora do sorteio; no dia da festa vem marcado com a hora oficial', async () => {
   const future = new Date(Date.now() + 40 * 864e5).toISOString().slice(0, 10);
   const manual = await call('POST', '/admin/concursos', { modalidade: 'quina', numeroConcurso: 70000 + Math.floor(Math.random() * 9000), dataSorteio: future, horaSorteio: '15:30' }); ok(manual, 'manual com hora');
@@ -85,7 +101,7 @@ test('concurso manual aceita a hora do sorteio; no dia da festa vem marcado com 
   assert.equal((await call('POST', '/admin/concursos', { modalidade: 'quina', numeroConcurso: 70001, dataSorteio: future, horaSorteio: '25:99' })).status, 400, 'hora inválida');
 });
 
-test('painel: criar bolão mostra a festa com dia e hora, busca e mês; Concursos e Bolões têm filtro de modalidade', async () => {
+test('painel: criar bolão mostra a festa com dia e hora, cadastra concurso manual ali mesmo; Concursos e Bolões têm filtros', async () => {
   const browser = await chromium.launch();
   try {
     const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
@@ -100,29 +116,33 @@ test('painel: criar bolão mostra a festa com dia e hora, busca e mês; Concurso
     const select = page.locator('label.admin-field', { hasText: /^Concurso aberto/ }).locator('select');
     await select.waitFor({ timeout: 30000 });
     await page.locator('label.admin-field', { hasText: /^Modalidade/ }).locator('select').first().selectOption('megasena');
-    // Escolhe o mês da festa (a lista mostra no máximo 100 por vez; busca e mês levam ao resto).
-    const monthKey = state.virada.data.slice(0, 7);
-    await page.locator('label.admin-field', { hasText: /^Mês do sorteio/ }).locator('select').selectOption(monthKey);
     await page.waitForFunction(() => [...document.querySelectorAll('label.admin-field select option')].some((option) => /Mega da Virada/.test(option.textContent ?? '')), null, { timeout: 30000 });
     const optionText = await select.locator('option', { hasText: 'Mega da Virada' }).first().innerText();
     assert.match(optionText, /às \d{2}:\d{2}/, 'opção mostra a hora do sorteio');
     assert.match(optionText, /número a definir/, 'festa sem número oficial');
-    const before = await select.locator('option').count();
-    // Busca estreita a lista.
-    await page.getByLabel('Buscar concurso').fill('Virada');
-    await page.waitForFunction((count) => document.querySelectorAll('label.admin-field select option').length > 0 && [...document.querySelectorAll('label.admin-field')].find((l) => /^Concurso aberto/.test(l.textContent ?? ''))?.querySelectorAll('option').length < count, before, { timeout: 15000 }).catch(() => undefined);
-    const afterSearch = await select.locator('option').count();
-    assert.ok(afterSearch <= before, 'a busca não aumenta a lista');
-    assert.ok(await select.locator('option', { hasText: 'Mega da Virada' }).count(), 'a festa continua na busca');
+    assert.equal(await page.getByLabel('Buscar concurso').count(), 0, 'sem caixa de busca na criação do bolão');
     // Escolhe a festa: mostra dia e hora do sorteio.
     const value = await select.locator('option', { hasText: 'Mega da Virada' }).first().getAttribute('value');
     await select.selectOption(value);
     await page.getByText(/Sorteio em \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}/).first().waitFor({ timeout: 10000 });
-    // Mês sem concurso mostra aviso claro.
-    await page.getByLabel('Buscar concurso').fill('zzzzinexistente');
-    await page.waitForTimeout(800);
-    assert.ok(await select.locator('option', { hasText: 'Mega da Virada' }).count(), 'o concurso já escolhido nunca some da lista');
-    await page.getByLabel('Buscar concurso').fill('');
+
+    // Cadastro manual dentro da criação de bolão: o concurso novo já fica selecionado e na lista.
+    const manualNumber = 91000 + Math.floor(Math.random() * 8000);
+    const manualDay = new Date(Date.now() + 55 * 864e5).toISOString().slice(0, 10);
+    await page.getByRole('button', { name: /Cadastrar concurso manualmente/ }).click();
+    await page.getByLabel('Número do concurso').fill(String(manualNumber));
+    await page.getByLabel('Dia do sorteio').first().fill(manualDay);
+    await page.getByRole('button', { name: /Cadastrar concurso de Mega-Sena/ }).click();
+    await page.getByText(/Concurso cadastrado e selecionado/).waitFor({ timeout: 20000 });
+    assert.equal(await select.inputValue() !== '', true, 'o concurso novo ficou selecionado');
+    assert.ok(await select.locator('option', { hasText: `#${manualNumber}` }).count(), 'o concurso novo está na lista');
+    // Cadastrar o mesmo número de novo: a tela avisa e deixa o existente selecionado.
+    await page.getByRole('button', { name: /Cadastrar concurso manualmente/ }).click();
+    await page.getByLabel('Número do concurso').fill(String(manualNumber));
+    await page.getByLabel('Dia do sorteio').first().fill(manualDay);
+    await page.getByRole('button', { name: /Cadastrar concurso de Mega-Sena/ }).click();
+    await page.getByText(/já estava cadastrado/).waitFor({ timeout: 20000 });
+    state.manualNumber = manualNumber;
 
     // Filtros de modalidade nas telas de lista.
     await page.goto(`${BASE}/admin?view=concursos`, { waitUntil: 'load', timeout: 90000 });
@@ -133,8 +153,8 @@ test('painel: criar bolão mostra a festa com dia e hora, busca e mês; Concurso
     const rows = page.locator('table.admin-table tbody tr');
     const total = await rows.count();
     for (let index = 0; index < total; index += 1) assert.match(await rows.nth(index).innerText(), /Quina/i, 'só Quina na lista');
-    await page.getByRole('tab', { name: 'Festas' }).click();
     await page.getByLabel('Filtrar por mês do sorteio').waitFor({ timeout: 10000 });
+    await page.getByRole('tab', { name: 'Festas' }).click();
     await modality.selectOption('megasena');
     await page.waitForTimeout(1500);
     assert.ok(await page.getByText('Mega da Virada').first().isVisible(), 'a festa aparece na aba Festas');
@@ -147,7 +167,23 @@ test('painel: criar bolão mostra a festa com dia e hora, busca e mês; Concurso
   } finally { await browser.close(); }
 });
 
+test('número de concurso que já foi sorteado é recusado, com o último sorteio na mensagem', async () => {
+  const history = (await call('GET', '/admin/concursos?status=historico&modalidade=lotofacil&pageSize=100')).data.items.filter((item) => item.numeroConcurso > 0 && new Date(item.dataSorteio) < new Date());
+  if (!history.length) return; // base de teste sem histórico: nada a conferir
+  const last = Math.max(...history.map((item) => item.numeroConcurso));
+  const day = new Date(Date.now() + 80 * 864e5).toISOString().slice(0, 10);
+  const manual = await call('POST', '/admin/concursos', { modalidade: 'lotofacil', numeroConcurso: last, dataSorteio: day });
+  assert.equal(manual.status, 400, JSON.stringify(manual.data));
+  assert.match(JSON.stringify(manual.data), /já foi sorteado/);
+  const festa = await call('POST', '/admin/concursos/festa', { especial: 'personalizado', modalidade: 'lotofacil', nomeEspecial: 'Teste', dataSorteio: day, numeroConcurso: last });
+  assert.equal(festa.status, 400, JSON.stringify(festa.data));
+});
+
 test('limpeza: remove o bolão e a festa de teste', async () => {
   if (state.pool?.id) await call('DELETE', `/admin/boloes/${state.pool.id}/sem-movimentacao?forcar=true`);
   if (state.festa?.id) await call('DELETE', `/admin/concursos/${state.festa.id}/festa`);
+  if (state.manualNumber) {
+    const rows = (await call('GET', `/admin/concursos?status=bolao&modalidade=megasena&busca=${state.manualNumber}&pageSize=100`)).data.items;
+    for (const row of rows) await call('DELETE', `/admin/concursos/${row.id}/festa`);
+  }
 });

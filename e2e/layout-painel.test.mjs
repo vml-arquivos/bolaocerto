@@ -67,18 +67,21 @@ test('painel: sem rolagem lateral, contraste e meses de concursos', async () => 
       }
     }
     await cta.click();
-    const festa = page.locator('button.festa-toggle');
-    await festa.waitFor({ timeout: 30000 });
+    const toggles = page.locator('button.festa-toggle');
+    await toggles.first().waitFor({ timeout: 30000 });
+    assert.equal(await toggles.count(), 2, 'botões de concurso manual e de data comemorativa');
     for (const theme of ['light', 'dark']) {
       await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
       await page.waitForTimeout(300);
-      const colors = await festa.evaluate((el) => {
-        const parse = (css) => (css.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
-        const style = getComputedStyle(el);
-        return { fg: parse(style.color), bg: parse(style.backgroundColor) };
-      });
-      const contrast = ratio(colors.fg, colors.bg);
-      assert.ok(contrast >= 4.5, `contraste do botão no tema ${theme}: ${contrast.toFixed(2)}`);
+      for (const index of [0, 1]) {
+        const colors = await toggles.nth(index).evaluate((el) => {
+          const parse = (css) => (css.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+          const style = getComputedStyle(el);
+          return { fg: parse(style.color), bg: parse(style.backgroundColor) };
+        });
+        const contrast = ratio(colors.fg, colors.bg);
+        assert.ok(contrast >= 4.5, `contraste do botão ${index + 1} no tema ${theme}: ${contrast.toFixed(2)}`);
+      }
     }
 
     // 3) Concursos: lista por mês com os próximos meses.
@@ -90,10 +93,10 @@ test('painel: sem rolagem lateral, contraste e meses de concursos', async () => 
       if (offset >= 1) assert.ok(data.items.length > 0, `mês ${month} sem nenhum sorteio previsto`);
     }
     await page.goto(`${BASE}/admin?view=concursos`, { waitUntil: 'load', timeout: 90000 });
-    const tabs = page.locator('.month-nav-item');
-    await tabs.first().waitFor({ timeout: 30000 });
-    assert.equal(await tabs.count(), 7);
-    await tabs.nth(1).click();
+    const monthSelect = page.getByLabel('Filtrar por mês do sorteio');
+    await monthSelect.waitFor({ timeout: 30000 });
+    assert.ok((await monthSelect.locator('option').count()) >= 12, 'seletor com os próximos meses');
+    await monthSelect.selectOption(monthKey(1));
     await page.waitForTimeout(1500);
     assert.ok((await page.locator('table.admin-table tbody tr').count()) > 0, 'o mês seguinte mostra sorteios');
   } finally {

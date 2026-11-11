@@ -26,14 +26,8 @@ import {
 } from '@bolaocerto/shared-types';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { assertNumberNotDrawn, festivalCutoff, healBrokenFestivals } from './festival-guard';
 import { CreateFestaContestDto, CreateManualContestDto, UpdateFestaContestDto } from './lotteries.dto';
-
-/** Fecha as apostas no horário padrão da modalidade ou 1 hora antes do sorteio, o que vier primeiro (sorteios de manhã). */
-function festivalCutoff(drawDate: Date, horarioCorteLocal: string): Date {
-  const standard = calculateBrazilCutoff(drawDate, horarioCorteLocal);
-  const beforeDraw = new Date(drawDate.getTime() - 60 * 60 * 1000);
-  return standard.getTime() <= beforeDraw.getTime() ? standard : beforeDraw;
-}
 
 @Injectable()
 export class LotteriesService {
@@ -92,6 +86,7 @@ export class LotteriesService {
     const fontes = new Set<string>();
     const falhas: Array<{ modalidade: string; erro: string }> = [];
     let sincronizados = 0;
+    await healBrokenFestivals(this.prisma as never);
     await this.closeExpired();
 
     for (const current of modalities) {
@@ -398,8 +393,23 @@ export class LotteriesService {
     if (Number.isNaN(drawDate.getTime()) || brazilDayKey(drawDate) !== dto.dataSorteio) throw new BadRequestException('Data do sorteio inválida.');
     if (drawDate.getTime() <= Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
     const cutoffAt = known ? festivalCutoff(drawDate, config.horarioCorteLocal) : calculateBrazilCutoff(drawDate, config.horarioCorteLocal);
+    await assertNumberNotDrawn(this.prisma, modalidade, dto.numeroConcurso);
     const exists = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: dto.numeroConcurso } } });
-    if (exists) throw new ConflictException('Este concurso já está cadastrado.');
+    if (exists) {
+      // Número que só existia como previsão do calendário (sem bolão): vira o concurso cadastrado agora, com a data e a hora informadas.
+      if (exists.status === 'aberto' && exists.fonteSincronizacao === 'projetado' && (await this.prisma.bolao.count({ where: { concursoId: exists.id } })) === 0) {
+        const converted = await this.prisma.concurso.update({
+          where: { id: exists.id },
+          data: {
+            dataSorteio: drawDate, cutoffAt, fonteSincronizacao: 'manual', acumulado: Boolean(dto.acumulado), sincronizadoEm: new Date(),
+            ...(dto.valorEstimadoPremio !== undefined ? { valorEstimadoPremio: dto.valorEstimadoPremio } : {}),
+            ...(known ? { especial: known.preset.chave, nomeEspecial: known.preset.nome, numeroDefinido: true } : {}),
+          },
+        });
+        return this.toPublicContest(converted);
+      }
+      throw this.conflictWith('Este concurso já está cadastrado.', exists);
+    }
     // Festa criada antes do número oficial (provisória) no mesmo dia: vira este concurso, com os bolões que já tiver.
     const adopted = await this.prisma.$transaction((tx) => adoptProvisionalContests(tx as unknown as FestaTx, modalidade, dto.numeroConcurso, drawDate));
     if (adopted > 0) {
@@ -417,6 +427,12 @@ export class LotteriesService {
       },
     });
     return this.toPublicContest(contest);
+  }
+
+  /** Conflito que diz qual concurso já existe e em que situação está (a tela seleciona o concurso ou explica por que não dá para usar). */
+  private conflictWith(message: string, row: { id: string; modalidade: string; numeroConcurso: number; status: string; dataSorteio: Date; cutoffAt: Date | null; nomeEspecial?: string | null }) {
+    const vendaAberta = row.status === 'aberto' && row.cutoffAt !== null && row.cutoffAt.getTime() > Date.now();
+    return new ConflictException({ statusCode: 409, message, error: 'Conflict', existente: { id: row.id, modalidade: row.modalidade, numeroConcurso: row.numeroConcurso, status: row.status, dataSorteio: row.dataSorteio, cutoffAt: row.cutoffAt, nomeEspecial: row.nomeEspecial ?? null, vendaAberta } });
   }
 
   festivalPresets() {
@@ -443,6 +459,7 @@ export class LotteriesService {
     if (brazilDayKey(drawDate) !== dto.dataSorteio) throw new BadRequestException('Data do sorteio inválida.');
     if (drawDate.getTime() <= Date.now()) throw new BadRequestException('A data do sorteio deve ser futura.');
     const defined = dto.numeroConcurso !== undefined;
+    if (defined) await assertNumberNotDrawn(this.prisma, modalidade, dto.numeroConcurso!);
     const numero = defined ? dto.numeroConcurso! : provisionalContestNumber(drawDate);
     const exists = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade, numeroConcurso: numero } } });
     if (exists) {
@@ -452,11 +469,11 @@ export class LotteriesService {
         await this.audit?.record(this.prisma, { entidade: 'concurso', entidadeId: marked.id, evento: 'concurso.festa_marcada', atorId: actorId, payloadDepois: { especial: marked.especial, nomeEspecial: marked.nomeEspecial } });
         return this.toPublicContest(marked);
       }
-      throw new ConflictException('Este concurso de festa já está cadastrado.');
+      throw this.conflictWith('Este concurso de festa já está cadastrado.', exists);
     }
     if (!defined) {
       const sameDay = (await this.prisma.concurso.findMany({ where: { modalidade, especial: { not: null }, numeroDefinido: true } })).find((item) => brazilDayKey(item.dataSorteio) === dto.dataSorteio);
-      if (sameDay) throw new ConflictException(`Já existe o concurso ${sameDay.numeroConcurso} nessa data com a festa marcada. Crie o bolão nele.`);
+      if (sameDay) throw this.conflictWith(`Já existe o concurso ${sameDay.numeroConcurso} nessa data com a festa marcada. Crie o bolão nele.`, sameDay);
     }
     const contest = await this.prisma.concurso.create({
       data: {
@@ -477,6 +494,7 @@ export class LotteriesService {
     const data: Record<string, unknown> = {};
     if (dto.numeroConcurso !== undefined) {
       if (contest.numeroDefinido) throw new ConflictException('Este concurso já tem número oficial.');
+      await assertNumberNotDrawn(this.prisma, contest.modalidade, dto.numeroConcurso);
       const clash = await this.prisma.concurso.findUnique({ where: { modalidade_numeroConcurso: { modalidade: contest.modalidade, numeroConcurso: dto.numeroConcurso } } });
       if (clash && clash.id !== contest.id) {
         // O concurso oficial já existe (veio da CAIXA): unifica, passando os bolões para ele.

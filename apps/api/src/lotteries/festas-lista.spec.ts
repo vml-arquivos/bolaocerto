@@ -11,7 +11,8 @@ function lotteries(extra: Record<string, unknown> = {}) {
   const audit = { record: jest.fn() };
   return { service: new LotteriesService(prisma as never, { get: () => undefined } as unknown as ConfigService, audit as never), findMany, audit, prisma };
 }
-const firstWhere = (mock: jest.Mock): Where => (mock.mock.calls[0] as unknown as [{ where: Where }])[0].where;
+const isHeal = (where: Where) => JSON.stringify(where).includes('isNot');
+const firstWhere = (mock: jest.Mock): Where => (mock.mock.calls as unknown as Array<[{ where: Where }]>).map((call) => call[0].where).find((where) => !isHeal(where))!;
 
 describe('concursos de festa fora da lista de abertos', () => {
   it('lista pública normal traz os da CAIXA e a festa que já tem número oficial, mas não a provisória', async () => {
@@ -33,12 +34,13 @@ describe('concursos de festa fora da lista de abertos', () => {
     expect(firstWhere(findMany)).toEqual({ status: 'apurado' });
   });
 
-  it('painel: "Em aberto" só da CAIXA e "Festas" só de festa, ambas com prazo no futuro', async () => {
+  it('painel: "Em aberto" traz tudo que está à venda (inclusive festa e cadastro manual) e "Festas" só as festas, ambas com prazo no futuro', async () => {
     const findMany = jest.fn(async () => []);
     const prisma = { concurso: { findMany, count: jest.fn(async () => 0) } };
     const admin = new AdminService(prisma as never, { record: jest.fn() } as never);
     await admin.listContests({ status: 'aberto' });
-    expect(firstWhere(findMany)).toMatchObject({ status: 'aberto', especial: null });
+    expect(firstWhere(findMany)).toMatchObject({ status: 'aberto' });
+    expect(firstWhere(findMany)).not.toHaveProperty('especial');
     findMany.mockClear();
     await admin.listContests({ status: 'festas' });
     expect(firstWhere(findMany)).toMatchObject({ status: 'aberto', especial: { not: null } });

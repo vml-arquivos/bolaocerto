@@ -7,6 +7,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PapelUsuario, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { calculateBrazilCutoff, ensureUpcomingContestsSoon, projectUpcomingUntil } from '@bolaocerto/shared-types';
+import { healBrokenFestivals } from '../lotteries/festival-guard';
 import * as argon2 from 'argon2';
 import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from '../auth/password-policy';
@@ -166,22 +167,27 @@ export class AdminService {
     const { page, pageSize, skip, take } = this.pagination(query);
     const dateRange = this.dateRange({ de: query.de, ate: query.ate });
     const now = new Date();
+    // Festa "apurada" por engano (número de sorteio antigo) volta a ficar aberta, com número provisório.
+    await healBrokenFestivals(this.prisma as never);
     // Toda modalidade precisa de um concurso aberto: se a CAIXA ainda não publicou o seguinte, entra o concurso previsto.
     if (query.status === 'aberto' || query.status === 'bolao') await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
     if (query.status === 'aberto' && query.mes) return this.listContestsOfMonth(query.mes, query.modalidade, now, query.busca);
     const search = this.contestSearch(query.busca);
     const scope: Prisma.ConcursoWhereInput =
-      query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now }, especial: null }
+      query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now } }
       : query.status === 'festas' ? { status: 'aberto', cutoffAt: { gt: now }, especial: { not: null } }
       // Para criar bolão: todo concurso com venda aberta, inclusive festa (com ou sem número oficial) e concurso previsto.
       : query.status === 'bolao' ? { status: 'aberto', cutoffAt: { gt: now } }
       : query.status === 'historico' ? { OR: [{ status: { not: 'aberto' } }, { cutoffAt: { lte: now } }] }
       : query.status ? { status: query.status } : {};
+    // A busca não pode apagar o filtro do escopo (ex.: histórico tem um OR próprio): os dois valem ao mesmo tempo.
+    const { OR: scopeOr, ...scopeRest } = scope;
+    const both = [...(scopeOr ? [{ OR: scopeOr }] : []), ...(search ? [{ OR: search }] : [])];
     const where: Prisma.ConcursoWhereInput = {
-      ...scope,
+      ...scopeRest,
       ...(query.modalidade ? { modalidade: query.modalidade } : {}),
       ...(query.mes ? this.monthRange(query.mes) : Object.keys(dateRange).length ? { dataSorteio: dateRange } : {}),
-      ...(search ? { OR: search } : {}),
+      ...(both.length ? { AND: both } : {}),
     };
     const order: Prisma.SortOrder = query.status === 'aberto' || query.status === 'festas' || query.status === 'bolao' ? 'asc' : 'desc';
     const [items, total] = await Promise.all([
@@ -218,7 +224,7 @@ export class AdminService {
     const start = new Date(`${mes}-01T00:00:00-03:00`);
     const next = new Date(`${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01T00:00:00-03:00`);
     const search = this.contestSearch(busca);
-    const where: Prisma.ConcursoWhereInput = { status: 'aberto', cutoffAt: { gt: now }, especial: null, dataSorteio: { gte: start, lt: next }, ...(modalidade ? { modalidade } : {}), ...(search ? { OR: search } : {}) };
+    const where: Prisma.ConcursoWhereInput = { status: 'aberto', cutoffAt: { gt: now }, dataSorteio: { gte: start, lt: next }, ...(modalidade ? { modalidade } : {}), ...(search ? { OR: search } : {}) };
     const real = await this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: [{ dataSorteio: 'asc' }, { modalidade: 'asc' }] });
     const known = new Set((await this.prisma.concurso.findMany({ where: { numeroConcurso: { gt: 0 }, dataSorteio: { gte: start } }, select: { modalidade: true, numeroConcurso: true } })).map((row) => `${row.modalidade}:${row.numeroConcurso}`));
     const horizon = new Date(next.getTime() - 1);

@@ -54,16 +54,6 @@ function dateAndTime(value: unknown) {
   return `${day} às ${time}`;
 }
 
-const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-/** Meses (AAAA-MM) a partir de hoje, para o filtro de concursos. */
-function upcomingMonths(count: number) {
-  const base = new Date(Date.now() - 3 * 3600_000);
-  return Array.from({ length: count }, (_, index) => {
-    const date = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + index, 1));
-    return { key: date.toISOString().slice(0, 7), label: `${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCFullYear()}` };
-  });
-}
-
 /** Regras de venda do bolão salvo. A lista do admin devolve o registro bruto (regrasVenda é o texto); a API pública devolve um objeto. */
 function salesRulesOf(pool: RecordValue | null | undefined) {
   const raw = pool?.regrasVenda;
@@ -145,32 +135,38 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const [maxPerPerson, setMaxPerPerson] = useState('');
   const [saleText, setSaleText] = useState('');
   // Lista de concursos do administrador: vem do servidor, só da modalidade escolhida (inclusive festas), com busca e mês.
-  const [contestSearch, setContestSearch] = useState('');
-  const [contestMonthFilter, setContestMonthFilter] = useState('');
   const [listed, setListed] = useState<RecordValue[] | null>(null);
-  const [listedTotal, setListedTotal] = useState(0);
   const [listReload, setListReload] = useState(0);
+  // Cadastro manual de concurso, direto aqui (número, dia e hora do sorteio).
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualNumber, setManualNumber] = useState('');
+  const [manualDate, setManualDate] = useState('');
+  const [manualHora, setManualHora] = useState('20:00');
+  const [manualPrize, setManualPrize] = useState('');
+  const [manualBusy, setManualBusy] = useState(false);
   const [createdContest, setCreatedContest] = useState<RecordValue | null>(null);
   const [pickedRow, setPickedRow] = useState<RecordValue | null>(null);
 
   useEffect(() => {
     if (role !== 'admin' || editPool?.id) { setListed(null); return; }
     const controller = new AbortController();
-    const timer = setTimeout(async () => {
+    (async () => {
       try {
-        const query = new URLSearchParams({ status: 'bolao', modalidade: modality, page: '1', pageSize: '100' });
-        if (contestSearch.trim()) query.set('busca', contestSearch.trim());
-        if (contestMonthFilter) query.set('mes', contestMonthFilter);
-        const response = await authFetch(`/api/v1/admin/concursos?${query.toString()}`, { signal: controller.signal });
-        if (!response.ok) throw new Error('Falha ao listar os concursos.');
-        const data = await response.json() as { items?: RecordValue[]; pagination?: { total?: number } };
-        if (controller.signal.aborted) return;
-        setListed(data.items ?? []); setListedTotal(data.pagination?.total ?? (data.items ?? []).length);
+        // Traz todos os concursos abertos da modalidade (de 100 em 100), inclusive festas e os cadastrados à mão.
+        const all: RecordValue[] = [];
+        for (let page = 1; page <= 6; page += 1) {
+          const query = new URLSearchParams({ status: 'bolao', modalidade: modality, page: String(page), pageSize: '100' });
+          const response = await authFetch(`/api/v1/admin/concursos?${query.toString()}`, { signal: controller.signal });
+          if (!response.ok) throw new Error('Falha ao listar os concursos.');
+          const data = await response.json() as { items?: RecordValue[]; pagination?: { pages?: number } };
+          all.push(...(data.items ?? []));
+          if (page >= (data.pagination?.pages ?? 1)) break;
+        }
+        if (!controller.signal.aborted) setListed(all);
       } catch { if (!controller.signal.aborted) setListed(null); }
-    }, contestSearch.trim() ? 300 : 0);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [role, editPool?.id, modality, contestSearch, contestMonthFilter, listReload]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setContestSearch(''); setContestMonthFilter(''); }, [modality]);
+    })();
+    return () => { controller.abort(); };
+  }, [role, editPool?.id, modality, listReload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!editPool) {
@@ -320,9 +316,9 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     return () => { clearTimeout(timer); controller.abort(); };
   }, [automatic, editing, modalMode, canPrice, contestId, selectedGroupId, numbers, totalCotas, taxa, unlimited]);
   useEffect(() => {
-    if (!newDate || festaPresets.length) return;
+    if (!(newDate || manualOpen) || festaPresets.length) return;
     authFetch('/api/v1/admin/concursos/festas').then(async (response) => { if (response.ok) setFestaPresets(await response.json()); }).catch(() => undefined);
-  }, [newDate, festaPresets.length]);
+  }, [newDate, manualOpen, festaPresets.length]);
   const modalityPresets = festaPresets.filter((preset) => preset.modalidade === modality);
   useEffect(() => { setFestaChoice(modalityPresets[0]?.chave ?? 'personalizado'); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modality, festaPresets]);
@@ -333,6 +329,21 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     if (festaSorteio) { setFestaDate(festaSorteio.data); setFestaHora(festaSorteio.hora); }
     else { setFestaDate(''); setFestaHora('20:00'); }
   }, [festaSorteio?.data, festaSorteio?.hora, festaChoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Concurso que já existia: se ainda vende, é selecionado; se não, a tela explica a situação. */
+  function selectExistingContest(data: RecordValue): boolean {
+    const found = data?.existente as RecordValue | undefined;
+    if (!found) return false;
+    const label = `${found.nomeEspecial ? `${found.nomeEspecial} · ` : ''}${found.numeroConcurso > 0 ? `#${found.numeroConcurso}` : 'número a definir'} · ${dateAndTime(found.dataSorteio)}`;
+    if (found.vendaAberta && found.modalidade === modality) {
+      setCreatedContest({ ...found, status: 'aberto', valorEstimadoPremio: found.valorEstimadoPremio ?? null });
+      setListReload((value) => value + 1);
+      setContestId(String(found.id)); setNewDate(false); setManualOpen(false);
+      setMessage(`Esse concurso já estava cadastrado (${label}). Já deixei selecionado para você criar o bolão.`);
+    } else {
+      setMessage(`Esse concurso já existe (${label}), mas as vendas dele estão encerradas e não dá para criar bolão nele. Cadastre um concurso com data futura.`);
+    }
+    return true;
+  }
   async function createDateContest() {
     setMessage('');
     if (!festaDate) { setMessage('Escolha o dia do sorteio.'); return; }
@@ -342,14 +353,40 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     try {
       const response = await authFetch('/api/v1/admin/concursos/festa', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ especial: preset ? preset.chave : 'personalizado', dataSorteio: festaDate, horaSorteio: festaHora || '20:00', ...(preset ? {} : { modalidade: modality, nomeEspecial: festaName.trim() }) }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível criar o concurso desta data.');
+      if (!response.ok) {
+        if (response.status === 409 && selectExistingContest(data)) return;
+        throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível criar o concurso desta data.');
+      }
       await onContestCreated?.();
-      setCreatedContest(data); setListReload((value) => value + 1);
-      setContestSearch(''); setContestMonthFilter('');
+      setCreatedContest({ ...data, status: 'aberto' }); setListReload((value) => value + 1);
       setContestId(String(data.id)); setNewDate(false); setFestaName('');
       setMessage('Concurso da data criado e selecionado. Agora é só definir os jogos e as cotas.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao criar o concurso desta data.'); }
     finally { setFestaBusy(false); }
+  }
+  // Se o dia escolhido é de uma festa com data confirmada (ex.: Mega da Virada), a hora oficial vem sozinha.
+  const manualFesta = modalityPresets.find((item) => item.proximoSorteio?.confirmado && item.proximoSorteio.data === manualDate);
+  useEffect(() => { if (manualFesta?.proximoSorteio) setManualHora(manualFesta.proximoSorteio.hora); }, [manualFesta?.chave, manualFesta?.proximoSorteio?.hora]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function createManualContest() {
+    setMessage('');
+    const number = Math.trunc(Number(manualNumber));
+    if (!Number.isInteger(number) || number < 1) { setMessage('Informe o número do concurso.'); return; }
+    if (!manualDate) { setMessage('Escolha o dia do sorteio.'); return; }
+    const prize = manualPrize.replace(/\./g, '').replace(',', '.').trim();
+    setManualBusy(true);
+    try {
+      const response = await authFetch('/api/v1/admin/concursos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modalidade: modality, numeroConcurso: number, dataSorteio: manualDate, horaSorteio: manualHora || '20:00', ...(prize && Number.isFinite(Number(prize)) ? { valorEstimadoPremio: Number(prize) } : {}) }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 409 && selectExistingContest(data)) return;
+        throw new Error(Array.isArray(data.message) ? data.message.join(' ') : data.message || 'Não foi possível cadastrar o concurso.');
+      }
+      await onContestCreated?.();
+      setCreatedContest({ ...data, status: 'aberto' }); setListReload((value) => value + 1);
+      setContestId(String(data.id)); setManualOpen(false); setManualNumber(''); setManualDate(''); setManualPrize('');
+      setMessage('Concurso cadastrado e selecionado. Agora é só definir os jogos e as cotas.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao cadastrar o concurso.'); }
+    finally { setManualBusy(false); }
   }
   async function suggestGame() {
     setSuggesting(true);
@@ -495,12 +532,24 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     <div className="admin-form-grid admin-form-grid-three">
       {role === 'affiliate' && <label className="admin-field"><span>Grupo próprio</span><select value={selectedGroupId} disabled={editing} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Selecione</option>{groups.map((group) => <option value={group.id} key={group.id}>{group.nome}</option>)}</select></label>}
       <label className="admin-field"><span>Modalidade</span><select value={modality} disabled={editing} onChange={(event) => { setSpecialValue(''); setModality(event.target.value); setContestId(''); }}><option value="megasena">Mega-Sena</option><option value="lotofacil">Lotofácil</option><option value="quina">Quina</option><option value="lotomania">Lotomania</option><option value="duplasena">Dupla Sena</option><option value="timemania">Timemania</option><option value="diadesorte">Dia de Sorte</option><option value="supersete">Super Sete</option><option value="loteca">Loteca</option></select></label>
-      {!editing && listed !== null && <div className="admin-field admin-field-wide contest-filter" aria-label="Filtrar concursos"><div className="admin-form-grid admin-form-grid-two"><label className="admin-field"><span>Buscar concurso</span><input type="search" value={contestSearch} onChange={(event) => setContestSearch(event.target.value)} placeholder="Número ou nome (ex.: 3100, Mega da Virada)" /></label><label className="admin-field"><span>Mês do sorteio</span><select value={contestMonthFilter} onChange={(event) => setContestMonthFilter(event.target.value)}><option value="">Todos os próximos</option>{upcomingMonths(14).map((month) => <option key={month.key} value={month.key}>{month.label}</option>)}</select></label></div></div>}
-      <label className="admin-field admin-field-wide"><span>Concurso aberto{!editing && listed !== null ? ` (${availableContests.length}${listedTotal > availableContests.length ? ` de ${listedTotal}` : ''})` : ''}</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{editing && editPool?.concurso && contestId && !availableContests.some((contest) => contest.id === contestId) && <option value={contestId}>{editPool.concurso.nomeEspecial ? `${editPool.concurso.nomeEspecial} · ` : ''}{concursoNo(editPool.concurso.numeroConcurso) === 'a definir' ? 'número a definir' : `#${editPool.concurso.numeroConcurso}`} · {dateOnly(editPool.concurso.dataSorteio)}</option>}{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateAndTime(contest.dataSorteio)}{contest.fonteSincronizacao === 'projetado' || contest.previsto ? ' (data prevista)' : ''} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>{contestSearch.trim() || contestMonthFilter ? 'Nenhum concurso com esse filtro. Limpe a busca ou escolha outro mês.' : 'Nenhum concurso disponível para esta modalidade. Sincronize os concursos ou crie uma data comemorativa abaixo.'}</small>}{!editing && listed !== null && listedTotal > listed.length && <small>Mostrando os {listed.length} mais próximos de {listedTotal}. Use a busca ou o mês para achar os outros.</small>}{selectedContest && <small>Sorteio em {dateAndTime(selectedContest.dataSorteio)}{selectedContest.cutoffAt ? ` · vendas até ${dateAndTime(selectedContest.cutoffAt)}` : ''}{selectedContest.fonteSincronizacao === 'projetado' || selectedContest.previsto ? ' · data prevista, ajusta sozinha quando a CAIXA publicar' : ''}</small>}</label>
+      <label className="admin-field admin-field-wide"><span>Concurso aberto</span><select value={contestId} disabled={editing} onChange={(event) => setContestId(event.target.value)}><option value="">Selecione</option>{editing && editPool?.concurso && contestId && !availableContests.some((contest) => contest.id === contestId) && <option value={contestId}>{editPool.concurso.nomeEspecial ? `${editPool.concurso.nomeEspecial} · ` : ''}{concursoNo(editPool.concurso.numeroConcurso) === 'a definir' ? 'número a definir' : `#${editPool.concurso.numeroConcurso}`} · {dateOnly(editPool.concurso.dataSorteio)}</option>}{availableContests.map((contest) => <option value={contest.id} key={contest.id}>{contest.nomeEspecial ? `${contest.nomeEspecial} · ` : ''}{concursoNo(contest.numeroConcurso) === 'a definir' ? 'número a definir' : `#${contest.numeroConcurso}`} · {dateAndTime(contest.dataSorteio)}{contest.fonteSincronizacao === 'projetado' || contest.previsto ? ' (data prevista)' : ''} · prêmio {contest.valorEstimadoPremio ? money(contest.valorEstimadoPremio) : 'a definir'}</option>)}</select>{!selectedContest && <small>Nenhum concurso disponível para esta modalidade. Cadastre um concurso manualmente ou crie uma data comemorativa logo abaixo.</small>}{selectedContest && <small>Sorteio em {dateAndTime(selectedContest.dataSorteio)}{selectedContest.cutoffAt ? ` · vendas até ${dateAndTime(selectedContest.cutoffAt)}` : ''}{selectedContest.fonteSincronizacao === 'projetado' || selectedContest.previsto ? ' · data prevista, ajusta sozinha quando a CAIXA publicar' : ''}</small>}</label>
       {!editing && (modality === 'timemania' || modality === 'diadesorte') && <label className="admin-field admin-field-wide"><span>{modality === 'timemania' ? 'Time do Coração dos jogos' : 'Mês de Sorte dos jogos'}</span>{modality === 'timemania'
         ? <input value={specialValue} maxLength={60} onChange={(event) => setSpecialValue(event.target.value)} placeholder="Ex.: Vasco da Gama/RJ" />
         : <select value={specialValue} onChange={(event) => setSpecialValue(event.target.value)}><option value="">Escolha o mês</option>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>}
         </label>}
+      {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline manual-inline">
+        <button type="button" className="festa-toggle" aria-expanded={manualOpen} onClick={() => setManualOpen((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">＋</span><span className="festa-toggle-text"><strong>{manualOpen ? 'Fechar cadastro de concurso' : 'Cadastrar concurso manualmente'}</strong><small>{manualOpen ? 'Voltar para a lista de concursos abertos.' : 'Use quando o concurso ainda não aparece na lista (a CAIXA ainda não publicou).'}</small></span><span className="festa-toggle-go" aria-hidden="true">{manualOpen ? 'Fechar ▴' : 'Abrir ▾'}</span></button>
+        {manualOpen && <div className="festa-inline-body">
+          <div className="admin-form-grid admin-form-grid-three">
+            <label className="admin-field"><span>Número do concurso</span><input type="number" min={1} inputMode="numeric" value={manualNumber} onChange={(event) => setManualNumber(event.target.value)} placeholder="Ex.: 3100" /></label>
+            <label className="admin-field"><span>Dia do sorteio</span><input type="date" value={manualDate} onChange={(event) => setManualDate(event.target.value)} /></label>
+            <label className="admin-field"><span>Hora do sorteio (Brasília)</span><input type="time" value={manualHora} onChange={(event) => setManualHora(event.target.value)} /></label>
+          </div>
+          <label className="admin-field"><span>Prêmio estimado (R$, opcional)</span><input inputMode="decimal" value={manualPrize} onChange={(event) => setManualPrize(event.target.value)} placeholder="Deixe vazio se ainda não saiu" /></label>
+          {manualFesta?.proximoSorteio && <p className="admin-note" role="status">É a {manualFesta.nome}: o concurso já fica marcado como festa, com a hora oficial ({manualFesta.proximoSorteio.hora}).</p>}
+          <button type="button" className="admin-button admin-button-primary" disabled={manualBusy} onClick={() => void createManualContest()}>{manualBusy ? 'Cadastrando…' : `Cadastrar concurso de ${modalityNames[modality] ?? modality}`}</button>
+        </div>}
+      </div>}
       {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
         <button type="button" className="festa-toggle" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">🎉</span><span className="festa-toggle-text"><strong>{newDate ? 'Fechar data comemorativa' : 'Criar para uma data comemorativa (sem concurso aberto)'}</strong><small>{newDate ? 'Voltar para a lista de concursos abertos.' : 'Use quando a data não está na lista acima: Mega da Virada, São João, Natal…'}</small></span><span className="festa-toggle-go" aria-hidden="true">{newDate ? 'Fechar ▴' : 'Abrir ▾'}</span></button>
         {newDate && <div className="festa-inline-body">

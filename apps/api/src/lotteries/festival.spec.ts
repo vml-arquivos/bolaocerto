@@ -1,3 +1,4 @@
+import { healBrokenFestivals } from './festival-guard';
 import { adoptProvisionalContests, brazilDayKey, contestLabel, FESTAS_PRESETS, previsaoFesta, proximoSorteioFesta, provisionalContestNumber } from '@bolaocerto/shared-types';
 import { ConfigService } from '@nestjs/config';
 import { LotteriesService } from './lotteries.service';
@@ -11,12 +12,17 @@ function makeDb(rows: Row[], pools: Pool[] = []) {
     concurso: {
       findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) => rows.filter((r) => Object.entries(where).every(([k, v]) => (v && typeof v === 'object' && 'not' in (v as object)) ? (r as never)[k] !== null : (r as never)[k] === v))),
       findUnique: jest.fn(async ({ where }: { where: Record<string, any> }) => where.id ? rows.find((r) => r.id === where.id) ?? null : rows.find((r) => r.modalidade === where.modalidade_numeroConcurso.modalidade && r.numeroConcurso === where.modalidade_numeroConcurso.numeroConcurso) ?? null),
+      // Último número já sorteado: sorteio no passado, ou apurado sem ser festa.
+      findFirst: jest.fn(async ({ where }: { where: { modalidade: string } }) => {
+        const drawn = rows.filter((r) => r.modalidade === where.modalidade && r.numeroConcurso > 0 && (r.dataSorteio.getTime() <= Date.now() || ((r as never as { status?: string }).status === 'apurado' && !r.especial))).sort((x, y) => y.numeroConcurso - x.numeroConcurso);
+        return drawn[0] ? { numeroConcurso: drawn[0].numeroConcurso } : null;
+      }),
       findUniqueOrThrow: jest.fn(async ({ where }: { where: { id: string } }) => rows.find((r) => r.id === where.id)!),
       update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => { const row = rows.find((r) => r.id === where.id)!; Object.assign(row, data); return row; }),
       delete: jest.fn(async ({ where }: { where: { id: string } }) => { rows.splice(rows.findIndex((r) => r.id === where.id), 1); }),
       create: jest.fn(async ({ data }: { data: Omit<Row, 'id'> }) => { const row = { id: `c${rows.length + 1}`, ...data } as Row; rows.push(row); return row; }),
     },
-    bolao: { updateMany: jest.fn(async ({ where, data }: { where: { concursoId: string }; data: { concursoId: string } }) => { const hit = pools.filter((p) => p.concursoId === where.concursoId); hit.forEach((p) => { p.concursoId = data.concursoId; }); return { count: hit.length }; }) },
+    bolao: { count: jest.fn(async () => 0), updateMany: jest.fn(async ({ where, data }: { where: { concursoId: string }; data: { concursoId: string } }) => { const hit = pools.filter((p) => p.concursoId === where.concursoId); hit.forEach((p) => { p.concursoId = data.concursoId; }); return { count: hit.length }; }) },
     configLoteria: { findUnique: jest.fn(async () => ({ horarioCorteLocal: '19:00' })) },
     $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(db),
   };
@@ -191,5 +197,97 @@ describe('hora oficial já preenchida', () => {
     await service.createManual({ modalidade: 'quina', numeroConcurso: 7001, dataSorteio: '2026-12-02' } as never);
     expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date('2026-12-02T20:00:00-03:00').toISOString());
     expect(db.rows[0]!.especial ?? null).toBeNull();
+  });
+});
+
+describe('concurso manual: número que já existe', () => {
+  const mk = (rows: Row[]) => { const db = makeDb(rows); return { db, service: new LotteriesService(db as never, { get: () => undefined } as unknown as ConfigService) }; };
+  beforeAll(() => { jest.useFakeTimers({ now: new Date('2026-11-11T12:00:00-03:00') }); });
+  afterAll(() => { jest.useRealTimers(); });
+  const base = { modalidade: 'megasena', numeroDefinido: true, especial: null, nomeEspecial: null };
+
+  it('número que era só previsão do calendário vira o concurso cadastrado, com a data e a hora informadas', async () => {
+    const { service, db } = mk([{ id: 'p', numeroConcurso: 3100, dataSorteio: new Date('2026-12-02T20:00:00-03:00'), status: 'aberto', fonteSincronizacao: 'projetado', ...base } as Row]);
+    const out = await service.createManual({ modalidade: 'megasena', numeroConcurso: 3100, dataSorteio: '2027-01-01' } as never);
+    expect(out.id).toBe('p');
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0]!.dataSorteio.toISOString()).toBe(new Date('2027-01-01T10:00:00-03:00').toISOString());
+    expect(db.rows[0]).toMatchObject({ fonteSincronizacao: 'manual', especial: 'mega-da-virada' });
+  });
+  it('concurso real já cadastrado: o erro diz qual é e se ainda está vendendo', async () => {
+    const { service } = mk([{ id: 'r', numeroConcurso: 3100, dataSorteio: new Date('2027-01-01T10:00:00-03:00'), status: 'aberto', fonteSincronizacao: 'manual', cutoffAt: new Date('2027-01-01T09:00:00-03:00'), ...base } as Row]);
+    const error = await service.createManual({ modalidade: 'megasena', numeroConcurso: 3100, dataSorteio: '2027-01-02' } as never).catch((failure) => failure);
+    expect(error.getStatus()).toBe(409);
+    expect(error.getResponse().existente).toMatchObject({ id: 'r', numeroConcurso: 3100, vendaAberta: true });
+  });
+  it('festa que já existe no dia: o erro traz o concurso para a tela selecionar', async () => {
+    const { service } = mk([{ id: 'f', numeroConcurso: -20270101, dataSorteio: new Date('2027-01-01T10:00:00-03:00'), status: 'aberto', cutoffAt: new Date('2027-01-01T09:00:00-03:00'), modalidade: 'megasena', numeroDefinido: false, especial: 'mega-da-virada', nomeEspecial: 'Mega da Virada' } as Row]);
+    const error = await service.createFestival({ especial: 'mega-da-virada', dataSorteio: '2027-01-01' }, 'a').catch((failure) => failure);
+    expect(error.getResponse()).toMatchObject({ existente: { id: 'f', nomeEspecial: 'Mega da Virada', vendaAberta: true } });
+  });
+});
+
+describe('festa com número de concurso já sorteado', () => {
+  const base = { modalidade: 'megasena', numeroDefinido: true };
+  const drawn = (n: number): Row => ({ id: `d${n}`, numeroConcurso: n, dataSorteio: new Date('2026-11-07T20:00:00-03:00'), especial: null, nomeEspecial: null, status: 'apurado', ...base } as Row);
+
+  beforeEach(() => { jest.useFakeTimers({ now: new Date('2026-11-11T12:00:00-03:00') }); });
+  afterEach(() => jest.useRealTimers());
+
+  it('cadastro manual com número que já foi sorteado é recusado, dizendo o último', async () => {
+    const db = makeDb([drawn(3010)]);
+    const service = new LotteriesService(db as never, { get: () => undefined } as never, undefined);
+    await expect(service.createManual({ modalidade: 'megasena', numeroConcurso: 3005, dataSorteio: '2026-12-20' } as never)).rejects.toThrow(/já foi sorteado.*3010/);
+  });
+
+  it('festa com número já sorteado é recusada; sem número (a definir) continua valendo', async () => {
+    const db = makeDb([drawn(3010)]);
+    const service = new LotteriesService(db as never, { get: () => undefined } as never, undefined);
+    await expect(service.createFestival({ especial: 'mega-da-virada', dataSorteio: '2027-01-01', numeroConcurso: 3010 } as never, 'a1')).rejects.toThrow(/já foi sorteado/);
+    await expect(service.createFestival({ especial: 'mega-da-virada', dataSorteio: '2027-01-01' } as never, 'a1')).resolves.toMatchObject({ numeroDefinido: false });
+  });
+
+  it('informar depois o número da festa também recusa número já sorteado', async () => {
+    const db = makeDb([drawn(3010), provisional({ id: 'f1', dataSorteio: new Date('2027-01-01T10:00:00-03:00'), status: 'aberto' } as never)]);
+    const service = new LotteriesService(db as never, { get: () => undefined } as never, undefined);
+    await expect(service.updateFestival('f1', { numeroConcurso: 3010 } as never, 'a1')).rejects.toThrow(/já foi sorteado/);
+    await expect(service.updateFestival('f1', { numeroConcurso: 3012 } as never, 'a1')).resolves.toMatchObject({ numeroConcurso: 3012 });
+  });
+});
+
+describe('festa que foi apurada por engano', () => {
+  beforeEach(() => { jest.useFakeTimers({ now: new Date('2026-11-11T12:00:00-03:00') }); });
+  afterEach(() => jest.useRealTimers());
+  const broken = (extra: Record<string, unknown> = {}) => ({ id: 'f1', modalidade: 'megasena', numeroConcurso: 3011, numeroDefinido: true, especial: 'mega-da-virada', nomeEspecial: 'Mega da Virada', dataSorteio: new Date('2027-01-01T10:00:00-03:00'), cutoffAt: new Date('2026-12-31T19:00:00-03:00'), status: 'apurado', valorEstimadoPremio: 0, acumulado: false, fonteSincronizacao: 'caixa', _count: { boloes: 0 }, ...extra });
+  const dbWith = (rows: any[]) => {
+    const resultado = { deleteMany: jest.fn(async () => ({})) };
+    const db: any = {
+      concurso: { findMany: jest.fn(async () => rows.filter((r) => r.status === 'apurado')), findUnique: jest.fn(async () => null), update: jest.fn(async ({ where, data }: any) => Object.assign(rows.find((r) => r.id === where.id), data)), findFirst: jest.fn(async () => null) },
+      resultado, configLoteria: { findUnique: jest.fn(async () => ({ horarioCorteLocal: '19:00' })) },
+      $transaction: async (cb: (t: unknown) => Promise<unknown>) => cb(db),
+    };
+    return { db, resultado };
+  };
+
+  it('volta a ficar aberta, com número provisório, sem o resultado do sorteio antigo', async () => {
+    const rows = [broken()];
+    const { db, resultado } = dbWith(rows);
+    expect(await healBrokenFestivals(db)).toBe(1);
+    expect(resultado.deleteMany).toHaveBeenCalledWith({ where: { concursoId: 'f1' } });
+    expect(rows[0]).toMatchObject({ status: 'aberto', numeroConcurso: -20270101, numeroDefinido: false, valorEstimadoPremio: null, fonteSincronizacao: 'manual' });
+  });
+
+  it('com bolão, só reabre (número e bolões ficam como estão)', async () => {
+    const rows = [broken({ _count: { boloes: 2 } })];
+    const { db, resultado } = dbWith(rows);
+    await healBrokenFestivals(db);
+    expect(resultado.deleteMany).not.toHaveBeenCalled();
+    expect(rows[0]).toMatchObject({ status: 'aberto', numeroConcurso: 3011, numeroDefinido: true });
+  });
+
+  it('sem festa quebrada, não mexe em nada', async () => {
+    const { db } = dbWith([]);
+    expect(await healBrokenFestivals(db)).toBe(0);
+    expect(db.concurso.update).not.toHaveBeenCalled();
   });
 });
