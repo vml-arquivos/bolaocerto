@@ -50,6 +50,12 @@ export class PaymentsAdminController {
     return this.payments.purgeFailedShares(admin, poolId && /^[0-9a-f-]{36}$/i.test(poolId) ? poolId : undefined);
   }
 
+  /** Exclusão total de cota vendida (venda de teste): só superadmin. */
+  @Delete('cotas/:id/definitivo') @UseGuards(SuperAdminGuard)
+  removeCompletely(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: AuthUser) {
+    return this.payments.deleteShareCompletely(id, admin);
+  }
+
   @Delete('cotas/:id')
   removeFailed(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: AuthUser) {
     return this.payments.deleteFailedShare(id, admin);

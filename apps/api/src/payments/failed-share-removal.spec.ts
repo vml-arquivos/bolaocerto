@@ -52,3 +52,60 @@ describe('Excluir registro de compra que não se concluiu', () => {
     expect(await service.purgeFailedShares(admin)).toEqual({ excluidas: 0, mantidas: 1 });
   });
 });
+
+describe('Excluir cota vendida (superadmin)', () => {
+  const root = { id: 'admin', email: 'dono@example.invalid', papel: 'admin' as const };
+  const paid = { ...base, status: 'paga', compradorId: 'u1', valorPago: '5.00', pagamento: { id: 'p1', status: 'confirmado', origem: 'gateway', formaBaixa: 'pix', valorBruto: '5.00', pspTransactionId: 'x', criadoEm: old, notaFiscal: null }, comissao: null };
+  const prev = process.env.ADMIN_BOOTSTRAP_EMAIL;
+  beforeAll(() => { process.env.ADMIN_BOOTSTRAP_EMAIL = 'dono@example.invalid'; });
+  afterAll(() => { process.env.ADMIN_BOOTSTRAP_EMAIL = prev; });
+
+  function build(share: object | null) {
+    const s = setup(share);
+    s.tx.cupomUso = { deleteMany: jest.fn(async () => ({ count: 0 })) };
+    s.tx.anexo = { updateMany: jest.fn(async () => ({ count: 0 })) };
+    s.tx.carteiraMovimento = { findMany: jest.fn(async () => []), findUnique: jest.fn(async () => null) };
+    return s;
+  }
+
+  it('apaga cota paga, devolve o estoque e desfaz saldo/cashback', async () => {
+    const { service, tx, events } = build({ ...paid });
+    const spy = jest.spyOn(service as any, 'afterRelease').mockResolvedValue(undefined);
+    expect(await service.deleteShareCompletely('s1', root)).toEqual({ id: 's1', excluida: true, estoqueDevolvido: 1 });
+    expect(tx.bolao.update).toHaveBeenCalledWith({ where: { id: 'b1' }, data: { cotasVendidas: { decrement: 1 } } });
+    expect(events.at(-1)).toBe('cota');
+    expect(spy).toHaveBeenCalledWith({ pagamentoId: 'p1', compradorId: 'u1', formaBaixa: 'pix', valorBruto: 5 });
+  });
+
+  it('cota já cancelada não mexe no estoque', async () => {
+    const { service, tx } = build({ ...paid, status: 'cancelada', pagamento: { ...paid.pagamento, status: 'estornado' } });
+    expect((await service.deleteShareCompletely('s1', root)).estoqueDevolvido).toBe(0);
+    expect(tx.bolao.update).not.toHaveBeenCalled();
+  });
+
+  it('nota manual não impede', async () => {
+    const { service } = build({ ...paid, pagamento: { ...paid.pagamento, notaFiscal: { status: 'emitida', origem: 'manual' } } });
+    jest.spyOn(service as any, 'afterRelease').mockResolvedValue(undefined);
+    await expect(service.deleteShareCompletely('s1', root)).resolves.toMatchObject({ excluida: true });
+  });
+
+  it.each([
+    ['nota emitida de verdade', { pagamento: { ...paid.pagamento, notaFiscal: { status: 'emitida', origem: 'focus' } } }],
+    ['comissão paga', { comissao: { status: 'paga', loteRepasseId: null } }],
+    ['comissão em lote de repasse', { comissao: { status: 'pendente', loteRepasseId: 'l1' } }],
+  ])('recusa: %s', async (_n, patch) => {
+    const { service, tx } = build({ ...paid, ...patch });
+    await expect(service.deleteShareCompletely('s1', root)).rejects.toThrow();
+    expect(tx.cota.delete).not.toHaveBeenCalled();
+  });
+
+  it('recusa quem não é superadmin', async () => {
+    const { service } = build({ ...paid });
+    await expect(service.deleteShareCompletely('s1', { ...root, email: 'outro@example.invalid' })).rejects.toThrow('superadmin');
+  });
+
+  it('cota inexistente', async () => {
+    const { service } = build(null);
+    await expect(service.deleteShareCompletely('s1', root)).rejects.toThrow('não encontrada');
+  });
+});

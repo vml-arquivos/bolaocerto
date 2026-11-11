@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { ConfigService } from '@nestjs/config';
 import { MetodoPagamento, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
+import { isSuperAdmin } from '../admin/superadmin';
 import { addDaysToDate, brazilDate, endOfBrazilDay, round2 } from '../common/brazil-time';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
@@ -571,6 +572,41 @@ export class PaymentsService {
       await tx.cota.delete({ where: { id: share.id } });
       return { id: share.id, excluida: true };
     });
+  }
+
+  /**
+   * Exclusão total de uma cota (só superadmin), para limpar venda de teste: devolve o estoque do bolão, desfaz saldo e cashback,
+   * apaga pagamento, comissão, mandato e uso de cupom. Fica registro na auditoria com o que foi apagado.
+   * Não apaga se houver nota fiscal real emitida (cancele a nota antes) ou comissão já repassada ao afiliado.
+   */
+  async deleteShareCompletely(shareId: string, admin: AuthUser) {
+    if (!isSuperAdmin(admin)) throw new ForbiddenException('Só o superadmin pode excluir uma cota vendida.');
+    let unwind: { pagamentoId: string; compradorId: string; formaBaixa: string | null; valorBruto: number } | null = null;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.cota.findUnique({ where: { id: shareId }, select: { bolaoId: true } });
+      if (!found) throw new NotFoundException('Cota não encontrada.');
+      await this.lockBolao(tx, found.bolaoId);
+      const share = await tx.cota.findUnique({ where: { id: shareId }, include: { pagamento: { include: { notaFiscal: true } }, comissao: true } });
+      if (!share) throw new NotFoundException('Cota não encontrada.');
+      const payment = share.pagamento;
+      const note = payment?.notaFiscal ?? null;
+      if (note && note.status === 'emitida' && note.origem !== 'manual') throw new ConflictException('Esta cota tem nota fiscal emitida de verdade. Cancele a nota em Financeiro > Notas fiscais antes de apagar.');
+      if (share.comissao && (share.comissao.status === StatusComissao.paga || share.comissao.loteRepasseId)) throw new ConflictException('A comissão desta cota já entrou em um repasse. Ela precisa ficar guardada.');
+      const counted = share.status !== StatusCota.cancelada && share.status !== StatusCota.estornada;
+      if (counted) await tx.bolao.update({ where: { id: share.bolaoId }, data: { cotasVendidas: { decrement: share.quantidade } } });
+      if (payment?.status === StatusPagamento.confirmado) unwind = { pagamentoId: payment.id, compradorId: share.compradorId, formaBaixa: payment.formaBaixa, valorBruto: Number(payment.valorBruto) };
+      if (payment) await tx.notaFiscal.deleteMany({ where: { pagamentoId: payment.id } });
+      await tx.comissao.deleteMany({ where: { cotaId: share.id } });
+      await tx.mandato.deleteMany({ where: { cotaId: share.id } });
+      await tx.cupomUso.deleteMany({ where: { cotaId: share.id } });
+      await tx.anexo.updateMany({ where: { cotaId: share.id }, data: { cotaId: null } });
+      await tx.pagamento.deleteMany({ where: { cotaId: share.id } });
+      await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cota.excluida_total', atorId: admin.id, payloadAntes: { status: share.status, quantidade: share.quantidade, valorPago: share.valorPago?.toString() ?? null, bolaoId: share.bolaoId, compradorId: share.compradorId, pagamento: payment ? { id: payment.id, status: payment.status, origem: payment.origem, valorBruto: payment.valorBruto.toString(), pspTransactionId: payment.pspTransactionId } : null, nota: note ? { status: note.status, numero: note.numero, origem: note.origem } : null } as unknown as Prisma.InputJsonValue });
+      await tx.cota.delete({ where: { id: share.id } });
+      return { id: share.id, excluida: true, estoqueDevolvido: counted ? share.quantidade : 0 };
+    });
+    if (unwind) await this.afterRelease(unwind);
+    return result;
   }
 
   /** Limpa de uma vez as compras que não se concluíram (opcionalmente só de um bolão). */
