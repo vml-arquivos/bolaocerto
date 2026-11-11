@@ -59,6 +59,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [contestScope, setContestScope] = useState<'aberto' | 'festas' | 'historico'>('aberto');
+  const [contestMonth, setContestMonth] = useState<string>(() => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7));
   const [page, setPage] = useState(1);
   const [selectedCommissions, setSelectedCommissions] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -82,7 +83,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
       const query = view === 'visao-geral' ? new URLSearchParams({ periodo: period }) : new URLSearchParams({ page: String(page), pageSize: view === 'concursos' ? '30' : '50' });
       if (view !== 'visao-geral') {
         if (search) query.set('busca', search);
-        if (view === 'concursos') query.set('status', contestScope);
+        if (view === 'concursos') { query.set('status', contestScope); if (contestScope === 'aberto') { query.set('mes', contestMonth); query.set('pageSize', '100'); } }
         else if (statusFilter) query.set('status', statusFilter);
         if (view === 'usuarios' && roleTab !== 'todos') query.set('papel', roleTab);
       }
@@ -112,7 +113,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [contestScope, page, period, roleTab, search, statusFilter, view]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [contestScope, contestMonth, page, period, roleTab, search, statusFilter, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setPage(1); }, [view, contestScope, statusFilter, search, roleTab]);
   useEffect(() => { void load(); return () => { requestSequence.current++; }; }, [load]);
@@ -181,7 +182,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
 
   const ctx: AdminCtx = {
     view, items, payload, kpis, chart, chartMax, dashboard, period, setPeriod, busy, superAdmin,
-    contestScope, setContestScope, page, setPage, showPoolForm, setShowPoolForm, editingPool, setEditingPool,
+    contestScope, setContestScope, contestMonth, setContestMonth, page, setPage, showPoolForm, setShowPoolForm, editingPool, setEditingPool,
     contests, groupId, affiliateOptions, selectedCommissions, setSelectedCommissions, roleTab, setRoleTab,
     groupMembers, setGroupMembers, gamesTab, setGamesTab, setPoolFor, setAttachFor, setSelectedUser, setToast,
     load, execute, notify, syncContests, importHistory,

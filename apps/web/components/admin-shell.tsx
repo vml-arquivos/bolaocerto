@@ -77,6 +77,32 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
   const [collapsed, setCollapsed] = useState(false);
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
 
+  // Em telas estreitas as tabelas viram cartões; cada célula precisa saber o nome da sua coluna.
+  useEffect(() => {
+    const root = document.getElementById('admin-main-content');
+    if (!root) return;
+    let queued = 0;
+    const label = () => {
+      queued = 0;
+      root.querySelectorAll('table.admin-table').forEach((table) => {
+        const heads = Array.from(table.querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
+        if (!heads.length) return;
+        table.querySelectorAll('tbody tr').forEach((row) => {
+          Array.from(row.children).forEach((cell, index) => {
+            const td = cell as HTMLElement;
+            if (td.tagName !== 'TD' || (td as HTMLTableCellElement).colSpan > 1) return;
+            if (!td.dataset.label && heads[index]) td.dataset.label = heads[index];
+          });
+        });
+      });
+    };
+    const schedule = () => { if (!queued) queued = window.requestAnimationFrame(label); };
+    label();
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => { observer.disconnect(); if (queued) window.cancelAnimationFrame(queued); };
+  }, []);
+
   useEffect(() => {
     try { setCollapsed(window.localStorage.getItem(COLLAPSE_KEY) === '1'); } catch { /* localStorage indisponível */ }
   }, []);

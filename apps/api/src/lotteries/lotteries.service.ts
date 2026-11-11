@@ -135,7 +135,7 @@ export class LotteriesService {
    * e não seja previsto, e qualquer falha é ignorada: o calendário previsto cobre o que faltar.
    */
   private async lookahead(modalidade: ModalidadeLoteria, horarioCorteLocal: string, nextNumber: number): Promise<number> {
-    const extra = Math.min(Math.max(Math.trunc(Number(this.config.get<string>('CAIXA_CONCURSOS_A_FRENTE') ?? 4)) || 0, 0), 10);
+    const extra = Math.min(Math.max(Math.trunc(Number(this.config.get<string>('CAIXA_CONCURSOS_A_FRENTE') ?? 8)) || 0, 0), 10);
     const sources = this.caixaSources();
     const timeoutMs = resolveCaixaTimeout(this.config.get<string>('CAIXA_API_TIMEOUT_MS'));
     let added = 0;

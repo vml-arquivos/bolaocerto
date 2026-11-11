@@ -6,7 +6,7 @@ import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PapelUsuario, Prisma, StatusBolao, StatusComissao, StatusCota, StatusPagamento } from '@prisma/client';
 import { randomBytes } from 'crypto';
-import { calculateBrazilCutoff, ensureUpcomingContestsSoon } from '@bolaocerto/shared-types';
+import { calculateBrazilCutoff, ensureUpcomingContestsSoon, projectUpcomingUntil } from '@bolaocerto/shared-types';
 import * as argon2 from 'argon2';
 import { AuthUser, assertAdult, isValidCpf, normalizeCpf } from '../auth/auth.utils';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from '../auth/password-policy';
@@ -168,6 +168,7 @@ export class AdminService {
     const now = new Date();
     // Toda modalidade precisa de um concurso aberto: se a CAIXA ainda não publicou o seguinte, entra o concurso previsto.
     if (query.status === 'aberto') await ensureUpcomingContestsSoon(this.prisma, calculateBrazilCutoff);
+    if (query.status === 'aberto' && query.mes) return this.listContestsOfMonth(query.mes, query.modalidade, now);
     const scope: Prisma.ConcursoWhereInput =
       query.status === 'aberto' ? { status: 'aberto', cutoffAt: { gt: now }, especial: null }
       : query.status === 'festas' ? { status: 'aberto', cutoffAt: { gt: now }, especial: { not: null } }
@@ -184,6 +185,25 @@ export class AdminService {
       this.prisma.concurso.count({ where }),
     ]);
     return { items, pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  /**
+   * Concursos em aberto de um mês (AAAA-MM). Mostra os que já estão no sistema (CAIXA ou previstos) e completa o mês com os
+   * sorteios previstos pelo calendário da modalidade, marcados como `previsto` e sem id (ainda não dá para criar bolão neles).
+   */
+  private async listContestsOfMonth(mes: string, modalidade: string | undefined, now: Date) {
+    const [year, month] = mes.split('-').map(Number) as [number, number];
+    const start = new Date(`${mes}-01T00:00:00-03:00`);
+    const next = new Date(`${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01T00:00:00-03:00`);
+    const where: Prisma.ConcursoWhereInput = { status: 'aberto', cutoffAt: { gt: now }, especial: null, dataSorteio: { gte: start, lt: next }, ...(modalidade ? { modalidade } : {}) };
+    const real = await this.prisma.concurso.findMany({ where, include: { config: true, _count: { select: { boloes: true } } }, orderBy: [{ dataSorteio: 'asc' }, { modalidade: 'asc' }] });
+    const known = new Set((await this.prisma.concurso.findMany({ where: { numeroConcurso: { gt: 0 }, dataSorteio: { gte: start } }, select: { modalidade: true, numeroConcurso: true } })).map((row) => `${row.modalidade}:${row.numeroConcurso}`));
+    const horizon = new Date(next.getTime() - 1);
+    const projected = (await projectUpcomingUntil(this.prisma as never, calculateBrazilCutoff, horizon, now))
+      .filter((row) => row.dataSorteio >= start && row.dataSorteio < next && (!modalidade || row.modalidade === modalidade) && !known.has(`${row.modalidade}:${row.numeroConcurso}`))
+      .map((row) => ({ id: `previsto-${row.modalidade}-${row.numeroConcurso}`, modalidade: row.modalidade, numeroConcurso: row.numeroConcurso, dataSorteio: row.dataSorteio, cutoffAt: row.cutoffAt, valorEstimadoPremio: null, status: 'aberto', fonteSincronizacao: 'projetado', sincronizadoEm: null, especial: null, nomeEspecial: null, numeroDefinido: true, previstoCalendario: true, _count: { boloes: 0 } }));
+    const items = [...real, ...projected].sort((a, b) => a.dataSorteio.getTime() - b.dataSorteio.getTime() || a.modalidade.localeCompare(b.modalidade));
+    return { items, pagination: { page: 1, pageSize: items.length || 1, total: items.length, pages: 1 } };
   }
 
   async listPools(query: AdminListQueryDto = {}) {

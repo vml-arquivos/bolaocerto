@@ -439,7 +439,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         : <select value={specialValue} onChange={(event) => setSpecialValue(event.target.value)}><option value="">Escolha o mês</option>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>}
         </label>}
       {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
-        <button type="button" className="admin-button" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}>{newDate ? 'Fechar' : 'Criar para uma data comemorativa (sem concurso aberto)'}</button>
+        <button type="button" className="admin-button festa-toggle" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}>{newDate ? 'Fechar' : 'Criar para uma data comemorativa (sem concurso aberto)'}</button>
         {newDate && <div className="festa-inline-body">
           
           <div className="admin-form-grid admin-form-grid-three">

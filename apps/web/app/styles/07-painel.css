@@ -58,10 +58,16 @@
 .admin-table td.td-actions { text-align: right; white-space: nowrap; width: 1%; }
 .admin-table td.td-actions .admin-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
 .admin-table td strong + small, .admin-table td small + small { margin-top: 2px; }
-@media (min-width: 1100px) {
-  /* telas largas: a tabela se ajusta ao painel em vez de criar barra de rolagem */
-  .admin-table { min-width: 0 !important; }
+@media (min-width: 761px) {
+  /* A tabela sempre se ajusta ao painel: nada de barra de rolagem lateral. */
+  .admin-table-scroll { overflow-x: visible; }
+  .admin-table { min-width: 0 !important; table-layout: auto; }
   .admin-table th { white-space: normal; }
+}
+@media (min-width: 1101px) and (max-width: 1500px) {
+  .admin-table th, .admin-table td { padding-left: 7px; padding-right: 7px; }
+  .admin-table td, .admin-table th { font-size: 12.5px; }
+  .admin-table td.td-actions .admin-row-actions { flex-wrap: wrap; }
 }
 .admin-pools-compact .admin-row-actions { min-width: 0; }
 .admin-pools-compact .admin-table th, .admin-pools-compact .admin-table td { padding: 12px 10px; font-size: 12.5px; }
@@ -78,26 +84,26 @@
 /* Página do bolão: o cartão de histórico ocupa a largura toda em vez de uma coluna estreita. */
 .detail-main .pool-grid { grid-template-columns: 1fr; }
 .detail-main .pool-grid .pool-card-body { gap: 12px; }
-/* Celular: a lista de bolões vira cartões (sem rolar para o lado). */
-@media (max-width: 760px) {
-  .admin-pools-compact .admin-table { min-width: 0 !important; }
-  .admin-pools-compact .admin-table thead { display: none; }
-  .admin-pools-compact .admin-table, .admin-pools-compact .admin-table tbody, .admin-pools-compact .admin-table tr, .admin-pools-compact .admin-table td { display: block; width: 100%; }
-  .admin-pools-compact .admin-table tr { border: 1px solid var(--border); border-radius: 14px; padding: 8px 14px; margin-bottom: 12px; background: var(--surface-muted); }
-  .admin-pools-compact .admin-table td { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 8px 0; border: 0; text-align: right; }
-  .admin-pools-compact .admin-table td::before { content: attr(data-label); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; text-align: left; flex: none; padding-top: 2px; }
-  .admin-pools-compact .admin-table td.td-actions { width: 100%; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; }
-  .admin-pools-compact .admin-table td.td-actions::before { display: none; }
-  .admin-pools-compact .admin-table tr:hover td { background: transparent; }
+/* Celular e telas estreitas: toda tabela do painel vira cartões (sem rolar para o lado). */
+@media (max-width: 1100px) {
+  .admin-table { min-width: 0 !important; }
+  .admin-table thead { display: none; }
+  .admin-table, .admin-table tbody, .admin-table tr, .admin-table td { display: block; width: 100%; }
+  .admin-table tr { border: 1px solid var(--border); border-radius: 14px; padding: 8px 14px; margin-bottom: 12px; background: var(--surface-muted); }
+  .admin-table td { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 8px 0; border: 0; text-align: right; }
+  .admin-table td::before { content: attr(data-label); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; text-align: left; flex: none; padding-top: 2px; }
+  .admin-table td.td-actions { width: 100%; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; }
+  .admin-table td.td-actions::before { display: none; }
+  .admin-table tr:hover td { background: transparent; }
 }
 
-/* Acabamento — cartões de bolão no celular: título e detalhe empilhados ao lado do rótulo */
-@media (max-width: 760px) {
-  .admin-pools-compact .admin-table td.cell-wrap { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 0; }
-  .admin-pools-compact .admin-table td.cell-wrap::before { grid-column: 1; grid-row: 1 / span 4; }
-  .admin-pools-compact .admin-table td.cell-wrap > * { grid-column: 2; }
-  .admin-pools-compact .admin-table td.cell-wrap > small { margin-top: 2px; }
-  .admin-pools-compact .admin-table td.cell-wrap > .status-chip { justify-self: end; }
+/* Acabamento — cartões de bolão: título e detalhe empilhados ao lado do rótulo */
+@media (max-width: 1100px) {
+  .admin-table td.cell-wrap { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 0; }
+  .admin-table td.cell-wrap::before { grid-column: 1; grid-row: 1 / span 4; }
+  .admin-table td.cell-wrap > * { grid-column: 2; }
+  .admin-table td.cell-wrap > small { margin-top: 2px; }
+  .admin-table td.cell-wrap > .status-chip { justify-self: end; }
 }
 
 /* Link de cadastro da equipe (Usuários e acessos) */
@@ -120,3 +126,20 @@
 .doc-text-input { width: 100%; min-height: 280px; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
 .doc-text-preview { max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 14px; margin: 0 0 16px; border: 1px solid var(--admin-border, rgba(127, 127, 127, .3)); border-radius: 12px; font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 tr.is-selected td { background: rgba(37, 99, 235, .08); }
+
+/* Botão "data comemorativa" do formulário de bolão: legível nos dois temas */
+.festa-toggle { background: var(--surface-muted); color: var(--text-primary); border: 1px solid var(--primary); width: 100%; text-align: left; min-height: 44px; font-weight: 600; }
+.festa-toggle:hover { background: var(--primary-soft, var(--surface-hover)); }
+:root[data-theme='dark'] .festa-toggle:hover { background: var(--surface-hover); }
+.row-actions-main .admin-button-small { padding: 0 10px; min-height: 32px; }
+
+/* Navegação por mês na tela de Concursos */
+.month-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.month-nav-item { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-secondary); border-radius: 999px; padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 560; cursor: pointer; }
+.month-nav-item:hover { background: var(--surface-hover); color: var(--text-primary); }
+.month-nav-item.is-current { background: var(--primary); border-color: var(--primary); color: var(--text-on-primary); }
+
+/* Transferir cotistas */
+.transfer-person { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 14px; }
+.transfer-person input { width: 18px; height: 18px; flex: none; }
+.admin-note.is-error { border-color: var(--danger); }

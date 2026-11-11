@@ -1,11 +1,12 @@
 import { PricingService } from '../pricing/pricing.service';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { IsString, IsUUID, Length } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { CreatePoolDto, DefinePoolNumbersDto, GenerateGamesDto, UpdatePoolDto } from './pools.dto';
+import { PoolTransferService } from './pool-transfer.service';
 import { PoolsService } from './pools.service';
 
 class MoveContestDto {
@@ -20,9 +21,17 @@ class RejectPoolDto {
 
 class OfferToBlDto { @IsUUID() grupoId!: string; }
 
+class TransferSharesDto {
+  @IsUUID() destinoBolaoId!: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(500) @IsUUID('all', { each: true }) cotaIds?: string[];
+  @IsOptional() @IsString() @Length(0, 300) motivo?: string;
+  @IsOptional() @IsBoolean() confirmarJogosDiferentes?: boolean;
+  @IsOptional() @IsBoolean() simular?: boolean;
+}
+
 @Controller()
 export class PoolsController {
-  constructor(private readonly pools: PoolsService, private readonly pricing: PricingService) {}
+  constructor(private readonly pools: PoolsService, private readonly pricing: PricingService, private readonly transfers: PoolTransferService) {}
 
   @Get('loterias/precos')
   prices() { return this.pricing.catalog(); }
@@ -130,6 +139,20 @@ export class PoolsController {
   @Roles('admin')
   release(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.pools.release(id, user);
+  }
+
+  @Get('admin/boloes/:id/destinos-transferencia')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  transferOptions(@Param('id') id: string) {
+    return this.transfers.options(id);
+  }
+
+  @Post('admin/boloes/:id/transferir-cotas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  transferShares(@Param('id') id: string, @Body() dto: TransferSharesDto, @CurrentUser() user: AuthUser) {
+    return this.transfers.transfer(id, dto, user);
   }
 
   @Post('admin/boloes/:id/oferta-bl')

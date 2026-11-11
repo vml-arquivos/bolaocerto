@@ -29,12 +29,12 @@ export function PushPrompt({ audience = 'cliente' }: { audience?: 'cliente' | 'a
 
   if (!['off', 'needs-install'].includes(state)) return null;
   const copy = {
-    cliente: 'Pagamento confirmado, comprovante do seu jogo e resultado do bolão, direto na tela do celular.',
+    cliente: 'Lembrete de pagamento, comprovante do seu jogo e resultado do bolão, direto na tela do celular.',
     afiliado: 'Venda confirmada, nova pessoa no seu grupo, bolão aprovado e comissão paga, na hora.',
-    equipe: 'Bolões aguardando aprovação e pendências da operação, direto no celular.',
+    equipe: 'Bolão para apostar, aprovação pendente e tudo o que está em “Para fazer”, na hora, no celular ou no computador.',
   }[audience];
 
-  function dismiss() { try { localStorage.setItem(DISMISS_KEY, String(Date.now() + 7 * 86_400_000)); } catch { /* ok */ } setState('checking'); }
+  function dismiss() { try { localStorage.setItem(DISMISS_KEY, String(Date.now() + (audience === 'equipe' ? 86_400_000 : 7 * 86_400_000))); } catch { /* ok */ } setState('checking'); }
   async function turnOn() {
     setBusy(true); setMessage('');
     try {

@@ -32,6 +32,9 @@ export const NOTIFICATION_TITLES: Record<string, string> = {
   'comissao.paga': 'Comissão paga',
   'afiliado.comissao_alterada': 'Sua comissão foi atualizada',
   'afiliado.contrato_pendente': 'Contrato de afiliado aguardando aceite',
+  'pagamento.lembrete': 'Seu pagamento ainda não foi feito',
+  'equipe.tarefa': 'Tarefa para fazer',
+  'cota.transferida': 'Sua cota mudou de bolão',
 };
 
 /** Texto padrão do e-mail para cada tipo de aviso. */

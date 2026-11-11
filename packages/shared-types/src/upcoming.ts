@@ -122,3 +122,33 @@ export async function ensureUpcomingContestsSoon(db: unknown, calculateCutoff: (
   lastRun.set(db, now);
   try { await ensureUpcomingContests(db as UpcomingDb, calculateCutoff, new Date(now)); } catch { /* melhor esforço: a lista segue com o que existe */ }
 }
+
+/**
+ * Sorteios previstos até uma data (sem gravar nada). Serve para a tela de concursos mostrar os próximos meses:
+ * continua a contagem a partir do último concurso conhecido, nos dias de sorteio da modalidade. Quem já existe no banco
+ * (mesmo número) não entra. Limita a 400 sorteios por modalidade.
+ */
+export async function projectUpcomingUntil(db: UpcomingDb, calculateCutoff: (drawDate: Date, localTime: string) => Date, until: Date, now: Date = new Date()): Promise<UpcomingCreated[]> {
+  const out: UpcomingCreated[] = [];
+  const configs = await db.configLoteria.findMany();
+  const untilKey = brazilDayKey(until);
+  for (const config of configs) {
+    const modalidade = config.modalidade;
+    const latest = await db.concurso.findFirst({ where: { modalidade, especial: null, numeroConcurso: { gt: 0 } }, orderBy: { numeroConcurso: 'desc' } });
+    if (!latest) continue;
+    const days = await resolveDays(db, modalidade, config.diasSemanaSorteio, now);
+    let cursor = brazilDayKey(latest.dataSorteio);
+    let numeroConcurso = latest.numeroConcurso;
+    for (let step = 0; step < 400; step += 1) {
+      const day = nextScheduledDay(cursor, days);
+      if (!day || day > untilKey) break;
+      cursor = day;
+      numeroConcurso += 1;
+      const drawDate = new Date(`${day}T${HORA_SORTEIO}:00-03:00`);
+      const cutoffAt = calculateCutoff(drawDate, config.horarioCorteLocal);
+      if (cutoffAt.getTime() <= now.getTime()) continue;
+      out.push({ modalidade, numeroConcurso, dataSorteio: drawDate, cutoffAt });
+    }
+  }
+  return out;
+}

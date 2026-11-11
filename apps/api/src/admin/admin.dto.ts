@@ -174,6 +174,11 @@ export class AdminListQueryDto {
   @IsDateString()
   ate?: string;
 
+  /** Mês dos concursos em aberto (AAAA-MM), para navegar pelos próximos meses. */
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  mes?: string;
+
   @IsOptional()
   @IsString()
   busca?: string;

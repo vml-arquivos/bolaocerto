@@ -152,6 +152,15 @@ jobs:
         run: NODE_PATH=$(npm root -g) node --test e2e/edit-bolao.test.mjs
         env:
           E2E_BASE_URL: http://localhost:3000
+      - name: Painel sem rolagem lateral, contraste e concursos por mês
+        run: NODE_PATH=$(npm root -g) node --test e2e/layout-painel.test.mjs
+        env:
+          E2E_BASE_URL: http://localhost:3000
+      - name: Transferência de cotistas entre bolões
+        run: NODE_PATH=$(npm root -g) node --test e2e/transferencia-cotas.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+          E2E_BASE_URL: http://localhost:3000
       - name: App do afiliado (entrada própria, instalação, menu de baixo e aba Cotas)
         run: NODE_PATH=$(npm root -g) node --test e2e/affiliate-app.test.mjs
         env:

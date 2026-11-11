@@ -4,12 +4,13 @@ import { Module } from '@nestjs/common';
 import { AttachmentsModule } from '../attachments/attachments.module';
 import { StatisticsModule } from '../statistics/statistics.module';
 import { PoolsController } from './pools.controller';
+import { PoolTransferService } from './pool-transfer.service';
 import { PoolsService } from './pools.service';
 
 @Module({
   imports: [StatisticsModule, AttachmentsModule],
   controllers: [PoolsController, PricingAdminController],
-  providers: [PoolsService, PricingService],
-  exports: [PoolsService],
+  providers: [PoolsService, PoolTransferService, PricingService],
+  exports: [PoolsService, PoolTransferService],
 })
 export class PoolsModule {}
