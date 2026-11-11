@@ -192,6 +192,18 @@ export function ReportsView() {
 const FORMS: Array<[string, string]> = [['pix_direto', 'Pix direto'], ['dinheiro', 'Dinheiro'], ['transferencia', 'Transferência'], ['cartao_maquininha', 'Cartão (maquininha)'], ['outro', 'Outro']];
 
 /** Como devolver o dinheiro: em saldo na carteira do BL (na hora) ou em Pix (você devolve pelo banco). */
+/** O erro vem como "o que falta" + "Detalhe técnico: texto da Focus". Mostra o primeiro em destaque e deixa o técnico recolhido. */
+function splitNoteError(text: string) {
+  const marker = ' Detalhe técnico: ';
+  const at = text.indexOf(marker);
+  if (at < 0) return { resumo: text, tecnico: '' };
+  return { resumo: text.slice(0, at), tecnico: text.slice(at + marker.length) };
+}
+function NoteError({ text }: { text: string }) {
+  const { resumo, tecnico } = splitNoteError(text);
+  return <div className="form-error" role="alert"><p style={{ margin: 0 }}>{resumo}</p>{tecnico && <details style={{ marginTop: 8 }}><summary>Texto técnico da Focus</summary><p style={{ margin: '6px 0 0', wordBreak: 'break-word' }}>{tecnico}</p></details>}</div>;
+}
+
 export function RefundChoice({ value, onChange }: { value: 'carteira' | 'pix'; onChange: (next: 'carteira' | 'pix') => void }) {
   return <div className="refund-choice" role="radiogroup" aria-label="Como devolver o valor">
     <label><input type="radio" name="refund-to" checked={value === 'carteira'} onChange={() => onChange('carteira')} /><span><strong>Saldo na carteira</strong><small>Cai na hora na carteira do cliente.</small></span></label>
@@ -466,9 +478,10 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
           <div><span>Origem</span><strong>{label(viewing.origem)}</strong></div>
           {viewing.observacao && <div><span>Observação</span><strong>{viewing.observacao}</strong></div>}
         </div>
-        {viewing.erro && <p className="form-error" role="alert">{viewing.erro}</p>}
+        {viewing.erro && <NoteError text={viewing.erro} />}
+        {focus && viewing.origem === 'focus' && viewing.referencia && <p className="admin-note">Referência desta nota na Focus: <code>{viewing.referencia}</code>. Quando a Focus recusa o formato antes de enviar ao fisco, a nota não chega a existir lá; o motivo é o texto acima, que veio da própria Focus.</p>}
         <div className="admin-row-actions" style={{ marginTop: 12 }}>
-          {viewing.pdfUrl ? <a className="admin-button admin-button-primary" href={viewing.pdfUrl} target="_blank" rel="noreferrer">Abrir a nota (PDF)</a> : <span className="admin-note">{viewing.status === 'emitida' || viewing.status === 'aguardando' ? 'O PDF ainda não foi liberado. Isso leva alguns minutos depois da autorização da prefeitura; feche e clique em "Ver nota" de novo.' : 'Esta nota não tem PDF.'}</span>}
+          {viewing.pdfUrl ? <a className="admin-button admin-button-primary" href={viewing.pdfUrl} target="_blank" rel="noreferrer">Abrir a nota (PDF)</a> : <span className="admin-note">{viewing.status === 'emitida' || viewing.status === 'aguardando' ? 'O PDF ainda não foi liberado. Isso leva alguns minutos depois da autorização do fisco; feche e clique em "Ver nota" de novo.' : 'Esta nota não tem PDF.'}</span>}
           {viewing.xmlUrl && <a className="admin-button" href={viewing.xmlUrl} target="_blank" rel="noreferrer">Baixar o XML</a>}
           {focus && viewing.origem === 'focus' && <a className="admin-button admin-button-ghost" href="https://app-v2.focusnfe.com.br/painel_api/requisicoes" target="_blank" rel="noreferrer">Ver na Focus NFe</a>}
         </div>
@@ -477,7 +490,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       <Panel title="Notas emitidas e em andamento">
         <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody>{(data.notas ?? []).map((note: Rec) => <tr key={note.id}>
           <td>{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
-          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{note.erro}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
+          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{splitNoteError(note.erro).resumo}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
           <td>{note.pdfUrl ? <a className="text-link" href={note.pdfUrl} target="_blank" rel="noreferrer">PDF</a> : '—'}{note.xmlUrl ? <> · <a className="text-link" href={note.xmlUrl} target="_blank" rel="noreferrer">XML</a></> : null}</td>
           <td><div className="admin-row-actions">
             <button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(busy)} onClick={() => void viewNote(note)}>{busy === `view-${note.id}` ? 'Abrindo…' : 'Ver nota'}</button>

@@ -9,7 +9,7 @@ import { PrismaService } from '../common/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { AddressDto, CancelNoteDto, ManualNoteDto, NoteQueryDto } from './nfse.dto';
 import { CoraFiscalClient, ReceiptAddress, ReceiptStatus } from './nfse.client';
-import { FocusIssuer, FocusNfseClient, FocusTomador, focusFetch } from './nfse.focus';
+import { FocusIssuer, FocusNfseClient, FocusTomador, defaultMunicipalCode, defaultNbs, focusFetch } from './nfse.focus';
 
 export const FISCAL_CLIENT_OVERRIDE = 'FISCAL_CLIENT_OVERRIDE';
 export const FOCUS_CLIENT_OVERRIDE = 'FOCUS_CLIENT_OVERRIDE';
@@ -156,10 +156,10 @@ export class NfseService {
         inscricaoMunicipal: get('NFSE_MUNICIPAL_REGISTER'),
         codigoMunicipio: get('NFSE_IBGE', '5300108'),
         codigoTributacaoNacional: get('NFSE_TRIB_NACIONAL'),
-        codigoTributacaoMunicipal: get('NFSE_TRIB_MUNICIPAL') || undefined,
+        codigoTributacaoMunicipal: get('NFSE_TRIB_MUNICIPAL') || defaultMunicipalCode(get('NFSE_IBGE', '5300108'), get('NFSE_TRIB_NACIONAL')),
         opcaoSimples: [1, 2, 3].includes(Number(optionOf)) ? Number(optionOf) : 3,
         percentualTributos: Number(get('NFSE_SIMPLES_PCT', '0')) || 0,
-        nbs: get('NFSE_NBS') || undefined,
+        nbs: get('NFSE_NBS') || defaultNbs(get('NFSE_TRIB_NACIONAL')),
         indicadorOperacao: get('NFSE_INDICADOR_OPERACAO') || undefined,
         ibsCbsSituacao: get('NFSE_IBS_CBS_CST') || undefined,
         ibsCbsClassificacao: get('NFSE_IBS_CBS_CLASS') || undefined,
@@ -432,7 +432,7 @@ export class NfseService {
         xmlUrl: info.xml ?? note.xmlUrl,
         numero: info.number ?? note.numero,
         emitidaEm: info.status === 'emitida' ? (note.emitidaEm ?? new Date()) : note.emitidaEm,
-        erro: info.status === 'erro' ? 'A prefeitura rejeitou a emissão. Confira inscrição municipal, regime, código de serviço e o endereço do tomador.' : null,
+        erro: info.status === 'erro' ? 'O fisco rejeitou a emissão. Confira inscrição municipal, regime, código de serviço e o endereço do tomador.' : null,
       },
     });
     if (info.status === 'emitida' && note.status !== StatusNotaFiscal.emitida) await this.notifyIssued(note.pagamentoId);
@@ -568,7 +568,7 @@ export class NfseService {
     return {
       notas: notes.map((note) => ({
         id: note.id, pagamentoId: note.pagamentoId, status: note.status, origem: note.origem, numero: note.numero, valor: Number(note.valor), issPct: note.issPct ? Number(note.issPct) : null,
-        pdfUrl: note.pdfUrl, xmlUrl: note.xmlUrl, erro: note.erro, observacao: note.observacao, emitidaEm: note.emitidaEm, criadoEm: note.criadoEm,
+        pdfUrl: note.pdfUrl, xmlUrl: note.xmlUrl, erro: note.erro, referencia: note.origem === 'focus' ? note.provedorId : null, observacao: note.observacao, emitidaEm: note.emitidaEm, criadoEm: note.criadoEm,
         participante: note.pagamento.cota.titularNome, email: note.pagamento.cota.comprador.email, bolao: note.pagamento.cota.bolaoId.slice(0, 8),
       })),
       semNota: pending.map((payment) => ({

@@ -85,6 +85,7 @@ export function NfseIntegrationView({ notify }: { notify: Notify }) {
           {!focus && <Row ok={Boolean(settings.codigoServico)} title="Código de serviço" text={settings.codigoServico ?? 'Não definido (NFSE_SERVICE_CODE)'} />}
           {!focus && <Row ok={Boolean(settings.emissorConfigurado)} title="Inscrição municipal" text={settings.emissorConfigurado ? 'Cadastrada no servidor' : 'Falta NFSE_MUNICIPAL_REGISTER'} />}
         </ul>
+        {focus && <p className="admin-note">Se a Focus recusar dizendo que a empresa não está autorizada a emitir, confirme com a Focus se a opção <strong>NFSe Nacional</strong> da empresa precisa estar marcada. Empresas do Simples Nacional passam a emitir pelo Emissor Nacional desde 1º/11/2026 (Resolução CGSN 191/2026); o Distrito Federal só aceita o padrão nacional desde 1º/10/2026.</p>}
         {diagnostic && focus && <p className={`form-message ${diagnostic.disponivel ? 'form-success' : 'form-error'}`} role="status">{diagnostic.disponivel ? 'Pronto para emitir.' : `Ainda não dá para emitir. Falta: ${(diagnostic.faltando ?? []).join(', ')}`}</p>}
         {diagnostic && !focus && <p className={`form-message ${diagnostic.disponivel ? 'form-success' : 'form-error'}`} role="status">{diagnostic.disponivel ? 'Cidade e empresa habilitadas na Cora.' : 'Cidade ou empresa ainda não habilitadas na Cora.'}</p>}
       </Panel>
@@ -97,7 +98,7 @@ export function NfseIntegrationView({ notify }: { notify: Notify }) {
       </Panel>
     </div>
 
-    {focus && <Panel title="Aviso automático da Focus (webhook)" description="Opcional. Sem ele a nota atualiza sozinha a cada minuto; com ele, na hora em que a prefeitura autoriza.">
+    {focus && <Panel title="Aviso automático da Focus (webhook)" description="Opcional. Sem ele a nota atualiza sozinha a cada minuto; com ele, na hora em que o fisco autoriza.">
       <div className="integration-copy"><span>Endereço</span><code>{hook}</code><button type="button" className="admin-button admin-button-small" onClick={() => copy(hook)}>Copiar</button></div>
       <ol className="integration-steps">
         <li>Na Focus NFe: <strong>Painel API → Webhooks → Adicionar webhook</strong>.</li>

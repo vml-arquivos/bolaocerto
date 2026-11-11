@@ -102,13 +102,38 @@ export function buildFocusBody(input: FocusEmitInput) {
     tipo_retencao_iss: 1,
     percentual_total_tributos_simples_nacional: issuer.percentualTributos,
     ...(issuer.nbs ? { codigo_nbs: issuer.nbs } : {}),
-    ...(issuer.indicadorOperacao ? { codigo_indicador_operacao: issuer.indicadorOperacao } : {}),
-    ...(issuer.ibsCbsSituacao ? { ibs_cbs_situacao_tributaria: issuer.ibsCbsSituacao } : {}),
-    ...(issuer.ibsCbsClassificacao ? { ibs_cbs_classificacao_tributaria: issuer.ibsCbsClassificacao } : {}),
-    finalidade_emissao: 0,
-    consumidor_final: 1,
-    indicador_destinatario: 0,
+    // Grupo da reforma tributária (IBS/CBS): ou vai completo, ou não vai. Mandar "indicador do destinatário" sem o
+    // "indicador da operação" faz o fisco recusar a nota (erro cIndOp/indDest).
+    ...(issuer.indicadorOperacao ? {
+      codigo_indicador_operacao: issuer.indicadorOperacao,
+      ...(issuer.ibsCbsSituacao ? { ibs_cbs_situacao_tributaria: issuer.ibsCbsSituacao } : {}),
+      ...(issuer.ibsCbsClassificacao ? { ibs_cbs_classificacao_tributaria: issuer.ibsCbsClassificacao } : {}),
+      finalidade_emissao: 0,
+      consumidor_final: 1,
+      indicador_destinatario: 0,
+    } : {}),
   };
+}
+
+/** Brasília/DF (IBGE 5300108) exige o código de tributação municipal; sem ele, usa o item da lista de serviços (4 primeiros dígitos do código nacional), como no exemplo da Focus (100801 → 1008). */
+export function defaultMunicipalCode(ibge: string, nacional: string): string | undefined {
+  return ibge === '5300108' && /^\d{6}$/.test(nacional) ? nacional.slice(0, 4) : undefined;
+}
+
+/** Item 19.01 da lista de serviços (venda de bilhetes e produtos de loteria): a tabela oficial de correlação liga ao NBS 1.0905.11.00. Só preenche sozinho para esse item; os demais exigem NFSE_NBS. */
+export function defaultNbs(nacional: string): string | undefined {
+  return nacional === '190101' || nacional === '190102' ? '109051100' : undefined;
+}
+
+/** Traduz a recusa técnica (validação do XML) para o que falta preencher, em português simples. Devolve vazio se não reconhece. */
+export function explainFocusError(raw: string): string {
+  const text = raw.toLowerCase();
+  const hints: string[] = [];
+  if (text.includes('ctribmun')) hints.push('Falta o código de tributação municipal do serviço (NFSE_TRIB_MUNICIPAL).');
+  if (text.includes('cindop') || text.includes('inddest') || text.includes('ibscbs')) hints.push('O fisco recusou o grupo da reforma tributária (IBS/CBS): ou ele vai completo (NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST, NFSE_IBS_CBS_CLASS e NFSE_NBS) ou não vai.');
+  if (/inscri[cç][aã]o municipal/.test(text)) hints.push('Confira a inscrição municipal (NFSE_MUNICIPAL_REGISTER) e se ela está cadastrada na Focus.');
+  if (text.includes('certificado')) hints.push('Confira o certificado digital A1 no painel da Focus (validade e senha).');
+  return hints.join(' ');
 }
 
 function errorText(data: Record<string, unknown>, fallback: string): string {
@@ -118,13 +143,21 @@ function errorText(data: Record<string, unknown>, fallback: string): string {
   return message.replace(/[\r\n]+/g, ' ').slice(0, 480);
 }
 
+function withHint(detail: string): string {
+  const hint = explainFocusError(detail);
+  return hint ? `${hint} Detalhe técnico: ${detail}` : detail;
+}
+
 export class FocusNfseClient {
   constructor(private readonly http: FocusHttp) {}
 
   private fail(action: string, status: number, body: string): never {
     const detail = errorText(json(body), body.slice(0, 200));
     if (status === 401 || status === 403) throw new ServiceUnavailableException(`A Focus NFe recusou o token ao ${action} (HTTP ${status}). Confira NFSE_FOCUS_TOKEN e o ambiente (homologação ou produção).`);
-    if (status === 400 || status === 404 || status === 409 || status === 422) throw new BadRequestException(`A Focus NFe recusou ${action} (HTTP ${status}). ${detail}`);
+    if (status === 400 || status === 404 || status === 409 || status === 422) {
+      const hint = explainFocusError(detail);
+      throw new BadRequestException(`A Focus NFe recusou ${action} (HTTP ${status}). ${hint ? `${hint} Detalhe técnico: ` : ''}${detail}`);
+    }
     throw new ServiceUnavailableException(`Falha ao ${action} na Focus NFe (HTTP ${status}). ${detail}`);
   }
 
@@ -144,7 +177,7 @@ export class FocusNfseClient {
 
   async cancel(ref: string, justificativa: string): Promise<void> {
     if (!REF.test(ref)) throw new BadRequestException('Referência de NFS-e inválida.');
-    if (justificativa.trim().length < 15) throw new BadRequestException('A prefeitura exige um motivo de cancelamento com pelo menos 15 caracteres.');
+    if (justificativa.trim().length < 15) throw new BadRequestException('O fisco exige um motivo de cancelamento com pelo menos 15 caracteres.');
     const response = await this.http('DELETE', `/v2/nfsen/${encodeURIComponent(ref)}`, { justificativa: justificativa.trim().slice(0, 255) });
     if (response.status < 200 || response.status >= 300) this.fail('cancelar a NFS-e', response.status, response.body);
   }
@@ -157,7 +190,7 @@ export class FocusNfseClient {
       // Os campos de PDF/XML mudam conforme o município; aceita os nomes usados pela Focus.
       pdf: text(data.url_danfse) ?? text(data.url) ?? text(data.caminho_pdf_nota_fiscal),
       xml: text(data.caminho_xml_nota_fiscal) ?? text(data.caminho_xml),
-      erro: status === 'erro' ? errorText(data, 'A prefeitura recusou a nota. Confira inscrição municipal, códigos de tributação e dados do tomador.') : null,
+      erro: status === 'erro' ? withHint(errorText(data, 'O fisco recusou a nota. Confira inscrição municipal, códigos de tributação e dados do tomador.')) : null,
     };
   }
 }

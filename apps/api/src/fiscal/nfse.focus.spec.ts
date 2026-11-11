@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ServiceUnavailableException } f
 import { ConfigService } from '@nestjs/config';
 import { Prisma, StatusNotaFiscal, StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
-import { FocusNfseClient, brazilStamp, buildFocusBody, mapFocusStatus } from './nfse.focus';
+import { FocusNfseClient, brazilStamp, buildFocusBody, defaultMunicipalCode, defaultNbs, explainFocusError, mapFocusStatus } from './nfse.focus';
 import { NfseService } from './nfse.service';
 
 const admin = { id: 'admin-1', papel: 'admin' } as AuthUser;
@@ -22,11 +22,39 @@ describe('buildFocusBody', () => {
     expect(body.data_competencia).toBe('2026-11-05');
     expect(body).not.toHaveProperty('logradouro_tomador');
     expect(body).not.toHaveProperty('codigo_nbs');
+    // Sem indicador da operação, o grupo IBS/CBS não vai (o fisco recusa indDest sem cIndOp).
+    expect(body).not.toHaveProperty('indicador_destinatario');
+    expect(body).not.toHaveProperty('finalidade_emissao');
+    expect(body).not.toHaveProperty('consumidor_final');
+  });
+
+  it('manda o grupo IBS/CBS completo quando o indicador da operação está configurado', () => {
+    const body = buildFocusBody({ issuer: { ...issuer, nbs: '114062000', indicadorOperacao: '100301', ibsCbsSituacao: '000', ibsCbsClassificacao: '000001' }, tomador, valor: 10, descricao: 'x' });
+    expect(body).toMatchObject({ codigo_nbs: '114062000', codigo_indicador_operacao: '100301', ibs_cbs_situacao_tributaria: '000', ibs_cbs_classificacao_tributaria: '000001', finalidade_emissao: 0, consumidor_final: 1, indicador_destinatario: 0 });
+  });
+
+  it('Brasília usa os 4 primeiros dígitos do código nacional como código municipal', () => {
+    expect(defaultMunicipalCode('5300108', '100801')).toBe('1008');
+    expect(defaultMunicipalCode('3550308', '100801')).toBeUndefined();
+    expect(defaultMunicipalCode('5300108', '')).toBeUndefined();
+  });
+
+  it('item 19.01 (loteria) preenche o NBS sozinho; outros itens não', () => {
+    expect(defaultNbs('190101')).toBe('109051100');
+    expect(defaultNbs('170901')).toBeUndefined();
+    expect(defaultMunicipalCode('5300108', '190101')).toBe('1901');
+  });
+
+  it('explica em português o que falta quando o fisco recusa o XML', () => {
+    const raw = "Element 'xDescServ': This element is not expected. Expected is ( cTribMun ). Element 'indDest': Expected is ( cIndOp ).";
+    expect(explainFocusError(raw)).toMatch(/tributação municipal/);
+    expect(explainFocusError(raw)).toMatch(/reforma tributária/);
+    expect(explainFocusError('qualquer outra coisa')).toBe('');
   });
 
   it('inclui o endereço do tomador e os campos da reforma só quando existem', () => {
     const body = buildFocusBody({
-      issuer: { ...issuer, nbs: '114062000', ibsCbsSituacao: '000' },
+      issuer: { ...issuer, nbs: '114062000', indicadorOperacao: '100301', ibsCbsSituacao: '000' },
       tomador: { ...tomador, endereco: { cep: '70000000', logradouro: 'Rua A', numero: '10', bairro: 'Centro', codigoMunicipio: '5300108' } },
       valor: 10, descricao: 'x',
     });
@@ -49,7 +77,7 @@ describe('mapFocusStatus', () => {
 });
 
 describe('FocusNfseClient', () => {
-  it('emite, consulta e lê os erros da prefeitura', async () => {
+  it('emite, consulta e lê os erros do fisco', async () => {
     const http = jest.fn()
       .mockResolvedValueOnce({ status: 202, body: JSON.stringify({ status: 'processando_autorizacao' }) })
       .mockResolvedValueOnce({ status: 200, body: JSON.stringify({ status: 'autorizado', numero: '77', url: 'https://x/n.pdf', caminho_xml_nota_fiscal: 'https://x/n.xml' }) })
@@ -58,7 +86,7 @@ describe('FocusNfseClient', () => {
     expect((await client.emit('bl-pay-123456', { issuer, tomador, valor: 5, descricao: 'x' })).status).toBe('aguardando');
     expect(http.mock.calls[0]![1]).toBe('/v2/nfsen?ref=bl-pay-123456');
     expect(await client.get('bl-pay-123456')).toMatchObject({ status: 'emitida', numero: '77', pdf: 'https://x/n.pdf', xml: 'https://x/n.xml' });
-    expect(await client.get('bl-pay-123456')).toMatchObject({ status: 'erro', erro: 'Inscrição municipal inválida' });
+    expect(await client.get('bl-pay-123456')).toMatchObject({ status: 'erro', erro: expect.stringContaining('Inscrição municipal inválida') });
   });
 
   it('separa erro de dados (corrigir) de erro de token e de indisponibilidade', async () => {
@@ -124,7 +152,7 @@ describe('NfseService com a Focus NFe', () => {
     expect(focus.emit).not.toHaveBeenCalled();
   });
 
-  it('recusa da prefeitura vira nota com erro visível e permite refazer com a mesma referência', async () => {
+  it('recusa do fisco vira nota com erro visível e permite refazer com a mesma referência', async () => {
     const failing = setup({ focus: { emit: jest.fn().mockRejectedValue(new BadRequestException('Inscrição municipal inválida')) } });
     await expect(failing.service.emitForPayment('p', admin)).rejects.toThrow(/Inscrição/);
     expect(failing.prisma.notaFiscal.upsert.mock.calls[0]![0].create).toMatchObject({ status: StatusNotaFiscal.erro, origem: 'focus' });
