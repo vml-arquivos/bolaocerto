@@ -36,3 +36,7 @@ export class NoteQueryDto {
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) de?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) ate?: string;
 }
+
+export class NoteModeDto {
+  @IsIn(['off', 'manual', 'auto'], { message: 'Escolha automática, manual ou desligada.' }) modo!: 'off' | 'manual' | 'auto';
+}

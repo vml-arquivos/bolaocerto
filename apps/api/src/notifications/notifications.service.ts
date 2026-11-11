@@ -21,6 +21,7 @@ export const NOTIFICATION_TITLES: Record<string, string> = {
   'bolao.liberado': 'Cotas liberadas',
   'bolao.apurado': 'Seu bolão foi apurado',
   'cota.recibo': 'Recibo da sua cota disponível',
+  'nota.emitida': 'Sua nota fiscal está pronta',
   comunicado: 'Aviso do BL',
   'conta.exclusao_solicitada': 'Pedido de exclusão registrado',
   'afiliado.aprovado': 'Seu cadastro de afiliado foi aprovado',
@@ -54,8 +55,24 @@ export class NotificationsService {
 
   constructor(private readonly prisma: PrismaService, private readonly mail: MailService, @Optional() private readonly push?: PushService, @Optional() private readonly storage?: StorageService) {}
 
+  /** PDF da nota fiscal anexado ao e-mail. Só baixa de endereços https da Focus NFe ou da Cora; qualquer falha segue sem anexo (o link vai no texto). */
+  private async invoiceAttachment(payload: NotificationPayload): Promise<Array<{ filename: string; content: Buffer; contentType: string }>> {
+    const raw = typeof payload.notaPdfUrl === 'string' ? payload.notaPdfUrl : '';
+    try {
+      const url = new URL(raw);
+      if (url.protocol !== 'https:' || !/(^|\.)(focusnfe\.com\.br|cora\.com\.br|amazonaws\.com)$/i.test(url.hostname)) return [];
+      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) return [];
+      const content = Buffer.from(await response.arrayBuffer());
+      if (!content.length || content.length > MAX_MAIL_ATTACHMENTS_BYTES || content.subarray(0, 4).toString('latin1') !== '%PDF') return [];
+      const number = typeof payload.notaNumero === 'string' ? payload.notaNumero.replace(/[^\w-]/g, '') : '';
+      return [{ filename: `nota-fiscal${number ? `-${number}` : ''}.pdf`, content, contentType: 'application/pdf' }];
+    } catch { return []; }
+  }
+
   /** Comprovantes que acompanham o e-mail: o arquivo avisado ou, na confirmação do pagamento, os do bolão já liberados aos participantes. */
   private async attachmentsFor(tipo: string, payload: NotificationPayload): Promise<Array<{ filename: string; content: Buffer; contentType: string }>> {
+    if (tipo === 'nota.emitida') return this.invoiceAttachment(payload);
     if (!this.storage) return [];
     try {
       const where = typeof payload.anexoId === 'string' && /^[0-9a-f-]{36}$/i.test(payload.anexoId)
@@ -221,13 +238,15 @@ export class NotificationsService {
       const details = [games, payload.valorJogo ? `Destinado aos bilhetes: R$ ${payload.valorJogo}` : '', payload.taxaAdministracao ? `Administração: R$ ${payload.taxaAdministracao}` : ''].filter(Boolean).join('\n');
       let ok = false;
       const attachments = await this.attachmentsFor(item.tipo, payload ?? {});
-      const attachedNote = attachments.length ? `\n\nO comprovante está anexado a este e-mail. Ele também fica guardado na sua conta.` : '';
+      const attachedNote = attachments.length ? (item.tipo === 'nota.emitida' ? `\n\nA nota fiscal está anexada a este e-mail em PDF. Ela também fica guardada na sua conta.` : `\n\nO comprovante está anexado a este e-mail. Ele também fica guardado na sua conta.`) : '';
+      // Se o PDF não pôde ser anexado, o e-mail leva o link direto da nota.
+      const noteLink = item.tipo === 'nota.emitida' && !attachments.length && typeof payload.notaPdfUrl === 'string' && /^https:\/\//.test(payload.notaPdfUrl) ? payload.notaPdfUrl : '';
       try { ok = await this.mail.send({
         messageId: `<${item.id}@notifications.bolaolivre>`,
         to: item.usuario.email,
         subject: info.titulo,
-        text: `Olá, ${first}!\n\n${info.mensagem}\n\n${details}${attachedNote}\n\n${url}\n\nBL — Bolão Livre`,
-        html: wrapEmailHtml(info.titulo, `<p>Olá, ${escapeHtml(first)}!</p><p>${escapeHtml(info.mensagem)}</p>${details ? `<pre>${escapeHtml(details)}</pre>` : ''}${attachments.length ? '<p><strong>O comprovante está anexado a este e-mail.</strong> Ele também fica guardado na sua conta.</p>' : ''}`, { label: 'Abrir no BL', url }),
+        text: `Olá, ${first}!\n\n${info.mensagem}\n\n${details}${attachedNote}${noteLink ? `\n\nBaixar a nota fiscal (PDF): ${noteLink}` : ''}\n\n${url}\n\nBL — Bolão Livre`,
+        html: wrapEmailHtml(info.titulo, `<p>Olá, ${escapeHtml(first)}!</p><p>${escapeHtml(info.mensagem)}</p>${details ? `<pre>${escapeHtml(details)}</pre>` : ''}${attachments.length ? `<p><strong>${item.tipo === 'nota.emitida' ? 'A nota fiscal está anexada a este e-mail em PDF.' : 'O comprovante está anexado a este e-mail.'}</strong> Ele também fica guardado na sua conta.</p>` : ''}${noteLink ? `<p><a href="${escapeHtml(noteLink)}">Baixar a nota fiscal (PDF)</a></p>` : ''}`, { label: 'Abrir no BL', url }),
         ...(attachments.length ? { attachments } : {}),
       }); } catch { ok = false; }
       if (ok) enviados += 1; else falhas += 1;

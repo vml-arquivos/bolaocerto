@@ -45,6 +45,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
       {pending && share.pagamento && <button type="button" className="button button-primary" onClick={() => setShowPayment((value) => !value)}>{showPayment ? 'Ocultar pagamento' : share.pagamento.metodo === 'boleto' ? 'Ver boleto / Pix' : 'Pagar com Pix'}</button>}
       <Link className="button button-secondary" href={`/boloes/${share.bolaoId}`}>Ver bolão</Link>
       {share.comprovanteIndividualUrl && <a className="button button-secondary" href={share.comprovanteIndividualUrl} target="_blank" rel="noreferrer">Comprovante</a>}
+      {share.pagamento?.notaFiscal?.status === 'emitida' && share.pagamento.notaFiscal.pdfUrl && <a className="button button-secondary" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar nota fiscal</a>}
     </div>
     {pending && share.pagamento && showPayment && <div className="cota-payment"><PaymentInstructions shareId={share.id} payment={share.pagamento} onPaid={onPaid} /></div>}
     {share.status === 'reservada' && !share.pagamento && !expired && <small className="muted">Reserva sem cobrança. Abra o bolão para gerar o pagamento antes do prazo{share.expiraReservaEm ? ` (${shortDate(share.expiraReservaEm)})` : ''}.</small>}

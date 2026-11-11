@@ -364,6 +364,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   const [busy, setBusy] = useState('');
   const [form, setForm] = useState<{ kind: 'emitir' | 'manual' | 'cancelar'; id: string } | null>(null);
   const [diagnostic, setDiagnostic] = useState<Rec | null>(null);
+  const [viewing, setViewing] = useState<Rec | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -387,6 +388,28 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
     if (kind === 'emitir') return run(`emit-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/emitir`, { endereco: values }, () => 'Endereço salvo e nota solicitada à Cora.');
     return run(`manual-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/manual`, values, () => 'Nota registrada.');
   }
+  async function changeMode(modo: 'auto' | 'manual' | 'off') {
+    setBusy('modo');
+    try {
+      await api('/api/v1/admin/nfse/modo', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modo }) });
+      notify('success', modo === 'auto' ? 'Emissão automática ligada. As próximas vendas já saem com nota sozinhas.' : modo === 'manual' ? 'Emissão manual. Nenhuma nota sai sozinha.' : 'Emissão de notas desligada.');
+      await load();
+    } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível mudar a emissão.'); }
+    finally { setBusy(''); }
+  }
+  /** Abre a nota: atualiza a situação no emissor, abre o PDF quando existe e mostra o resumo da nota aqui mesmo. */
+  async function viewNote(note: Rec) {
+    setBusy(`view-${note.id}`);
+    let current = note;
+    if (note.origem !== 'manual' && note.status !== 'cancelada') {
+      try { current = { ...note, ...(await api(`/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })) }; }
+      catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não consegui consultar a situação da nota agora.'); }
+    }
+    setViewing(current);
+    if (current.pdfUrl) window.open(current.pdfUrl, '_blank', 'noopener,noreferrer');
+    setBusy('');
+    void api('/api/v1/admin/notas-fiscais').then(setData).catch(() => undefined);
+  }
   async function checkAvailability() {
     setBusy('diag');
     try { setDiagnostic(await api('/api/v1/admin/nfse/diagnostico')); }
@@ -396,6 +419,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
 
   const count = (status: string) => (settings?.porStatus ?? []).find((row: Rec) => row.status === status)?.notas ?? 0;
   const off = settings?.modo === 'off';
+  const auto = settings?.modo === 'auto';
   const focus = settings?.provedor === 'focus';
   const emissor = focus ? 'Focus NFe' : 'Cora';
   return <>
@@ -412,6 +436,23 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
         <Kpi label="Com erro" value={count('erro')} tone="rose" />
       </div>
       
+      <Panel title="Como emitir as notas" action={auto || settings.modo === 'manual' ? <button className="admin-button admin-button-primary" disabled={Boolean(busy)} onClick={() => { if (!window.confirm('Emitir agora as notas dos pagamentos que ainda não têm nota (até 50 por vez)?')) return; void run('pending', '/api/v1/admin/notas-fiscais/emitir-pendentes', {}, (result) => result.candidatos ? `${result.emitidas} nota(s) emitida(s)${result.erros ? `; ${result.erros} com problema${result.primeiroErro ? ` (${result.primeiroErro})` : ''}` : ''}.` : 'Não há pagamentos esperando nota.') }}>{busy === 'pending' ? 'Emitindo…' : 'Emitir as pendentes agora'}</button> : undefined}>
+        <div className="invoice-mode" role="radiogroup" aria-label="Como emitir as notas">
+          {([['auto', 'Automática', 'A nota sai sozinha assim que o pagamento é confirmado. O cliente recebe um aviso e baixa o PDF em Minha conta.'], ['manual', 'Manual', 'Nada sai sozinho: você emite cada nota pelo botão ou registra uma nota feita fora do sistema.'], ['off', 'Desligada', 'Nenhuma nota é emitida.']] as const).map(([value, title, text]) => <button key={value} type="button" role="radio" aria-checked={settings.modo === value} className={`invoice-mode-option${settings.modo === value ? ' is-active' : ''}`} disabled={!superAdmin || Boolean(busy)} onClick={() => settings.modo !== value && void changeMode(value)}><strong>{title}</strong><small>{text}</small></button>)}
+        </div>
+        {auto && <p className="admin-note" role="status">Automática ligada{settings.automaticaDesde ? ` desde ${dateTime(settings.automaticaDesde)}` : ''}. Vendas anteriores a essa data ficam na lista abaixo; use "Emitir as pendentes agora" se quiser emitir também essas.</p>}
+        {!superAdmin && <p className="admin-note">Só o administrador principal pode mudar essa opção.</p>}
+        {settings.modoDoPainel === false && <p className="admin-note">Hoje vale o que está configurado no servidor (NFSE_MODE). Ao escolher aqui, passa a valer a escolha do painel.</p>}
+      </Panel>
+
+      <Panel title="E-mail ao cliente e aviso da Focus">
+        <div className="admin-summary-list">
+          <div><span>Nota por e-mail ao cliente</span><strong>{settings.emailAoCliente ? 'Ligado: o PDF vai para o e-mail cadastrado' : 'Desligado: falta SMTP_HOST (e SMTP_USER, SMTP_PASS, MAIL_FROM) no servidor'}</strong></div>
+          {focus && <div><span>Endereço do webhook (cole na Focus NFe)</span><strong className="invoice-webhook"><code>{`${settings.enderecoDoSite ?? (typeof window !== 'undefined' ? window.location.origin : '')}/api/v1/webhooks/focus-nfe`}</code> <button type="button" className="admin-button admin-button-small" onClick={() => { const text = `${settings.enderecoDoSite ?? window.location.origin}/api/v1/webhooks/focus-nfe`; void navigator.clipboard?.writeText(text).then(() => notify('success', 'Endereço copiado.'), () => notify('error', 'Não consegui copiar. Selecione o endereço e copie à mão.')); }}>Copiar</button></strong></div>}
+        </div>
+        {focus && <p className="admin-note">Na Focus NFe: Painel API → Webhooks → Adicionar webhook. Evento: <strong>NFSe Nacional</strong>. URL: o endereço acima. Se quiser proteger com senha: em "Header de Autorização" escreva <code>X-Focus-Segredo</code>, em "Chave de Autorização" uma senha inventada por você, e coloque a mesma senha no servidor em <code>NFSE_FOCUS_WEBHOOK_SECRET</code>. O webhook é opcional: sem ele a nota atualiza a cada minuto.</p>}
+      </Panel>
+
       <Panel title="Emissor e conexão" action={<div className="admin-row-actions">
         {superAdmin && <button className="admin-button" disabled={Boolean(busy)} onClick={() => void checkAvailability()}>{busy === 'diag' ? 'Consultando…' : focus ? 'Conferir configuração' : 'Verificar na Cora'}</button>}
         {superAdmin && !focus && <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('issuer', '/api/v1/admin/nfse/emissor', {}, (result) => result.observacao ?? 'Emissor cadastrado.')}>{busy === 'issuer' ? 'Ligando…' : 'Cadastrar emissor'}</button>}
@@ -439,20 +480,37 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
         </div>}
       </Panel>
 
-      <Panel title="Pagamentos confirmados sem nota">
+      <Panel title={auto ? 'Aguardando emissão automática' : 'Pagamentos confirmados sem nota'}>
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
           <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
           <td><span className={chip(row.enderecoCompleto || focus ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus ? 'opcional' : 'faltando'}</span></td>
           <td><div className="admin-row-actions">
-            {row.emitivelPelaCora && (row.enderecoCompleto || focus) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir pela ${emissor}`}</button>}
+            {row.emitivelPelaCora && (row.enderecoCompleto || focus) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir agora`}</button>}
             {row.emitivelPelaCora && !row.enderecoCompleto && !focus && <button className="admin-button admin-button-small" disabled={off} onClick={() => setForm({ kind: 'emitir', id: row.pagamentoId })}>Informar endereço e emitir</button>}
-            <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'manual', id: row.pagamentoId })}>Registrar nota manual</button>
+            <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'manual', id: row.pagamentoId })}>{auto ? 'Já emitida fora do sistema' : 'Registrar nota manual'}</button>
           </div>
           {form && form.id === row.pagamentoId && (form.kind === 'emitir' || form.kind === 'manual') && <NoteForm kind={form.kind} busy={busy.endsWith(row.pagamentoId)} onCancel={() => setForm(null)}
             onSubmit={(values) => void submitPaymentForm(form.kind, row.pagamentoId, values)} />}
           </td></tr>)}</tbody></Table>
-        {!(data.semNota ?? []).length && <Empty text="Todos os pagamentos confirmados já têm nota" />}
+        {!(data.semNota ?? []).length && <Empty text={auto ? 'Tudo em dia: as notas saem sozinhas quando o pagamento é confirmado' : 'Todos os pagamentos confirmados já têm nota'} />}
       </Panel>
+
+      {viewing && <Panel title={`Nota fiscal${viewing.numero ? ` nº ${viewing.numero}` : ''}`} action={<button className="admin-button admin-button-ghost" onClick={() => setViewing(null)}>Fechar</button>}>
+        <div className="admin-summary-list">
+          <div><span>Situação</span><strong><span className={chip(viewing.status)}>{label(viewing.status)}</span></strong></div>
+          <div><span>Participante</span><strong>{viewing.participante}<small>{viewing.email}</small></strong></div>
+          <div><span>Valor da nota (serviço)</span><strong>{brl(viewing.valor)}</strong></div>
+          <div><span>Emitida em</span><strong>{viewing.emitidaEm ? dateTime(viewing.emitidaEm) : '—'}</strong></div>
+          <div><span>Origem</span><strong>{label(viewing.origem)}</strong></div>
+          {viewing.observacao && <div><span>Observação</span><strong>{viewing.observacao}</strong></div>}
+        </div>
+        {viewing.erro && <p className="form-error" role="alert">{viewing.erro}</p>}
+        <div className="admin-row-actions" style={{ marginTop: 12 }}>
+          {viewing.pdfUrl ? <a className="admin-button admin-button-primary" href={viewing.pdfUrl} target="_blank" rel="noreferrer">Abrir a nota (PDF)</a> : <span className="admin-note">{viewing.status === 'emitida' || viewing.status === 'aguardando' ? 'O PDF ainda não foi liberado. Isso leva alguns minutos depois da autorização da prefeitura; feche e clique em "Ver nota" de novo.' : 'Esta nota não tem PDF.'}</span>}
+          {viewing.xmlUrl && <a className="admin-button" href={viewing.xmlUrl} target="_blank" rel="noreferrer">Baixar o XML</a>}
+          {focus && viewing.origem === 'focus' && <a className="admin-button admin-button-ghost" href="https://app-v2.focusnfe.com.br/painel_api/requisicoes" target="_blank" rel="noreferrer">Ver na Focus NFe</a>}
+        </div>
+      </Panel>}
 
       <Panel title="Notas emitidas e em andamento" action={<button className="admin-button admin-button-ghost" onClick={() => void load()}>Atualizar</button>}>
         <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody>{(data.notas ?? []).map((note: Rec) => <tr key={note.id}>
@@ -460,6 +518,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
           <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{note.erro}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
           <td>{note.pdfUrl ? <a className="text-link" href={note.pdfUrl} target="_blank" rel="noreferrer">PDF</a> : '—'}{note.xmlUrl ? <> · <a className="text-link" href={note.xmlUrl} target="_blank" rel="noreferrer">XML</a></> : null}</td>
           <td><div className="admin-row-actions">
+            <button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(busy)} onClick={() => void viewNote(note)}>{busy === `view-${note.id}` ? 'Abrindo…' : 'Ver nota'}</button>
             {note.origem !== 'manual' && note.status !== 'cancelada' && <button className="admin-button admin-button-small" disabled={Boolean(busy)} onClick={() => void run(`sync-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, {}, () => 'Nota atualizada.')}>Atualizar</button>}
             {note.status === 'erro' && note.origem !== 'manual' && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${note.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${note.pagamentoId}/emitir`, {}, () => `Nova tentativa enviada à ${emissor}.`)}>Tentar de novo</button>}
             {note.status !== 'cancelada' && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'cancelar', id: note.id })}>Cancelar</button>}

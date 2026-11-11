@@ -451,6 +451,11 @@ export class PaymentsService {
     return this.toPublicPayment(result);
   }
 
+  private readonly settledListeners: Array<(paymentId: string) => Promise<void> | void> = [];
+
+  /** Registra quem quer ser avisado quando um pagamento é confirmado (ex.: emissão automática da nota fiscal). */
+  onSettled(listener: (paymentId: string) => Promise<void> | void): void { this.settledListeners.push(listener); }
+
   /** Depois da baixa: cashback de indicação. Roda em transação própria; qualquer falha aqui nunca desfaz o pagamento. */
   private async afterSettled(paymentId: string): Promise<void> {
     try {
@@ -464,6 +469,8 @@ export class PaymentsService {
       if (!payment || payment.status !== StatusPagamento.confirmado || !([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(payment.cota.status)) return;
       await this.prisma.$transaction((tx) => grantCampaignCashback(tx, { pagamentoId: payment.id, compradorId: payment.cota.compradorId, paidCents: Math.round(Number(payment.valorBruto) * 100), feeCents: Math.round(Number(payment.valorTaxaAdmin) * 100), commissionCents: Math.round(Number(payment.valorComissaoAfiliado) * 100), formaBaixa: payment.formaBaixa }));
     } catch (error) { this.logger.warn(`Cashback de campanha não registrado: ${error instanceof Error ? error.message : String(error)}`); }
+    // Avisa os interessados sem esperar por eles: se falharem, o pagamento continua confirmado.
+    for (const listener of this.settledListeners) void Promise.resolve().then(() => listener(paymentId)).catch((error) => this.logger.warn(`Rotina pós-pagamento falhou: ${error instanceof Error ? error.message : String(error)}`));
   }
 
   /** Depois do estorno: devolve o saldo usado na compra e desfaz o cashback. Idempotente. */

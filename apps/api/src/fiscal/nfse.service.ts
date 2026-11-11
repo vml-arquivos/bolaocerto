@@ -16,6 +16,8 @@ export const FOCUS_CLIENT_OVERRIDE = 'FOCUS_CLIENT_OVERRIDE';
 export type NfseProvider = 'cora' | 'focus';
 export type NfseMode = 'off' | 'manual' | 'auto';
 
+const MODE_KEY = 'nfse.modo';
+const SINCE_KEY = 'nfse.auto_desde';
 const IBGE_CACHE = new Map<string, string | null>();
 
 /** Código IBGE do município pelo CEP (ViaCEP). Falha em silêncio: sem o código, o endereço do tomador simplesmente não vai na nota. */
@@ -74,15 +76,54 @@ export class NfseService {
   ) {
     this.overrideClient = client;
     this.overrideFocus = focus;
+    // Nota automática: assim que o pagamento é confirmado, a rotina de emissão roda na hora.
+    this.payments.onSettled?.(() => this.autoEmitSoon());
   }
 
   /* ------------------------------------------------------------------ */
   /* Configuração                                                        */
   /* ------------------------------------------------------------------ */
 
+  /** Modo escolhido no painel (vale mais que NFSE_MODE) e a data a partir da qual a emissão automática vale. */
+  private stored: { modo: NfseMode | null; desde: Date | null; at: number } = { modo: null, desde: null, at: 0 };
+
   get mode(): NfseMode {
+    if (this.stored.modo) return this.stored.modo;
     const value = this.config.get<string>('NFSE_MODE', 'off');
     return value === 'manual' || value === 'auto' ? value : 'off';
+  }
+
+  /** Lê do banco o modo escolhido no painel (guarda por 10 s). Falha em silêncio: sem o banco, vale o NFSE_MODE do servidor. */
+  async loadSettings(force = false): Promise<NfseMode> {
+    if (force || Date.now() - this.stored.at > 10_000) {
+      try {
+        const rows = await this.prisma.configuracaoSistema?.findMany({ where: { chave: { in: [MODE_KEY, SINCE_KEY] } } }) ?? [];
+        const mode = rows.find((row) => row.chave === MODE_KEY)?.valor;
+        const since = rows.find((row) => row.chave === SINCE_KEY)?.valor;
+        this.stored = { modo: mode === 'off' || mode === 'manual' || mode === 'auto' ? mode : null, desde: since && !Number.isNaN(Date.parse(since)) ? new Date(since) : null, at: Date.now() };
+      } catch (error) { this.logger.warn(`Não consegui ler o modo da nota fiscal: ${(error as Error).message}`); this.stored.at = Date.now(); }
+    }
+    return this.mode;
+  }
+
+  /** Liga ou desliga a emissão automática pelo painel. Ao ligar, só as vendas a partir de agora entram sozinhas; as antigas ficam para o botão "Emitir as pendentes". */
+  async setMode(mode: NfseMode, actor: AuthUser) {
+    const before = await this.loadSettings(true);
+    await this.prisma.configuracaoSistema.upsert({ where: { chave: MODE_KEY }, create: { chave: MODE_KEY, valor: mode }, update: { valor: mode } });
+    if (mode === 'auto' && before !== 'auto') {
+      const now = new Date().toISOString();
+      await this.prisma.configuracaoSistema.upsert({ where: { chave: SINCE_KEY }, create: { chave: SINCE_KEY, valor: now }, update: { valor: now } });
+    }
+    await this.audit.record(this.prisma, { entidade: 'configuracao', entidadeId: actor.id, evento: 'nfse.modo_alterado', atorId: actor.id, payloadAntes: { modo: before } as unknown as Prisma.InputJsonValue, payloadDepois: { modo: mode } as unknown as Prisma.InputJsonValue });
+    await this.loadSettings(true);
+    return this.settings();
+  }
+
+  /** Data a partir da qual os pagamentos entram na emissão automática. */
+  private autoFrom(): Date {
+    if (this.stored.desde) return this.stored.desde;
+    const since = this.config.get<string>('NFSE_AUTO_SINCE', '');
+    return since ? new Date(`${since}T00:00:00.000-03:00`) : new Date(Date.now() - 30 * 86_400_000);
   }
 
   /** Quem emite a nota: `focus` (valor só do serviço, recomendado) ou `cora` (pelo valor da cobrança). */
@@ -150,17 +191,27 @@ export class NfseService {
     };
   }
 
+  /** Pagamentos que precisam de nota. Com a Focus, venda sem taxa de administração não tem serviço a faturar. */
+  private pendingWhere(): Prisma.PagamentoWhereInput {
+    return { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) }, ...(this.provider === 'focus' ? { valorTaxaAdmin: { gt: new Prisma.Decimal(0) } } : {}) };
+  }
+
   async settings() {
+    await this.loadSettings();
     const [byStatus, withoutNote, withoutNoteSum] = await Promise.all([
       this.prisma.notaFiscal.groupBy({ by: ['status'], _count: true, _sum: { valor: true } }),
-      this.prisma.pagamento.count({ where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) } } }),
-      this.prisma.pagamento.aggregate({ where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) } }, _sum: { valorTaxaAdmin: true, valorBruto: true } }),
+      this.prisma.pagamento.count({ where: this.pendingWhere() }),
+      this.prisma.pagamento.aggregate({ where: this.pendingWhere(), _sum: { valorTaxaAdmin: true, valorBruto: true } }),
     ]);
     const issuer = this.issuerConfig();
     const focus = this.provider === 'focus';
     const focusIssuer = this.focusIssuer();
     return {
       modo: this.mode,
+      modoDoPainel: this.stored.modo !== null,
+      emailAoCliente: Boolean(this.config.get<string>('SMTP_HOST', '').trim()) && this.config.get<string>('SMTP_ENABLED', '').trim().toLowerCase() !== 'false',
+      enderecoDoSite: (this.config.get<string>('APP_PUBLIC_URL', '') || this.config.get<string>('WEB_ORIGIN', '') || '').trim().replace(/\/+$/, '') || null,
+      automaticaDesde: this.mode === 'auto' ? this.autoFrom().toISOString() : null,
       provedor: this.provider,
       ambiente: focus ? this.focusEnv() : this.config.get<string>('CORA_ENV', 'stage'),
       faltando: focus ? focusIssuer.missing : [],
@@ -230,6 +281,7 @@ export class NfseService {
   /* ------------------------------------------------------------------ */
 
   async emitForPayment(paymentId: string, actor?: AuthUser, addressOverride?: AddressDto) {
+    await this.loadSettings();
     if (this.mode === 'off') throw new BadRequestException('A emissão de NFS-e está desligada (NFSE_MODE=off).');
     if (this.provider === 'focus') return this.emitViaFocus(paymentId, actor, addressOverride);
     if (!this.issPct) throw new BadRequestException('Defina NFSE_ISS_PCT (alíquota do ISS, ex.: 5) com o seu contador.');
@@ -321,8 +373,32 @@ export class NfseService {
     }
     const data = { status: info.status as StatusNotaFiscal, origem: 'focus', provedorId: ref, valor: new Prisma.Decimal(base.servico), descricao: description, numero: info.numero, pdfUrl: info.pdf, xmlUrl: info.xml, erro: info.erro, canceladaEm: null, emitidaEm: info.status === 'emitida' ? new Date() : null, criadoPor: actor?.id };
     const note = await this.prisma.notaFiscal.upsert({ where: { pagamentoId: payment.id }, create: { pagamentoId: payment.id, ...data }, update: data });
+    if (note.status === StatusNotaFiscal.emitida && previous?.status !== StatusNotaFiscal.emitida) await this.notifyIssued(payment.id);
     await this.audit.record(this.prisma, { entidade: 'nota_fiscal', entidadeId: note.id, evento: 'nfse.solicitada', atorId: actor?.id, payloadDepois: { pagamentoId: payment.id, provedor: 'focus', ref, valorServico: base.servico, status: info.status } as unknown as Prisma.InputJsonValue });
     return note;
+  }
+
+  /**
+   * Aviso da Focus NFe de que uma nota mudou de situação (webhook "NFSe Nacional"). O conteúdo do aviso não é usado:
+   * ele só aponta qual nota consultar, e quem diz a situação de verdade é a própria Focus, na consulta. Assim ninguém consegue forjar uma nota emitida.
+   */
+  async handleFocusWebhook(body: unknown): Promise<{ ok: true; atualizada: boolean }> {
+    const ref = typeof (body as { ref?: unknown } | null)?.ref === 'string' ? (body as { ref: string }).ref.trim().slice(0, 120) : '';
+    if (!ref) return { ok: true, atualizada: false };
+    const note = await this.prisma.notaFiscal.findFirst({ where: { origem: 'focus', provedorId: ref }, select: { id: true } });
+    if (!note) return { ok: true, atualizada: false };
+    try { await this.refresh(note.id); return { ok: true, atualizada: true }; }
+    catch (error) { this.logger.warn(`Aviso da Focus para ${ref}: consulta falhou (${(error as Error).message}); a rotina tenta de novo.`); return { ok: true, atualizada: false }; }
+  }
+
+  /** Avisa o participante que a nota fiscal do serviço já pode ser baixada em "Minha conta". Nunca atrapalha a emissão. */
+  private async notifyIssued(paymentId: string): Promise<void> {
+    try {
+      const payment = await this.prisma.pagamento.findUnique({ where: { id: paymentId }, select: { cotaId: true, notaFiscal: { select: { numero: true, pdfUrl: true } }, cota: { select: { compradorId: true } } } });
+      if (!payment) return;
+      // O aviso vira e-mail para o endereço cadastrado do participante, com o PDF da nota anexado (ver NotificationsService).
+      await this.prisma.notificacao.create({ data: { usuarioId: payment.cota.compradorId, canal: 'push', tipo: 'nota.emitida', payload: { titulo: 'Sua nota fiscal está pronta', mensagem: 'A nota fiscal do serviço da sua compra já está disponível. Você também pode baixá-la a qualquer momento em Minha conta, dentro da cota.', cotaId: payment.cotaId, link: '/minha-conta', notaNumero: payment.notaFiscal?.numero ?? null, notaPdfUrl: payment.notaFiscal?.pdfUrl ?? null } } });
+    } catch (error) { this.logger.warn(`Aviso da nota fiscal não enviado: ${(error as Error).message}`); }
   }
 
   /** Consulta o emissor (Cora ou Focus) e atualiza status, PDF e XML da nota. */
@@ -331,7 +407,7 @@ export class NfseService {
     if (!note) throw new NotFoundException('Nota fiscal não encontrada.');
     if (note.origem === 'focus' && note.provedorId && note.status !== StatusNotaFiscal.cancelada) {
       const focus = await this.focusClient().get(note.provedorId);
-      return this.prisma.notaFiscal.update({
+      const updated = await this.prisma.notaFiscal.update({
         where: { id: note.id },
         data: {
           status: focus.status as StatusNotaFiscal,
@@ -343,10 +419,12 @@ export class NfseService {
           erro: focus.erro,
         },
       });
+      if (focus.status === 'emitida' && note.status !== StatusNotaFiscal.emitida) await this.notifyIssued(note.pagamentoId);
+      return updated;
     }
     if (note.origem !== 'cora' || !note.provedorId || note.status === StatusNotaFiscal.cancelada) return note;
     const info = await this.client().get(note.provedorId);
-    return this.prisma.notaFiscal.update({
+    const saved = await this.prisma.notaFiscal.update({
       where: { id: note.id },
       data: {
         status: info.status,
@@ -357,11 +435,14 @@ export class NfseService {
         erro: info.status === 'erro' ? 'A prefeitura rejeitou a emissão. Confira inscrição municipal, regime, código de serviço e o endereço do tomador.' : null,
       },
     });
+    if (info.status === 'emitida' && note.status !== StatusNotaFiscal.emitida) await this.notifyIssued(note.pagamentoId);
+    return saved;
   }
 
   /** Atualiza notas que aguardam pagamento ou certificado. */
   async syncPending(): Promise<{ verificadas: number; atualizadas: number; erros: number }> {
     const summary = { verificadas: 0, atualizadas: 0, erros: 0 };
+    await this.loadSettings();
     if (this.mode === 'off') return summary;
     const notes = await this.prisma.notaFiscal.findMany({
       where: { origem: { in: ['cora', 'focus'] }, provedorId: { not: null }, status: { in: [StatusNotaFiscal.aguardando, StatusNotaFiscal.aguardando_certificado] } },
@@ -382,16 +463,44 @@ export class NfseService {
   }
 
   /** Modo automático: emite as notas dos pagamentos confirmados cujo participante já informou o endereço. */
+  private emitting = false;
+
   async autoEmit(limit = 25): Promise<{ candidatos: number; emitidas: number; erros: number }> {
     const summary = { candidatos: 0, emitidas: 0, erros: 0 };
+    if (this.emitting) return summary;
+    this.emitting = true;
+    try { return await this.autoEmitRun(limit, summary); } finally { this.emitting = false; }
+  }
+
+  /** Chamado assim que um pagamento é confirmado: no modo automático a nota sai na hora, sem esperar a rotina de 1 minuto. Nunca atrapalha o pagamento. */
+  async autoEmitSoon(): Promise<void> {
+    try { await this.autoEmit(); } catch (error) { this.logger.warn(`Emissão automática da nota falhou: ${(error as Error).message}`); }
+  }
+
+  /** Botão "Emitir as pendentes": emite agora as notas dos pagamentos que ainda não têm nota, inclusive os anteriores à ativação do modo automático. */
+  async emitPending(actor: AuthUser, limit = 50): Promise<{ candidatos: number; emitidas: number; erros: number; primeiroErro: string | null }> {
+    await this.loadSettings();
+    if (this.mode === 'off') throw new BadRequestException('A emissão de notas está desligada. Escolha "Automática" ou "Manual" primeiro.');
+    const rows = await this.prisma.pagamento.findMany({
+      where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) }, ...(this.provider === 'focus' ? { valorTaxaAdmin: { gt: new Prisma.Decimal(0) } } : { pspProvedor: 'cora' }) },
+      orderBy: { confirmadoEm: 'asc' }, take: limit, select: { id: true },
+    });
+    const summary = { candidatos: rows.length, emitidas: 0, erros: 0, primeiroErro: null as string | null };
+    for (const row of rows) {
+      try { await this.emitForPayment(row.id, actor); summary.emitidas += 1; } catch (error) { summary.erros += 1; summary.primeiroErro ??= (error as Error).message; }
+    }
+    return summary;
+  }
+
+  private async autoEmitRun(limit: number, summary: { candidatos: number; emitidas: number; erros: number }): Promise<{ candidatos: number; emitidas: number; erros: number }> {
     const focus = this.provider === 'focus';
+    await this.loadSettings();
     if (this.mode !== 'auto') return summary;
     if (focus ? !this.focusIssuer().issuer : (!this.issPct || !this.payments.coraProvider())) return summary;
-    const since = this.config.get<string>('NFSE_AUTO_SINCE', '');
-    const from = since ? new Date(`${since}T00:00:00.000-03:00`) : new Date(Date.now() - 30 * 86_400_000);
+    const from = this.autoFrom();
     // Com a Focus, qualquer pagamento confirmado com taxa de administração vira nota (a nota é só do serviço); o endereço do participante é opcional.
     const candidates = focus ? await this.prisma.pagamento.findMany({
-      where: { status: StatusPagamento.confirmado, notaFiscal: null, valorTaxaAdmin: { gt: new Prisma.Decimal(0) }, confirmadoEm: { gt: from } },
+      where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) }, valorTaxaAdmin: { gt: new Prisma.Decimal(0) }, confirmadoEm: { gt: from } },
       orderBy: { confirmadoEm: 'asc' }, take: limit, select: { id: true },
     }) : await this.prisma.pagamento.findMany({
       where: { status: StatusPagamento.confirmado, pspProvedor: 'cora', origem: 'gateway', notaFiscal: null, confirmadoEm: { gt: from }, valorCustoBilhete: this.coraNotaValorTotal ? undefined : new Prisma.Decimal(0), cota: { comprador: { enderecoCep: { not: null }, enderecoLogradouro: { not: null }, enderecoNumero: { not: null }, enderecoBairro: { not: null }, enderecoCidade: { not: null }, enderecoUf: { not: null } } } },
@@ -450,7 +559,7 @@ export class NfseService {
         take: 300,
       }),
       this.prisma.pagamento.findMany({
-        where: { status: StatusPagamento.confirmado, notaFiscal: null, valorBruto: { gt: new Prisma.Decimal(0) } },
+        where: this.pendingWhere(),
         orderBy: { confirmadoEm: 'desc' },
         take: 200,
         select: { id: true, valorBruto: true, valorTaxaAdmin: true, metodo: true, confirmadoEm: true, pspProvedor: true, cota: { select: { titularNome: true, bolaoId: true, comprador: { select: { email: true, enderecoCep: true, enderecoLogradouro: true, enderecoNumero: true, enderecoBairro: true, enderecoCidade: true, enderecoUf: true } } } } },

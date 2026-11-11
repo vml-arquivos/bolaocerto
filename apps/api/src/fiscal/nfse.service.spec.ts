@@ -108,10 +108,75 @@ describe('NfseService — rotinas e operação manual', () => {
   it('modo automático emite os candidatos e segue em frente se um falhar', async () => {
     const { service, prisma, fiscal } = setup({ values: { NFSE_MODE: 'auto' } });
     prisma.pagamento.findMany.mockResolvedValue([{ id: 'pay-1' }, { id: 'pay-2' }]);
-    prisma.pagamento.findUnique.mockResolvedValueOnce(payment()).mockResolvedValueOnce(payment({ id: 'pay-2', status: StatusPagamento.pendente }));
+    prisma.pagamento.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => (where.id === 'pay-2' ? payment({ id: 'pay-2', status: StatusPagamento.pendente }) : payment()));
     const result = await service.autoEmit();
     expect(result).toEqual({ candidatos: 2, emitidas: 1, erros: 1 });
     expect(fiscal.emit).toHaveBeenCalledTimes(1);
+  });
+
+  describe('aviso da Focus NFe (webhook)', () => {
+    it('reconsulta a nota indicada e ignora aviso sem nota conhecida', async () => {
+      const { service, prisma } = setup();
+      (prisma.notaFiscal as Record<string, unknown>).findFirst = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'nota-1' });
+      const refresh = jest.spyOn(service, 'refresh').mockResolvedValue({} as never);
+      expect(await service.handleFocusWebhook({ ref: 'bl-desconhecida' })).toEqual({ ok: true, atualizada: false });
+      expect(await service.handleFocusWebhook({ ref: 'bl-pay-1', status: 'autorizado' })).toEqual({ ok: true, atualizada: true });
+      expect(await service.handleFocusWebhook({})).toEqual({ ok: true, atualizada: false });
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('modo escolhido no painel', () => {
+    const withStore = (rows: Array<{ chave: string; valor: string }>, values: Record<string, string> = {}) => {
+      const ctx = setup({ values });
+      const store = [...rows];
+      (ctx.prisma as Record<string, unknown>).configuracaoSistema = {
+        findMany: jest.fn(async () => store),
+        upsert: jest.fn(async ({ where, create, update }: { where: { chave: string }; create: { chave: string; valor: string }; update: { valor: string } }) => { const row = store.find((r) => r.chave === where.chave); if (row) row.valor = update.valor; else store.push(create); return row ?? create; }),
+      };
+      (ctx.prisma as Record<string, unknown>).notificacao = { create: jest.fn().mockResolvedValue({}) };
+      (ctx.prisma.pagamento as Record<string, unknown>).aggregate = jest.fn().mockResolvedValue({ _sum: {} });
+      return { ...ctx, store };
+    };
+
+    it('o que foi escolhido no painel vale mais que o NFSE_MODE do servidor', async () => {
+      const { service } = withStore([{ chave: 'nfse.modo', valor: 'auto' }], { NFSE_MODE: 'manual' });
+      expect(await service.loadSettings(true)).toBe('auto');
+      expect(service.mode).toBe('auto');
+    });
+
+    it('ligar o automático guarda o modo e a data de início, sem pegar vendas antigas', async () => {
+      const { service, store, audit } = withStore([]);
+      const result = await service.setMode('auto', admin);
+      expect(store.find((r) => r.chave === 'nfse.modo')?.valor).toBe('auto');
+      expect(Date.now() - Date.parse(store.find((r) => r.chave === 'nfse.auto_desde')!.valor)).toBeLessThan(5000);
+      expect(result.modo).toBe('auto');
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ evento: 'nfse.modo_alterado' }));
+    });
+
+    it('com o automático ligado no painel, a nota de um pagamento novo sai na hora e o cliente é avisado', async () => {
+      const { service, prisma, fiscal } = withStore([{ chave: 'nfse.modo', valor: 'auto' }], { NFSE_MODE: 'manual' });
+      prisma.pagamento.findMany.mockResolvedValue([{ id: 'pay-1' }]);
+      prisma.pagamento.findUnique.mockResolvedValue(payment({ valorBruto: new Prisma.Decimal(100), valorTaxaAdmin: new Prisma.Decimal(100) }));
+      fiscal.get = jest.fn().mockResolvedValue({ id: 'nfse_abcd1234', status: 'emitida', pdf: 'https://x/p.pdf', xml: null, number: '7' });
+      (prisma.notaFiscal.findUnique as jest.Mock).mockResolvedValue({ id: 'nota-1', pagamentoId: 'pay-1', origem: 'cora', provedorId: 'nfse_abcd1234', status: StatusNotaFiscal.aguardando, pdfUrl: null, xmlUrl: null, numero: null, emitidaEm: null });
+      (prisma.pagamento.findUnique as jest.Mock).mockResolvedValue({ ...payment(), cotaId: 'cota-1', cota: { compradorId: 'u1', comprador: FULL_USER } });
+      await service.autoEmitSoon();
+      expect(fiscal.emit).toHaveBeenCalledTimes(1);
+      expect((prisma as unknown as { notificacao: { create: jest.Mock } }).notificacao.create).toHaveBeenCalledWith({ data: expect.objectContaining({ tipo: 'nota.emitida', usuarioId: 'u1' }) });
+    });
+
+    it('com o painel em manual, pagamento confirmado não gera nota sozinho', async () => {
+      const { service, fiscal, prisma } = withStore([{ chave: 'nfse.modo', valor: 'manual' }], { NFSE_MODE: 'auto' });
+      await service.autoEmitSoon();
+      expect(prisma.pagamento.findMany).not.toHaveBeenCalled();
+      expect(fiscal.emit).not.toHaveBeenCalled();
+    });
+
+    it('"Emitir as pendentes" recusa quando a emissão está desligada', async () => {
+      const { service } = withStore([{ chave: 'nfse.modo', valor: 'off' }]);
+      await expect(service.emitPending(admin)).rejects.toThrow(/desligada/);
+    });
   });
 
   describe('base da nota: só a taxa de administração', () => {

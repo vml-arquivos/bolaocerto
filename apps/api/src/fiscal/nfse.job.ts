@@ -10,9 +10,9 @@ export class NfseJob {
 
   constructor(private readonly nfse: NfseService) {}
 
-  @Cron('*/5 * * * *')
+  @Cron('* * * * *')
   async run() {
-    if (this.running || this.nfse.mode === 'off') return;
+    if (this.running || (await this.nfse.loadSettings()) === 'off') return;
     this.running = true;
     try {
       const sync = await this.nfse.syncPending();

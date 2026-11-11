@@ -110,4 +110,37 @@ describe('Notificações e "avise-me"', () => {
     expect(on.sent[0].html).not.toContain('<script>');
     expect(on.sent[0].text).toContain('https://bl.exemplo/minha-conta');
   });
+
+  describe('e-mail da nota fiscal', () => {
+    const realFetch = global.fetch;
+    afterEach(() => { global.fetch = realFetch; });
+    const pdf = () => new Response(Buffer.from('%PDF-1.4 teste'), { status: 200, headers: { 'content-type': 'application/pdf' } });
+
+    it('anexa o PDF da nota quando vem da Focus NFe', async () => {
+      global.fetch = jest.fn().mockResolvedValue(pdf()) as never;
+      const ctx = setup({ smtp: true });
+      await ctx.service.notify('u1', 'nota.emitida', { titulo: 'Sua nota fiscal está pronta', mensagem: 'Pronta.', link: '/minha-conta', notaNumero: '123', notaPdfUrl: 'https://api.focusnfe.com.br/arquivos/nota.pdf' });
+      expect(await ctx.service.dispatchPending()).toEqual({ enviados: 1, falhas: 0 });
+      expect(ctx.sent[0].attachments?.[0]).toMatchObject({ filename: 'nota-fiscal-123.pdf', contentType: 'application/pdf' });
+      expect(ctx.sent[0].text).toContain('anexada');
+    });
+
+    it('não baixa de endereço estranho e manda o link no texto', async () => {
+      global.fetch = jest.fn().mockResolvedValue(pdf()) as never;
+      const ctx = setup({ smtp: true });
+      await ctx.service.notify('u1', 'nota.emitida', { mensagem: 'Pronta.', notaPdfUrl: 'https://exemplo-malicioso.test/nota.pdf' });
+      await ctx.service.dispatchPending();
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(ctx.sent[0].attachments).toBeUndefined();
+      expect(ctx.sent[0].text).toContain('https://exemplo-malicioso.test/nota.pdf');
+    });
+
+    it('se o download falhar, o e-mail sai mesmo assim, com o link', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error('rede')) as never;
+      const ctx = setup({ smtp: true });
+      await ctx.service.notify('u1', 'nota.emitida', { mensagem: 'Pronta.', notaPdfUrl: 'https://api.focusnfe.com.br/arquivos/nota.pdf' });
+      expect(await ctx.service.dispatchPending()).toEqual({ enviados: 1, falhas: 0 });
+      expect(ctx.sent[0].text).toContain('Baixar a nota fiscal (PDF)');
+    });
+  });
 });
