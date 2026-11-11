@@ -146,6 +146,7 @@ export function explainFocusError(raw: string): string {
   else if (text.includes('ctribmun')) hints.push('Falta o código de tributação municipal do serviço (NFSE_TRIB_MUNICIPAL, 3 números).');
   if (/e0314|e0315|tributa[cç][aã]o municipal inexistente|c[oó]digo de tributa[cç][aã]o municipal/.test(text) && !text.includes('pattern')) hints.push('O DF não reconhece esse código de tributação municipal para o serviço. Veja o código certo na lista do Emissor Nacional (nota de teste, campo "código de tributação municipal") ou com o contador e coloque em NFSE_TRIB_MUNICIPAL (3 números, nunca 000).');
   if (text.includes('cindop') || text.includes('inddest') || text.includes('ibscbs')) hints.push('O fisco recusou o grupo da reforma tributária (IBS/CBS): ele precisa ir completo (indicador da operação, CST e classificação, além do NBS). Confira NFSE_TRIB_NACIONAL=190101 ou preencha NFSE_NBS, NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST e NFSE_IBS_CBS_CLASS.');
+  if (/endere[cç]o do tomador|e0234/.test(text)) hints.push('O fisco exige o endereço do participante nesta nota. Peça para ele preencher em Minha conta, ou informe aqui em "Informar endereço e tentar de novo".');
   if (/inscri[cç][aã]o (municipal|do prestador)|cf\/df/.test(text)) hints.push('Confira a inscrição do prestador (no DF é o CF/DF, na variável NFSE_MUNICIPAL_REGISTER) e se é a mesma cadastrada na Focus.');
   if (text.includes('certificado')) hints.push('Confira o certificado digital A1 no painel da Focus (validade e senha).');
   return hints.join(' ');

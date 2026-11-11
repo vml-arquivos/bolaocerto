@@ -70,7 +70,11 @@ export class UserAddressController {
   get(@CurrentUser() user: AuthUser) { return this.nfse.getAddress(user.id); }
 
   @Put('endereco')
-  save(@Body() dto: AddressDto, @CurrentUser() user: AuthUser) { return this.nfse.saveAddress(user.id, dto); }
+  async save(@Body() dto: AddressDto, @CurrentUser() user: AuthUser) {
+    const saved = await this.nfse.saveAddress(user.id, dto);
+    void this.nfse.retryAfterAddress(user.id);
+    return saved;
+  }
 }
 
 /**

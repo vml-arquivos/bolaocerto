@@ -32,6 +32,16 @@ export async function lookupIbge(cep: string): Promise<string | null> {
   } catch { return null; }
 }
 
+/** Município do tomador: pelo CEP (ViaCEP); se a consulta falhar e o endereço for do DF (que tem um único município), é Brasília. */
+export async function resolveIbge(cep: string, uf: string | null | undefined): Promise<string | null> {
+  const found = await lookupIbge(cep);
+  if (found) return found;
+  return (uf ?? '').trim().toUpperCase() === 'DF' ? '5300108' : null;
+}
+
+/** Início do aviso quando falta o endereço do participante; o painel e a nova tentativa automática reconhecem a nota por ele. */
+export const ADDRESS_MISSING = 'Falta o endereço do participante para a nota.';
+
 const OPEN_STATUSES: StatusNotaFiscal[] = [StatusNotaFiscal.aguardando, StatusNotaFiscal.aguardando_certificado, StatusNotaFiscal.emitida];
 const USER_ADDRESS_SELECT = { enderecoCep: true, enderecoLogradouro: true, enderecoNumero: true, enderecoComplemento: true, enderecoBairro: true, enderecoCidade: true, enderecoUf: true, email: true } as const;
 type AddressUser = Prisma.UsuarioGetPayload<{ select: typeof USER_ADDRESS_SELECT }>;
@@ -221,6 +231,7 @@ export class NfseService {
       cnae: this.config.get<string>('NFSE_CNAE', '') || null,
       codigoServico: this.config.get<string>('NFSE_SERVICE_CODE', '') || null,
       emissorConfigurado: focus ? Boolean(focusIssuer.issuer) : Boolean(issuer.municipalRegister),
+      enderecoObrigatorio: focus ? Boolean(focusIssuer.issuer?.indicadorOperacao) : false,
       pronto: focus ? this.mode !== 'off' && Boolean(focusIssuer.issuer) : this.mode !== 'off' && this.issPct > 0 && Boolean(this.config.get<string>('NFSE_SERVICE_CODE', '')),
       pagamentosSemNota: withoutNote,
       baseDaNota: 'taxa_administracao',
@@ -348,9 +359,8 @@ export class NfseService {
     if (!issuer) throw new BadRequestException(`Falta configurar a emissão de notas: ${missing.join(', ')}.`);
     if (addressOverride) await this.saveAddress(payment.cota.comprador.id, addressOverride);
     const buyer = addressOverride ? await this.prisma.usuario.findUniqueOrThrow({ where: { id: payment.cota.comprador.id }, select: { id: true, nome: true, cpf: true, telefone: true, ...USER_ADDRESS_SELECT } }) : payment.cota.comprador;
-    // O endereço do tomador é opcional na nota de pessoa física; só vai se estiver completo e o município for encontrado pelo CEP.
-    const { address } = toReceiptAddress(buyer);
-    const ibge = address ? await lookupIbge(address.zip_code) : null;
+    const { address, missing: addressMissing } = toReceiptAddress(buyer);
+    const ibge = address ? await resolveIbge(address.zip_code, address.state) : null;
     const tomador: FocusTomador = {
       cpf: buyer.cpf, nome: buyer.nome, email: buyer.email, telefone: buyer.telefone,
       endereco: address && ibge ? { cep: address.zip_code, logradouro: address.street, numero: address.number, complemento: address.complement, bairro: address.district, codigoMunicipio: ibge } : null,
@@ -359,17 +369,29 @@ export class NfseService {
     // Mesma referência enquanto a nota anterior deu erro (a Focus aceita reenviar); depois de cancelada, uma referência nova.
     const previous = payment.notaFiscal;
     const ref = previous?.provedorId && previous.status !== StatusNotaFiscal.cancelada ? previous.provedorId : `bl-${payment.id}${previous ? `-${Date.now().toString(36)}` : ''}`;
+    const saveError = async (message: string) => {
+      const erro = message.slice(0, 500);
+      await this.prisma.notaFiscal.upsert({
+        where: { pagamentoId: payment.id },
+        create: { pagamentoId: payment.id, status: StatusNotaFiscal.erro, origem: 'focus', provedorId: ref, valor: new Prisma.Decimal(base.servico), descricao: description, erro, criadoPor: actor?.id },
+        update: { status: StatusNotaFiscal.erro, origem: 'focus', provedorId: ref, valor: new Prisma.Decimal(base.servico), erro, criadoPor: actor?.id },
+      });
+    };
+    // Com o grupo da reforma tributária (indicador da operação), o fisco recusa a nota sem o endereço do tomador (regra E0234).
+    // Em vez de mandar um pedido que já se sabe recusado, avisa o que falta, avisa o participante uma vez e deixa a nota pronta para tentar de novo.
+    if (issuer.indicadorOperacao && !tomador.endereco) {
+      const detail = address ? 'Não encontrei o município pelo CEP informado; confira o CEP.' : `Faltam: ${addressMissing.join(', ')}.`;
+      const message = `${ADDRESS_MISSING} O fisco exige o endereço nesta nota. ${detail} O participante preenche em Minha conta, ou você informa aqui em "Informar endereço e tentar de novo".`;
+      const firstTime = !previous?.erro?.startsWith(ADDRESS_MISSING);
+      await saveError(message);
+      if (firstTime) await this.notifyAddressNeeded(payment.id, payment.cota.id, payment.cota.comprador.id);
+      throw new BadRequestException(message);
+    }
     let info;
     try {
       info = await this.focusClient().emit(ref, { issuer, tomador, valor: base.servico, descricao: description });
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        await this.prisma.notaFiscal.upsert({
-          where: { pagamentoId: payment.id },
-          create: { pagamentoId: payment.id, status: StatusNotaFiscal.erro, origem: 'focus', provedorId: ref, valor: new Prisma.Decimal(base.servico), descricao: description, erro: (error.message || '').slice(0, 500), criadoPor: actor?.id },
-          update: { status: StatusNotaFiscal.erro, origem: 'focus', provedorId: ref, valor: new Prisma.Decimal(base.servico), erro: (error.message || '').slice(0, 500), criadoPor: actor?.id },
-        });
-      }
+      if (error instanceof BadRequestException) await saveError(error.message || '');
       throw error;
     }
     const data = { status: info.status as StatusNotaFiscal, origem: 'focus', provedorId: ref, valor: new Prisma.Decimal(base.servico), descricao: description, numero: info.numero, pdfUrl: info.pdf, xmlUrl: info.xml, erro: info.erro, canceladaEm: null, emitidaEm: info.status === 'emitida' ? new Date() : null, criadoPor: actor?.id };
@@ -390,6 +412,29 @@ export class NfseService {
     if (!note) return { ok: true, atualizada: false };
     try { await this.refresh(note.id); return { ok: true, atualizada: true }; }
     catch (error) { this.logger.warn(`Aviso da Focus para ${ref}: consulta falhou (${(error as Error).message}); a rotina tenta de novo.`); return { ok: true, atualizada: false }; }
+  }
+
+  /** Pede ao participante o endereço para a nota fiscal (uma vez por nota). Nunca atrapalha a emissão. */
+  private async notifyAddressNeeded(paymentId: string, cotaId: string, userId: string): Promise<void> {
+    try {
+      await this.prisma.notificacao.create({ data: { usuarioId: userId, canal: 'push', tipo: 'nota.endereco', payload: { titulo: 'Informe seu endereço para a nota fiscal', mensagem: 'Para emitir a nota fiscal do serviço da sua compra, precisamos do seu endereço. Preencha em Minha conta, em "Endereço para nota fiscal". A nota sai sozinha depois disso.', cotaId, pagamentoId: paymentId, link: '/minha-conta' } } });
+    } catch (error) { this.logger.warn(`Pedido de endereço não enviado: ${(error as Error).message}`); }
+  }
+
+  /** Participante salvou o endereço: no modo automático, as notas dele que esperavam o endereço são emitidas na hora. */
+  async retryAfterAddress(userId: string): Promise<void> {
+    try {
+      await this.loadSettings();
+      if (this.mode !== 'auto') return;
+      const waiting = await this.prisma.notaFiscal.findMany({
+        where: { status: StatusNotaFiscal.erro, origem: 'focus', erro: { startsWith: ADDRESS_MISSING }, pagamento: { cota: { compradorId: userId } } },
+        select: { pagamentoId: true }, take: 20,
+      });
+      for (const note of waiting) {
+        try { await this.emitForPayment(note.pagamentoId); } catch (error) { this.logger.warn(`Nova tentativa da nota ${note.pagamentoId} falhou: ${(error as Error).message}`); }
+      }
+      await this.autoEmit();
+    } catch (error) { this.logger.warn(`Nova tentativa depois do endereço falhou: ${(error as Error).message}`); }
   }
 
   /** Avisa o participante que a nota fiscal do serviço já pode ser baixada em "Minha conta". Nunca atrapalha a emissão. */

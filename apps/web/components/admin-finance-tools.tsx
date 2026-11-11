@@ -409,7 +409,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
     finally { setBusy(''); }
   }
   function submitPaymentForm(kind: 'emitir' | 'manual' | 'cancelar', paymentId: string, values: Record<string, string>) {
-    if (kind === 'emitir') return run(`emit-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/emitir`, { endereco: values }, () => 'Endereço salvo e nota solicitada à Cora.');
+    if (kind === 'emitir') return run(`emit-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/emitir`, { endereco: values }, () => `Endereço salvo e nota solicitada à ${settings?.provedor === 'focus' ? 'Focus NFe' : 'Cora'}.`);
     return run(`manual-${paymentId}`, `/api/v1/admin/notas-fiscais/pagamento/${paymentId}/manual`, values, () => 'Nota registrada.');
   }
   /** Abre a nota: atualiza a situação no emissor, abre o PDF quando existe e mostra o resumo da nota aqui mesmo. */
@@ -430,6 +430,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   const off = settings?.modo === 'off';
   const auto = settings?.modo === 'auto';
   const focus = settings?.provedor === 'focus';
+  const addressRequired = Boolean(settings?.enderecoObrigatorio);
   const emissor = focus ? 'Focus NFe' : 'Cora';
   const pending = Number(settings?.pagamentosSemNota ?? 0);
   return <>
@@ -458,10 +459,10 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       {!(data.semNota ?? []).length ? <p className="admin-note invoice-ok" role="status">{auto ? 'Tudo em dia: as notas saem sozinhas quando o pagamento é confirmado.' : 'Todos os pagamentos confirmados já têm nota.'}</p> : <Panel title={auto ? 'Aguardando emissão automática' : 'Pagamentos confirmados sem nota'}>
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
           <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
-          <td><span className={chip(row.enderecoCompleto || focus ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus ? 'opcional' : 'faltando'}</span></td>
+          <td><span className={chip(row.enderecoCompleto || (focus && !addressRequired) ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus && !addressRequired ? 'opcional' : 'faltando'}</span></td>
           <td><div className="admin-row-actions">
-            {row.emitivelPelaCora && (row.enderecoCompleto || focus) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir agora`}</button>}
-            {row.emitivelPelaCora && !row.enderecoCompleto && !focus && <button className="admin-button admin-button-small" disabled={off} onClick={() => setForm({ kind: 'emitir', id: row.pagamentoId })}>Informar endereço e emitir</button>}
+            {row.emitivelPelaCora && (row.enderecoCompleto || (focus && !addressRequired)) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir agora`}</button>}
+            {row.emitivelPelaCora && !row.enderecoCompleto && (!focus || addressRequired) && <button className="admin-button admin-button-small" disabled={off} onClick={() => setForm({ kind: 'emitir', id: row.pagamentoId })}>Informar endereço e emitir</button>}
             <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'manual', id: row.pagamentoId })}>{auto ? 'Já emitida fora do sistema' : 'Registrar nota manual'}</button>
           </div>
           {form && form.id === row.pagamentoId && (form.kind === 'emitir' || form.kind === 'manual') && <NoteForm kind={form.kind} busy={busy.endsWith(row.pagamentoId)} onCancel={() => setForm(null)}
@@ -496,8 +497,10 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
             <button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(busy)} onClick={() => void viewNote(note)}>{busy === `view-${note.id}` ? 'Abrindo…' : 'Ver nota'}</button>
             {note.origem !== 'manual' && note.status !== 'cancelada' && <button className="admin-button admin-button-small" disabled={Boolean(busy)} onClick={() => void run(`sync-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, {}, () => 'Nota atualizada.')}>Atualizar</button>}
             {note.status === 'erro' && note.origem !== 'manual' && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${note.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${note.pagamentoId}/emitir`, {}, () => `Nova tentativa enviada à ${emissor}.`)}>Tentar de novo</button>}
+            {note.status === 'erro' && note.origem !== 'manual' && /endere[cç]o do (participante|tomador)/i.test(note.erro ?? '') && <button className="admin-button admin-button-small admin-button-primary" disabled={off} onClick={() => setForm({ kind: 'emitir', id: note.pagamentoId })}>Informar endereço e tentar de novo</button>}
             {note.status !== 'cancelada' && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => setForm({ kind: 'cancelar', id: note.id })}>Cancelar</button>}
           </div>
+          {form && form.kind === 'emitir' && form.id === note.pagamentoId && <NoteForm kind="emitir" busy={busy.endsWith(note.pagamentoId)} onCancel={() => setForm(null)} onSubmit={(values) => void submitPaymentForm('emitir', note.pagamentoId, values)} />}
           {form && form.kind === 'cancelar' && form.id === note.id && <NoteForm kind="cancelar" busy={busy === `cancel-${note.id}`} onCancel={() => setForm(null)} onSubmit={(values) => void run(`cancel-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/cancelar`, values, () => 'Nota cancelada.')} />}
           </td></tr>)}</tbody></Table>
         {!(data.notas ?? []).length && <Empty text="Nenhuma nota fiscal registrada ainda" />}

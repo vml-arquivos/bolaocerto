@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, StatusNotaFiscal, StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
 import { FocusNfseClient, brazilStamp, buildFocusBody, defaultIbsCbs, defaultMunicipalCode, defaultNbs, explainFocusError, mapFocusStatus } from './nfse.focus';
-import { NfseService } from './nfse.service';
+import { ADDRESS_MISSING, NfseService } from './nfse.service';
 
 const admin = { id: 'admin-1', papel: 'admin' } as AuthUser;
 const issuer = { cnpj: '11222333000181', inscricaoMunicipal: '1234567', codigoMunicipio: '5300108', codigoTributacaoNacional: '170901', opcaoSimples: 3, percentualTributos: 0 };
@@ -33,7 +33,7 @@ describe('buildFocusBody', () => {
     expect(body).toMatchObject({ codigo_nbs: '114062000', codigo_indicador_operacao: '100301', ibs_cbs_situacao_tributaria: '000', ibs_cbs_classificacao_tributaria: '000001', finalidade_emissao: 0, consumidor_final: 1, indicador_destinatario: 0 });
   });
 
-  it('Brasília usa os 4 primeiros dígitos do código nacional como código municipal', () => {
+  it('Brasília usa 001 como código municipal (3 números) quando não há outro', () => {
     expect(defaultMunicipalCode('5300108', '100801')).toBe('001');
     expect(defaultMunicipalCode('3550308', '100801')).toBeUndefined();
     expect(defaultMunicipalCode('5300108', '')).toBeUndefined();
@@ -64,6 +64,7 @@ describe('buildFocusBody', () => {
     const formato = "Element 'cTribMun': [facet 'pattern'] The value '1901' is not accepted by the pattern '[0-9]{3}'.";
     expect(explainFocusError(formato)).toMatch(/exatamente 3 números/);
     expect(explainFocusError(formato)).not.toMatch(/não reconhece/);
+    expect(explainFocusError('E0234: O endereço do tomador é obrigatório para o indicador de operação informado')).toMatch(/Informar endereço/);
     const inexistente = 'E0314: Código de tributação municipal inexistente para o município de incidência.';
     expect(explainFocusError(inexistente)).toMatch(/não reconhece esse código/);
   });
@@ -136,6 +137,7 @@ function setup(options: { values?: Record<string, string>; payment?: unknown; ca
       findMany: jest.fn().mockResolvedValue([]), groupBy: jest.fn().mockResolvedValue([]),
     },
     usuario: { update: jest.fn(), findUniqueOrThrow: jest.fn().mockResolvedValue(BUYER), findUnique: jest.fn() },
+    notificacao: { create: jest.fn().mockResolvedValue({}) },
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const focus = { emit: jest.fn().mockResolvedValue({ status: 'aguardando', numero: null, pdf: null, xml: null, erro: null }), get: jest.fn(), cancel: jest.fn(), ...options.focus };
@@ -199,6 +201,57 @@ describe('NfseService com a Focus NFe', () => {
     prisma.notaFiscal.findUnique.mockResolvedValue({ id: 'nota-1', origem: 'focus', provedorId: 'bl-ref-123', status: StatusNotaFiscal.emitida });
     await service.cancel('nota-1', { motivo: 'Cobrança duplicada, nota emitida por engano' }, admin);
     expect(focus.cancel).toHaveBeenCalledWith('bl-ref-123', 'Cobrança duplicada, nota emitida por engano');
+  });
+
+  it('com o grupo da reforma, nota sem endereço do participante não vai ao fisco: avisa o que falta e pede o endereço uma vez', async () => {
+    const { service, focus, prisma } = setup({ values: { NFSE_TRIB_NACIONAL: '190101' } });
+    await expect(service.emitForPayment('p', admin)).rejects.toThrow(/Falta o endereço do participante/);
+    expect(focus.emit).not.toHaveBeenCalled();
+    const saved = prisma.notaFiscal.upsert.mock.calls[0]![0].create;
+    expect(saved).toMatchObject({ status: StatusNotaFiscal.erro, origem: 'focus' });
+    expect(saved.erro).toMatch(/Faltam: logradouro, número, bairro, cidade, UF, CEP/);
+    expect(prisma.notificacao.create).toHaveBeenCalledTimes(1);
+    expect(prisma.notificacao.create.mock.calls[0]![0].data).toMatchObject({ usuarioId: 'u1', tipo: 'nota.endereco' });
+    // segunda tentativa, nota já com o mesmo aviso: não pede o endereço de novo
+    const again = setup({ values: { NFSE_TRIB_NACIONAL: '190101' }, payment: payment({ notaFiscal: { id: 'n', status: StatusNotaFiscal.erro, provedorId: 'bl-x-123', erro: ADDRESS_MISSING + ' outro texto' } }) });
+    await expect(again.service.emitForPayment('p', admin)).rejects.toThrow(/endereço/);
+    expect(again.prisma.notificacao.create).not.toHaveBeenCalled();
+  });
+
+  it('com o grupo da reforma e endereço completo, manda o endereço e o indicador da operação; endereço do DF dispensa a consulta do CEP', async () => {
+    const buyer = { ...BUYER, enderecoCep: '70040010', enderecoLogradouro: 'SBS Quadra 2', enderecoNumero: '10', enderecoBairro: 'Asa Sul', enderecoCidade: 'Brasília', enderecoUf: 'DF' };
+    const spy = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('sem rede'));
+    try {
+      const { service, focus } = setup({ values: { NFSE_TRIB_NACIONAL: '190101' }, payment: payment({ cota: { id: 'cota-1', comprador: buyer } }) });
+      await service.emitForPayment('p', admin);
+      const input = (focus.emit as jest.Mock).mock.calls[0]![1];
+      expect(input.tomador.endereco).toMatchObject({ cep: '70040010', codigoMunicipio: '5300108' });
+      expect(input.issuer.indicadorOperacao).toBe('100301');
+    } finally { spy.mockRestore(); }
+  });
+
+  it('sem o grupo da reforma, o endereço continua opcional', async () => {
+    const { service, focus } = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'false' } });
+    await service.emitForPayment('p', admin);
+    expect(focus.emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('depois que o participante salva o endereço, o modo automático emite as notas que esperavam', async () => {
+    const { service, prisma, focus } = setup({ values: { NFSE_TRIB_NACIONAL: '190101' } });
+    prisma.notaFiscal.findMany.mockResolvedValueOnce([{ pagamentoId: 'pay-1' }]);
+    const spy = jest.spyOn(service, 'emitForPayment').mockResolvedValue({} as never);
+    await service.retryAfterAddress('u1');
+    expect(prisma.notaFiscal.findMany.mock.calls[0]![0].where).toMatchObject({ status: StatusNotaFiscal.erro, pagamento: { cota: { compradorId: 'u1' } } });
+    expect(spy).toHaveBeenCalledWith('pay-1');
+    expect(focus.emit).not.toHaveBeenCalled();
+    const manual = setup({ values: { NFSE_MODE: 'manual' } });
+    await manual.service.retryAfterAddress('u1');
+    expect(manual.prisma.notaFiscal.findMany).not.toHaveBeenCalled();
+  });
+
+  it('a configuração diz quando o endereço é obrigatório', async () => {
+    expect(await setup({ values: { NFSE_TRIB_NACIONAL: '190101' } }).service.settings()).toMatchObject({ enderecoObrigatorio: true });
+    expect(await setup().service.settings()).toMatchObject({ enderecoObrigatorio: false });
   });
 
   it('a configuração informa provedor, ambiente e pendências', async () => {
