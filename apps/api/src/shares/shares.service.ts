@@ -12,6 +12,9 @@ import { ReserveShareDto } from './shares.dto';
 import { remainingForPerson, saleWindowMessage } from '../pools/sales-rules';
 
 import { joinAffiliateGroup, joinGroup } from '../common/affiliate-groups';
+import { amountsForPool } from '../payments/payments.service';
+import { recordCouponUse, resolveCoupon } from '../promotions/coupons';
+import { toCents as couponCents } from '../promotions/promo-math';
 @Injectable()
 export class SharesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly responsible?: ResponsiblePlayService) {}
@@ -39,6 +42,17 @@ export class SharesService {
     const affiliate = dto.codigoAfiliado
       ? await this.prisma.afiliado.findFirst({ where: { codigoAfiliado: dto.codigoAfiliado.trim(), statusAprovacao: 'aprovado' }, select: { id: true, usuarioId: true } })
       : null;
+    // Cupom automático: a consulta é feita antes, fora da transação, e qualquer falha nela só significa "sem desconto"; nunca trava a compra.
+    let autoCoupon = false;
+    if (!dto.cupom?.trim()) {
+      try {
+        const preview = await this.prisma.bolao.findUnique({ where: { id: dto.bolaoId }, select: { valorCota: true, taxaAdministracaoPct: true, precificacao: true } });
+        if (preview) {
+          const base = amountsForPool(preview, dto.quantidade, 0);
+          autoCoupon = Boolean(await resolveCoupon(this.prisma, { userId: user.id, grossCents: couponCents(base.gross), feeCents: couponCents(base.adminFee), lock: false }));
+        }
+      } catch { autoCoupon = false; }
+    }
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM boloes WHERE id = ${dto.bolaoId}::uuid FOR UPDATE`;
       const pool = await tx.bolao.findUnique({ where: { id: dto.bolaoId }, include: { jogos: { orderBy: { ordem: 'asc' } }, grupo: { select: { id: true, tipo: true, afiliado: { select: { id: true, usuarioId: true, statusAprovacao: true } } } } } });
@@ -74,6 +88,9 @@ export class SharesService {
       if (takenByBl) await joinGroup(tx, pool.ofertaBlGrupoId as string, user.id);
       else if (pool.grupo?.tipo === 'afiliado' && groupAffiliate && groupAffiliate.usuarioId !== user.id) await joinGroup(tx, pool.grupo.id, user.id);
       else if (affiliate && affiliate.usuarioId !== user.id) await joinAffiliateGroup(tx, affiliate.id, user.id);
+      // Cupom: o código digitado ou o automático a que a pessoa tem direito. O desconto sai da taxa; o custo dos jogos não muda.
+      const baseAmounts = amountsForPool(pool, dto.quantidade, 0);
+      const coupon = dto.cupom?.trim() || autoCoupon ? await resolveCoupon(tx, { userId: user.id, code: dto.cupom, grossCents: couponCents(baseAmounts.gross), feeCents: couponCents(baseAmounts.adminFee) }) : null;
       const share = await tx.cota.create({
         data: {
           bolaoId: pool.id,
@@ -88,12 +105,16 @@ export class SharesService {
         },
         include: { mandato: true },
       });
+      if (coupon) {
+        await recordCouponUse(tx, { cupomId: coupon.cupomId, cotaId: share.id, usuarioId: user.id, descontoCentavos: coupon.descontoCentavos });
+        await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'cupom.aplicado', atorId: user.id, payloadDepois: { cupom: coupon.codigo, descontoCentavos: coupon.descontoCentavos, automatico: coupon.automatico } });
+      }
       const updatedPool = await tx.bolao.update({ where: { id: pool.id }, data: { cotasVendidas: { increment: dto.quantidade } } });
       await this.audit.record(tx, { entidade: 'bolao', entidadeId: pool.id, evento: 'cota.reservada', atorId: user.id, payloadAntes: pool as unknown as Prisma.InputJsonValue, payloadDepois: updatedPool as unknown as Prisma.InputJsonValue });
       await this.audit.record(tx, { entidade: 'cota', entidadeId: share.id, evento: 'mandato.aceito', atorId: user.id, payloadDepois: { cotaId: share.id, termoHash: share.mandato?.textoHash, afiliadoId: referenceAffiliateId ?? null } });
-      return share;
+      return { share, coupon };
     });
-    return { id: result.id, bolaoId: result.bolaoId, status: result.status, quantidade: result.quantidade, expiraReservaEm: result.expiraReservaEm };
+    return { id: result.share.id, bolaoId: result.share.bolaoId, status: result.share.status, quantidade: result.share.quantidade, expiraReservaEm: result.share.expiraReservaEm, ...(result.coupon ? { cupom: { codigo: result.coupon.codigo, descontoCentavos: result.coupon.descontoCentavos } } : {}) };
   }
 
   async listMine(user: AuthUser, onlyPrize = false) {

@@ -30,4 +30,10 @@ export class ReserveShareDto {
   @IsString()
   @MaxLength(20)
   codigoAfiliado?: string;
+
+  /** Código de cupom de desconto (opcional). Sem código, vale o cupom automático a que a pessoa tiver direito, se houver. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  cupom?: string;
 }

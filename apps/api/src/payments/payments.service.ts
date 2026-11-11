@@ -7,6 +7,8 @@ import { AuthUser } from '../auth/auth.utils';
 import { addDaysToDate, brazilDate, endOfBrazilDay, round2 } from '../common/brazil-time';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
+import { applyDiscount } from '../promotions/promo-math';
+import { grantCampaignCashback } from '../promotions/cashback';
 import { addEntry, grantReferralCashback, lockWallet, unwindWalletForPayment, walletBalance, WALLET_KINDS } from '../wallet/wallet';
 import { CancelShareDto, CreatePaymentDto, ManualPaymentDto, ManualSaleDto } from './payments.dto';
 import { buildCardProvider, buildPaymentProvider, ChargeMethod, ChargeStatus, CoraProvider, PaymentProvider } from './payment.provider';
@@ -26,6 +28,17 @@ export function computeShareAmounts(valorCota: number, quantidade: number, taxaA
   const adminFee = round2(gross - cost);
   const affiliateCommission = round2(adminFee * (comissaoAfiliadoPct / 100));
   return { gross, cost, adminFee, affiliateCommission };
+}
+
+/** Valores de `quantidade` cotas de um bolão, sem cupom. Usa o preço congelado do bolão quando existe. */
+export function amountsForPool(bolao: { valorCota: Prisma.Decimal | number; taxaAdministracaoPct: Prisma.Decimal | number; precificacao?: Prisma.JsonValue | null }, quantidade: number, affiliatePct: number): ShareAmounts {
+  const snapshot = bolao.precificacao as { ticketPerShare?: number; feePerShare?: number } | null;
+  if (snapshot && Number.isSafeInteger(snapshot.ticketPerShare) && Number.isSafeInteger(snapshot.feePerShare)) {
+    const cost = snapshot.ticketPerShare! * quantidade / 100;
+    const adminFee = snapshot.feePerShare! * quantidade / 100;
+    return { cost, adminFee, gross: round2(cost + adminFee), affiliateCommission: round2(adminFee * affiliatePct / 100) };
+  }
+  return computeShareAmounts(Number(bolao.valorCota), quantidade, Number(bolao.taxaAdministracaoPct), affiliatePct);
 }
 
 @Injectable()
@@ -56,15 +69,11 @@ export class PaymentsService {
     this.boletoMinHoursToCutoff = Number(config.get<string>('PAYMENT_BOLETO_MIN_HOURS_TO_CUTOFF', '96')) || 96;
   }
 
-  private shareAmounts(share: { quantidade: number; bolao: { valorCota: Prisma.Decimal; taxaAdministracaoPct: Prisma.Decimal; precificacao?: Prisma.JsonValue | null }; afiliadoReferencia?: { comissaoPadraoPct: Prisma.Decimal } | null }): ShareAmounts {
-    const snapshot = share.bolao.precificacao as { ticketPerShare?: number; feePerShare?: number } | null;
+  /** Valores da cota; com cupom, o desconto já vem aplicado (sai da taxa; o custo dos jogos não muda). */
+  private shareAmounts(share: { quantidade: number; bolao: { valorCota: Prisma.Decimal; taxaAdministracaoPct: Prisma.Decimal; precificacao?: Prisma.JsonValue | null }; afiliadoReferencia?: { comissaoPadraoPct: Prisma.Decimal } | null; cupomUso?: { descontoCentavos: number } | null }): ShareAmounts {
     const affiliate = Number(share.afiliadoReferencia?.comissaoPadraoPct ?? 0);
-    if (snapshot && Number.isSafeInteger(snapshot.ticketPerShare) && Number.isSafeInteger(snapshot.feePerShare)) {
-      const cost = snapshot.ticketPerShare! * share.quantidade / 100;
-      const adminFee = snapshot.feePerShare! * share.quantidade / 100;
-      return { cost, adminFee, gross: round2(cost + adminFee), affiliateCommission: round2(adminFee * affiliate / 100) };
-    }
-    return computeShareAmounts(Number(share.bolao.valorCota), share.quantidade, Number(share.bolao.taxaAdministracaoPct), affiliate);
+    const base = amountsForPool(share.bolao, share.quantidade, affiliate);
+    return share.cupomUso && share.cupomUso.descontoCentavos > 0 ? applyDiscount(base, share.cupomUso.descontoCentavos, affiliate) : base;
   }
 
   /** Provedor Cora ativo (usado pelo módulo fiscal para emitir NFS-e), ou null. */
@@ -116,7 +125,7 @@ export class PaymentsService {
 
   async createForShare(shareId: string, dto: CreatePaymentDto, user: AuthUser) {
     if (!this.enabled) throw new ServiceUnavailableException('Os pagamentos estão temporariamente indisponíveis. Tente novamente em instantes.');
-    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: { include: { concurso: true } }, comprador: true, afiliadoReferencia: true, pagamento: true } });
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: { include: { concurso: true } }, comprador: true, afiliadoReferencia: true, pagamento: true, cupomUso: true } });
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.compradorId !== user.id) throw new ConflictException('A cota não pertence ao usuário autenticado.');
     if (share.status !== StatusCota.reservada || (share.expiraReservaEm && share.expiraReservaEm <= new Date())) throw new ConflictException('A reserva não está mais disponível para pagamento.');
@@ -393,7 +402,7 @@ export class PaymentsService {
   /* ------------------------------------------------------------------ */
 
   async markPaidManually(shareId: string, dto: ManualPaymentDto, admin: AuthUser) {
-    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: true, afiliadoReferencia: true, pagamento: true } });
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: true, afiliadoReferencia: true, pagamento: true, cupomUso: true } });
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.status !== StatusCota.reservada && share.status !== StatusCota.cancelada) throw new ConflictException('Somente cotas reservadas (ou expiradas) podem receber baixa manual.');
     if (share.pagamento?.status === StatusPagamento.confirmado) throw new ConflictException('Esta cota já possui pagamento confirmado.');
@@ -426,6 +435,12 @@ export class PaymentsService {
       if (!payment || payment.status !== StatusPagamento.confirmado || !([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(payment.cota.status)) return;
       await this.prisma.$transaction((tx) => grantReferralCashback(tx, { pagamentoId: payment.id, compradorId: payment.cota.compradorId, taxaAdmin: Number(payment.valorTaxaAdmin), comissaoAfiliado: Number(payment.valorComissaoAfiliado) }));
     } catch (error) { this.logger.warn(`Cashback de indicação não registrado: ${error instanceof Error ? error.message : String(error)}`); }
+    // Cashback de campanha (grupos e clientes escolhidos pelo administrador): em transação própria, para nunca atrapalhar o resto.
+    try {
+      const payment = await this.prisma.pagamento.findUnique({ where: { id: paymentId }, include: { cota: { select: { compradorId: true, status: true } } } });
+      if (!payment || payment.status !== StatusPagamento.confirmado || !([StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada] as StatusCota[]).includes(payment.cota.status)) return;
+      await this.prisma.$transaction((tx) => grantCampaignCashback(tx, { pagamentoId: payment.id, compradorId: payment.cota.compradorId, paidCents: Math.round(Number(payment.valorBruto) * 100), feeCents: Math.round(Number(payment.valorTaxaAdmin) * 100), commissionCents: Math.round(Number(payment.valorComissaoAfiliado) * 100), formaBaixa: payment.formaBaixa }));
+    } catch (error) { this.logger.warn(`Cashback de campanha não registrado: ${error instanceof Error ? error.message : String(error)}`); }
   }
 
   /** Depois do estorno: devolve o saldo usado na compra e desfaz o cashback. Idempotente. */
@@ -439,7 +454,7 @@ export class PaymentsService {
    * o desconto do saldo e a baixa da cota acontecem juntos, na mesma transação.
    */
   async payWithBalance(shareId: string, user: AuthUser) {
-    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: true, afiliadoReferencia: true, pagamento: true } });
+    const share = await this.prisma.cota.findUnique({ where: { id: shareId }, include: { bolao: true, afiliadoReferencia: true, pagamento: true, cupomUso: true } });
     if (!share) throw new NotFoundException('Cota não encontrada.');
     if (share.compradorId !== user.id) throw new ConflictException('A cota não pertence ao usuário autenticado.');
     if (share.status !== StatusCota.reservada || (share.expiraReservaEm && share.expiraReservaEm <= new Date())) throw new ConflictException('A reserva não está mais disponível para pagamento.');

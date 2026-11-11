@@ -27,6 +27,7 @@ function fakeTx(opts: { pct?: string; buyer?: any; referrer?: any } = {}) {
     usuario: { findUnique: async ({ where }: any) => (where.id === 'comprador' ? opts.buyer ?? { indicadoPorUsuarioId: 'indicador' } : opts.referrer ?? { id: where.id, desativadoEm: null }) },
     carteiraMovimento: {
       findUnique: async ({ where }: any) => entries.find((e) => e.chave === where.chave) ?? null,
+      findMany: async ({ where }: any) => entries.filter((e) => (!where?.chave?.startsWith || String(e.chave ?? '').startsWith(where.chave.startsWith)) && (!where?.chave?.endsWith || String(e.chave ?? '').endsWith(where.chave.endsWith))),
       create: async ({ data }: any) => { entries.push(data); return data; },
       aggregate: async ({ where }: any) => ({ _sum: { valorCentavos: entries.filter((e) => e.usuarioId === where.usuarioId).reduce((s, e) => s + e.valorCentavos, 0) || null } }),
     },

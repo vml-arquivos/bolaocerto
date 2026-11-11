@@ -176,6 +176,16 @@ jobs:
         env:
           E2E_API_URL: http://localhost:3001
           E2E_BASE_URL: http://localhost:3000
+      - name: Cupom de desconto e cashback (só administrador, só para o público escolhido)
+        run: NODE_PATH=$(npm root -g) node --test e2e/cupons-cashback.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+          E2E_BASE_URL: http://localhost:3000
+      - name: Telas de cupom e cashback (painel e compra)
+        run: NODE_PATH=$(npm root -g) node --test e2e/cupons-painel.test.mjs
+        env:
+          E2E_API_URL: http://localhost:3001
+          E2E_BASE_URL: http://localhost:3000
       - name: App do afiliado (entrada própria, instalação, menu de baixo e aba Cotas)
         run: NODE_PATH=$(npm root -g) node --test e2e/affiliate-app.test.mjs
         env:

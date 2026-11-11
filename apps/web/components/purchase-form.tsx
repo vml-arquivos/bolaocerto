@@ -27,6 +27,9 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
   const [holderName, setHolderName] = useState('');
   const [holderCpf, setHolderCpf] = useState('');
   const [review, setReview] = useState(false);
+  const [couponInput, setCouponInput] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [promo, setPromo] = useState<{ aplicado: boolean; codigo?: string; descontoCentavos?: number; totalComDescontoCentavos?: number; erro?: string; cashback?: { nome: string; percentual: number } | null } | null>(null);
   useEffect(() => { void fetch('/api/v1/auth/me', { credentials: 'include', cache: 'no-store' }).then(async (response) => setMe(response.ok ? await response.json() as { nome: string } : null)).catch(() => setMe(null)); }, []);
   const [methods, setMethods] = useState<Method[]>(['pix']);
   const [method, setMethod] = useState<Method>('pix');
@@ -47,6 +50,19 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     }).catch(() => undefined);
   }, [paymentsEnabled]);
 
+  /** Desconto automático ou cupom digitado. Só mostra o valor: quem decide é o servidor na reserva. */
+  useEffect(() => {
+    if (!paymentsEnabled || !me) { setPromo(null); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const query = new URLSearchParams({ bolaoId: poolId, quantidade: String(qty), ...(couponCode ? { codigo: couponCode } : {}) });
+      void fetch(`/api/v1/cupons/aplicavel?${query.toString()}`, { credentials: 'include' }).then((response) => (response.ok ? response.json() : null)).then((data) => { if (!cancelled) setPromo(data); }).catch(() => { if (!cancelled) setPromo(null); });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [paymentsEnabled, me, poolId, qty, couponCode]);
+  const discount = promo?.aplicado ? Number(promo.descontoCentavos ?? 0) / 100 : 0;
+  const totalToPay = Math.max(0, Number(unitPrice) * qty - discount);
+
   /** Passo 1: confere os dados e mostra o resumo. Nada é reservado nem cobrado ainda. */
   function goReview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setMessage('');
@@ -62,7 +78,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     setLoading(true); setMessage(''); setCreated(null);
     try {
       if (!contract?.aprovado || !accepted) throw new Error('Leia e aceite o contrato vigente antes de reservar.');
-      const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: qty, ...(otherHolder ? { titularCpf: holderCpf, titularNome: holderName.trim() } : {}), termoMandatoHash: contract.hash, aceitoTermos: true }) });
+      const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: qty, ...(otherHolder ? { titularCpf: holderCpf, titularNome: holderName.trim() } : {}), termoMandatoHash: contract.hash, aceitoTermos: true, ...(couponCode ? { cupom: couponCode } : {}) }) });
       if (reserveResponse.status === 401) throw new Error('Entre na sua conta antes de reservar uma cota.');
       const reserve = await reserveResponse.json() as { id?: string; message?: string | string[] };
       if (!reserveResponse.ok || !reserve.id) throw new Error(Array.isArray(reserve.message) ? reserve.message.join(' ') : reserve.message || 'Falha ao reservar.');
@@ -92,7 +108,8 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
           <dt>Cotas</dt><dd>{qty} × {money(unitPrice)}</dd>
           <dt>Titular</dt><dd>{otherHolder ? `${holderName.trim()} (CPF final ${holderCpf.slice(-3)})` : me?.nome}</dd>
           <dt>Pagamento</dt><dd>{METHOD_LABEL[method]}</dd>
-          <dt>Total a pagar</dt><dd className="review-total">{money(Number(unitPrice) * qty)}</dd>
+          {discount > 0 && <><dt>Desconto{promo?.codigo ? ` (${promo.codigo})` : ''}</dt><dd>− {money(discount)}</dd></>}
+          <dt>Total a pagar</dt><dd className="review-total">{money(totalToPay)}</dd>
         </dl>
         <small className="muted">Ao confirmar, as cotas ficam reservadas para você por um prazo curto e a cobrança é gerada. Se o pagamento não for feito no prazo, a reserva é cancelada sem custo. O BL registra o jogo nos canais oficiais da CAIXA depois da confirmação do pagamento.</small>
         <div className="purchase-review-actions">
@@ -105,7 +122,10 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
           <div className="stepper"><button type="button" aria-label="Menos uma cota" onClick={() => setQty((value) => Math.max(1, value - 1))} disabled={qty <= 1}>−</button>
             <input id="quantidade" name="quantidade" type="number" inputMode="numeric" min={1} {...(maxQuantity === undefined ? {} : { max: maxQuantity })} value={qty} onChange={(event) => setQty(Math.max(1, Math.trunc(Number(event.target.value) || 1)))} required />
             <button type="button" aria-label="Mais uma cota" onClick={() => setQty((value) => (maxQuantity === undefined ? value + 1 : Math.min(maxQuantity, value + 1)))} disabled={maxQuantity !== undefined && qty >= maxQuantity}>+</button></div>
-          <strong className="buy-total" aria-live="polite">{money(Number(unitPrice) * qty)}</strong></div>
+          <strong className="buy-total" aria-live="polite">{discount > 0 && <s>{money(Number(unitPrice) * qty)}</s>}{money(totalToPay)}</strong></div>
+        <div className="buy-coupon">{promo?.aplicado && <small className="coupon-ok" role="status">Desconto de {money(discount)}{promo.codigo ? ` com o cupom ${promo.codigo}` : ''} aplicado.</small>}{promo?.erro && <small className="coupon-error" role="alert">{promo.erro}</small>}{promo?.cashback && <small className="muted">Cashback de {String(promo.cashback.percentual).replace('.', ',')}% na carteira depois que o pagamento for confirmado.</small>}
+          {couponCode ? <button type="button" className="text-link" onClick={() => { setCouponCode(''); setCouponInput(''); }}>Tirar cupom</button>
+            : <details><summary>Tenho um cupom</summary><div className="buy-coupon-row"><input id="cupom" name="cupom" aria-label="Código do cupom" maxLength={60} value={couponInput} onChange={(event) => setCouponInput(event.target.value.toUpperCase())} placeholder="Código do cupom" /><button type="button" className="button button-secondary" disabled={!couponInput.trim()} onClick={() => setCouponCode(couponInput.trim())}>Aplicar</button></div></details>}</div>
         {maxPerPerson !== null && <small className="muted">Máximo de {maxPerPerson} {maxPerPerson === 1 ? 'cota' : 'cotas'} por pessoa.</small>}
         {!otherHolder ? <p className="buy-holder">Em nome de <strong>{me?.nome}</strong> · <button type="button" className="text-link" onClick={() => setOtherHolder(true)}>outro titular</button></p>
           : <div className="buy-holder-fields"><div className="field"><label htmlFor="titularNome">Nome do titular</label><input id="titularNome" name="titularNome" minLength={2} required value={holderName} onChange={(event) => setHolderName(event.target.value)} /></div>

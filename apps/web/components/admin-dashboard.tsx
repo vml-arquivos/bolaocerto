@@ -38,9 +38,10 @@ import { SettingsView } from './admin-views/settings-view';
 import { FinanceView } from './admin-views/finance-view';
 import { AdminHubTabs } from './admin-hub-tabs';
 import { WalletAdminView } from './admin-wallet';
+import { PromotionsAdminView } from './admin-promotions';
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos', 'funil']);
+const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos', 'funil']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
 function AdminDashboardContent({ testMode }: { testMode: boolean }) {
@@ -194,6 +195,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'financeiro') return <FinanceView />;
     if (view === 'notas-fiscais') return <InvoicesView notify={notify} />;
     if (view === 'carteira') return <WalletAdminView notify={notify} />;
+    if (view === 'cupons') return <PromotionsAdminView notify={notify} />;
     if (view === 'concursos') return <ContestsView ctx={ctx} />;
     if (view === 'boloes') return <PoolsView ctx={ctx} />;
     if (view === 'jogos') return <GamesView ctx={ctx} />;

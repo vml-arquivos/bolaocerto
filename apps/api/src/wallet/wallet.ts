@@ -9,6 +9,8 @@ export const WALLET_KINDS = {
   purchase: 'debito_compra',
   purchaseRefund: 'estorno_compra',
   cashbackReversal: 'estorno_cashback',
+  campaignCashback: 'cashback_campanha',
+  campaignReversal: 'estorno_cashback_campanha',
 } as const;
 
 export const KIND_LABELS: Record<string, string> = {
@@ -19,6 +21,8 @@ export const KIND_LABELS: Record<string, string> = {
   debito_compra: 'Compra de cota',
   estorno_compra: 'Compra estornada',
   estorno_cashback: 'Cashback desfeito',
+  cashback_campanha: 'Cashback',
+  estorno_cashback_campanha: 'Cashback desfeito',
 };
 
 export const CASHBACK_PCT_KEY = 'cashback_indicacao_pct';
@@ -97,6 +101,14 @@ export async function unwindWalletForPayment(tx: Prisma.TransactionClient, input
   if (input.formaBaixa === 'saldo_bl') {
     await lockWallet(tx, input.compradorId);
     await addEntry(tx, { usuarioId: input.compradorId, tipo: WALLET_KINDS.purchaseRefund, valorCentavos: toCents(input.valorBruto), descricao: 'Compra estornada: o valor voltou para a sua carteira', chave: `estorno_compra:${input.pagamentoId}` });
+  }
+  // Cashback de campanha dado por este pagamento (chave camp:<campanha>:<pagamento>): também volta.
+  const campaigns = await tx.carteiraMovimento.findMany({ where: { chave: { startsWith: 'camp:', endsWith: `:${input.pagamentoId}` } }, select: { chave: true, usuarioId: true, valorCentavos: true } });
+  for (const given of campaigns) {
+    const campaignId = given.chave?.split(':')[1];
+    if (!campaignId) continue;
+    await lockWallet(tx, given.usuarioId);
+    await addEntry(tx, { usuarioId: given.usuarioId, tipo: WALLET_KINDS.campaignReversal, valorCentavos: -given.valorCentavos, descricao: 'Cashback desfeito: a compra foi estornada', chave: `ecamp:${campaignId}:${input.pagamentoId}` });
   }
   const given = await tx.carteiraMovimento.findUnique({ where: { chave: `cashback:${input.pagamentoId}` }, select: { usuarioId: true, valorCentavos: true } });
   if (given) {

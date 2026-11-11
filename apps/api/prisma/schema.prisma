@@ -165,6 +165,9 @@ model Usuario {
   anexosEnviados        Anexo[]          @relation("anexo_enviado_por")
   distribuicoesCriadas  DistribuicaoBolao[] @relation("distribuicao_criador")
   boloesEnviados        BolaoAfiliado[]  @relation("bolao_afiliado_enviado_por")
+  cuponsCriados         Cupom[]          @relation("cupom_criador")
+  cuponsUsados          CupomUso[]       @relation("cupom_uso_usuario")
+  campanhasCashback     CashbackCampanha[] @relation("campanha_criador")
   gruposMembro          GrupoMembro[]
 
   @@index([desativadoEm, criadoEm])
@@ -432,6 +435,7 @@ model Cota {
   pagamento             Pagamento?
   comissao              Comissao?
   anexos                Anexo[]
+  cupomUso              CupomUso?
 
   @@index([bolaoId, status])
   @@index([compradorId, status])
@@ -885,4 +889,71 @@ model BolaoAfiliado {
   @@unique([bolaoId, afiliadoId])
   @@index([afiliadoId])
   @@map("bolao_afiliados")
+}
+
+/// Cupom de desconto criado pelo administrador. Vale só para os grupos e clientes escolhidos (nunca para todos).
+/// O desconto sai da taxa de administração: o dinheiro do bolão (custo dos jogos) nunca é reduzido.
+model Cupom {
+  id                     String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo                 String     @unique @db.VarChar(40)
+  descricao              String?    @db.VarChar(200)
+  /// "percentual" (valor = % do total) ou "valor" (valor = reais por compra).
+  tipo                   String     @db.VarChar(12)
+  valor                  Decimal    @db.Decimal(10, 2)
+  descontoMaximoCentavos Int?       @map("desconto_maximo_centavos")
+  valorMinimoCentavos    Int?       @map("valor_minimo_centavos")
+  /// Aplicado sozinho na compra de quem tem direito; sem isso a pessoa digita o código.
+  automatico             Boolean    @default(false)
+  ativo                  Boolean    @default(true)
+  inicioEm               DateTime?  @map("inicio_em")
+  fimEm                  DateTime?  @map("fim_em")
+  limiteTotal            Int?       @map("limite_total")
+  limitePorCliente       Int?       @map("limite_por_cliente")
+  grupoIds               String[]   @default([]) @map("grupo_ids") @db.Uuid
+  usuarioIds             String[]   @default([]) @map("usuario_ids") @db.Uuid
+  criadoPor              String     @map("criado_por") @db.Uuid
+  criadoEm               DateTime   @default(now()) @map("criado_em")
+  atualizadoEm           DateTime   @default(now()) @updatedAt @map("atualizado_em")
+  criador                Usuario    @relation("cupom_criador", fields: [criadoPor], references: [id])
+  usos                   CupomUso[]
+
+  @@map("cupons")
+}
+
+/// Uso de um cupom numa cota (uma cota usa no máximo um cupom). Conta como uso enquanto a cota estiver reservada (no prazo) ou paga.
+model CupomUso {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cupomId          String   @map("cupom_id") @db.Uuid
+  cotaId           String   @unique @map("cota_id") @db.Uuid
+  usuarioId        String   @map("usuario_id") @db.Uuid
+  descontoCentavos Int      @map("desconto_centavos")
+  criadoEm         DateTime @default(now()) @map("criado_em")
+  cupom            Cupom    @relation(fields: [cupomId], references: [id])
+  cota             Cota     @relation(fields: [cotaId], references: [id], onDelete: Cascade)
+  usuario          Usuario  @relation("cupom_uso_usuario", fields: [usuarioId], references: [id])
+
+  @@index([cupomId])
+  @@index([usuarioId])
+  @@map("cupom_usos")
+}
+
+/// Campanha de cashback: depois que o pagamento é confirmado, quem tem direito recebe crédito na carteira.
+model CashbackCampanha {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome                    String   @db.VarChar(120)
+  percentual              Decimal  @db.Decimal(5, 2)
+  valorMinimoCentavos     Int?     @map("valor_minimo_centavos")
+  maximoPorCompraCentavos Int?     @map("maximo_por_compra_centavos")
+  orcamentoCentavos       Int?     @map("orcamento_centavos")
+  ativa                   Boolean  @default(false)
+  inicioEm                DateTime? @map("inicio_em")
+  fimEm                   DateTime? @map("fim_em")
+  grupoIds                String[] @default([]) @map("grupo_ids") @db.Uuid
+  usuarioIds              String[] @default([]) @map("usuario_ids") @db.Uuid
+  criadoPor               String   @map("criado_por") @db.Uuid
+  criadoEm                DateTime @default(now()) @map("criado_em")
+  atualizadoEm            DateTime @default(now()) @updatedAt @map("atualizado_em")
+  criador                 Usuario  @relation("campanha_criador", fields: [criadoPor], references: [id])
+
+  @@map("cashback_campanhas")
 }

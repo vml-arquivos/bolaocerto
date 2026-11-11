@@ -11,6 +11,8 @@ test('os links antigos continuam achando o seu grupo', () => {
   assert.equal(hubOf('pagamentos')?.key, 'financeiro');
   assert.equal(hubOf('repasses')?.key, 'financeiro');
   assert.equal(hubOf('notas-fiscais')?.key, 'financeiro');
+  assert.equal(hubOf('carteira')?.key, 'financeiro');
+  assert.equal(hubOf('cupons')?.key, 'financeiro');
   assert.equal(hubOf('comprovantes')?.key, 'operacao');
   assert.equal(hubOf('lotericas')?.key, 'operacao');
   assert.equal(hubOf('jogos')?.key, 'boloes');

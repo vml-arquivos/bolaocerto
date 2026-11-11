@@ -219,3 +219,15 @@
 .whatsapp-join.is-footer { flex-direction: column; align-items: flex-start; margin: 10px 0 0; }
 .whatsapp-join.is-account { margin: 0 0 14px; }
 .checkout-card .whatsapp-join { justify-content: center; }
+
+/* Cupons e cashback (painel do administrador) */
+.admin-chip-row { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 4px 0; }
+.admin-chip { border: 1px solid var(--border, #d8dee9); background: var(--surface-2, #f4f6fb); border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; }
+.admin-pick-list { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 4px; }
+.admin-tabs { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
+.buy-coupon { display: grid; gap: 6px; margin: 10px 0; }
+.buy-coupon-row { display: flex; gap: 8px; }
+.buy-coupon-row input { flex: 1; min-width: 0; }
+.buy-coupon .coupon-ok { color: var(--success, #12805c); font-weight: 600; }
+.buy-coupon .coupon-error { color: var(--danger, #b42318); }
+.buy-total s { color: var(--text-muted, #6b7280); font-weight: 400; margin-right: 6px; font-size: .85em; }
