@@ -537,9 +537,12 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         ? <input value={specialValue} maxLength={60} onChange={(event) => setSpecialValue(event.target.value)} placeholder="Ex.: Vasco da Gama/RJ" />
         : <select value={specialValue} onChange={(event) => setSpecialValue(event.target.value)}><option value="">Escolha o mês</option>{['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select>}
         </label>}
-      {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline manual-inline">
-        <button type="button" className="festa-toggle" aria-expanded={manualOpen} onClick={() => setManualOpen((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">＋</span><span className="festa-toggle-text"><strong>{manualOpen ? 'Fechar cadastro de concurso' : 'Cadastrar concurso manualmente'}</strong><small>{manualOpen ? 'Voltar para a lista de concursos abertos.' : 'Use quando o concurso ainda não aparece na lista (a CAIXA ainda não publicou).'}</small></span><span className="festa-toggle-go" aria-hidden="true">{manualOpen ? 'Fechar ▴' : 'Abrir ▾'}</span></button>
-        {manualOpen && <div className="festa-inline-body">
+      {role === 'admin' && !editing && <div className="admin-field-wide festa-actions">
+        <button type="button" className="festa-toggle" aria-expanded={manualOpen} onClick={() => setManualOpen((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">＋</span><span className="festa-toggle-text"><strong>{manualOpen ? 'Fechar cadastro de concurso' : 'Cadastrar concurso manualmente'}</strong><small>{manualOpen ? 'Voltar para a lista de concursos.' : 'Quando a CAIXA ainda não publicou.'}</small></span><span className="festa-toggle-go" aria-hidden="true">{manualOpen ? '▴' : '▾'}</span></button>
+        <button type="button" className="festa-toggle" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">🎉</span><span className="festa-toggle-text"><strong>{newDate ? 'Fechar data comemorativa' : 'Data comemorativa'}</strong><small>{newDate ? 'Voltar para a lista de concursos.' : 'Mega da Virada, São João, Natal…'}</small></span><span className="festa-toggle-go" aria-hidden="true">{newDate ? '▴' : '▾'}</span></button>
+      </div>}
+      {role === 'admin' && !editing && manualOpen && <div className="admin-field-wide festa-inline manual-inline">
+        <div className="festa-inline-body">
           <div className="admin-form-grid admin-form-grid-three">
             <label className="admin-field"><span>Número do concurso</span><input type="number" min={1} inputMode="numeric" value={manualNumber} onChange={(event) => setManualNumber(event.target.value)} placeholder="Ex.: 3100" /></label>
             <label className="admin-field"><span>Dia do sorteio</span><input type="date" value={manualDate} onChange={(event) => setManualDate(event.target.value)} /></label>
@@ -548,11 +551,10 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
           <label className="admin-field"><span>Prêmio estimado (R$, opcional)</span><input inputMode="decimal" value={manualPrize} onChange={(event) => setManualPrize(event.target.value)} placeholder="Deixe vazio se ainda não saiu" /></label>
           {manualFesta?.proximoSorteio && <p className="admin-note" role="status">É a {manualFesta.nome}: o concurso já fica marcado como festa, com a hora oficial ({manualFesta.proximoSorteio.hora}).</p>}
           <button type="button" className="admin-button admin-button-primary" disabled={manualBusy} onClick={() => void createManualContest()}>{manualBusy ? 'Cadastrando…' : `Cadastrar concurso de ${modalityNames[modality] ?? modality}`}</button>
-        </div>}
+        </div>
       </div>}
-      {role === 'admin' && !editing && <div className="admin-field admin-field-wide festa-inline">
-        <button type="button" className="festa-toggle" aria-expanded={newDate} onClick={() => setNewDate((value) => !value)}><span className="festa-toggle-icon" aria-hidden="true">🎉</span><span className="festa-toggle-text"><strong>{newDate ? 'Fechar data comemorativa' : 'Criar para uma data comemorativa (sem concurso aberto)'}</strong><small>{newDate ? 'Voltar para a lista de concursos abertos.' : 'Use quando a data não está na lista acima: Mega da Virada, São João, Natal…'}</small></span><span className="festa-toggle-go" aria-hidden="true">{newDate ? 'Fechar ▴' : 'Abrir ▾'}</span></button>
-        {newDate && <div className="festa-inline-body">
+      {role === 'admin' && !editing && newDate && <div className="admin-field-wide festa-inline">
+        <div className="festa-inline-body">
           
           <div className="admin-form-grid admin-form-grid-three">
             <label className="admin-field"><span>Data comemorativa</span><select value={festaChoice} onChange={(event) => setFestaChoice(event.target.value)}>{modalityPresets.map((preset) => <option key={preset.chave} value={preset.chave}>{preset.nome}</option>)}<option value="personalizado">Outra data (informar nome)</option></select></label>
@@ -562,7 +564,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
           </div>
           {festaSorteio && <p className="admin-note" role="status">{festaSorteio.confirmado ? 'Data confirmada pela CAIXA.' : `Data prevista, ainda não confirmada: ${festaSorteio.fonte.replace(/\.$/, '')}.`} As apostas fecham 1 hora antes do sorteio ou no horário padrão da modalidade, o que for mais cedo.</p>}
           <button type="button" className="admin-button admin-button-primary" disabled={festaBusy} onClick={() => void createDateContest()}>{festaBusy ? 'Criando…' : `Criar concurso de ${modalityNames[modality] ?? modality}`}</button>
-        </div>}
+        </div>
       </div>}
       {modeUi && <label className="admin-toggle-row admin-field-wide"><input type="checkbox" checked={numbersLater} onChange={(event) => { setNumbersLater(event.target.checked); if (freeMode) { if (event.target.checked) { setAutomatic(false); setPresale(true); } else { setAutomatic(true); setPlannedManual(false); } } }} /><span><strong>Números ainda não definidos (definir depois)</strong></span></label>}
       {modeUi && numbersLater && <div className="admin-field admin-field-wide planned-games" aria-label="Quantidade de números do bolão sem jogos">
