@@ -10,3 +10,5 @@
 @import './styles/09-afiliado-app.css'; /* Aplicativo do afiliado: barra de cima, abas e barra de baixo */
 @import './styles/10-app-cliente.css'; /* Aplicativo do cliente: carrossel, abas, linhas recolhíveis e compra enxuta */
 @import './styles/11-conta-carteira.css'; /* Carteira, indicação, Meus dados completos, revisão da compra e CRM */
+@import './styles/12-painel-celular.css'; /* Painel no celular: fichas, abas, filtros e botões enquadrados */
+@import './styles/13-site-harmonia.css'; /* Site público: ritmo das seções, cartões centralizados e blog */

@@ -42,6 +42,16 @@ async function download(path: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+/** Abre um PDF que precisa de login numa nova aba, para ver na tela antes de baixar. */
+async function viewPdf(path: string) {
+  const tab = window.open('', '_blank');
+  const response = await authFetch(path);
+  if (!response.ok) { tab?.close(); const payload = await response.json().catch(() => ({})); throw new Error(Array.isArray(payload?.message) ? payload.message.join(' ') : payload?.message || 'Não foi possível abrir o arquivo.'); }
+  const url = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }));
+  if (tab) tab.location.href = url; else window.location.href = url;
+  window.setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+
 function Panel({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return <section className="admin-panel"><div className="admin-panel-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>{children}</section>;
 }
@@ -59,11 +69,17 @@ function Empty({ text }: { text: string }) {
 /* Relatórios                                                                 */
 /* -------------------------------------------------------------------------- */
 
-type Tab = 'resumo' | 'vendas' | 'pagamentos' | 'nao-pagos' | 'comissoes' | 'notas-fiscais' | 'boloes';
-const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['pagamentos', 'Pagamentos'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['notas-fiscais', 'Notas fiscais'], ['boloes', 'Por bolão']];
+type Tab = 'resumo' | 'vendas' | 'pagamentos' | 'nao-pagos' | 'comissoes' | 'notas-fiscais' | 'boloes' | 'recibos' | 'arquivos-notas';
+const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['pagamentos', 'Pagamentos'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['notas-fiscais', 'Notas fiscais'], ['boloes', 'Por bolão'], ['recibos', 'Recibos (baixar)'], ['arquivos-notas', 'Notas em PDF/XML (baixar)']];
+/** Abas de documentos: listam pelo período e baixam um a um ou todos num .zip. */
+const DOC_PATH: Partial<Record<Tab, string>> = { recibos: '/api/v1/admin/downloads/recibos', 'arquivos-notas': '/api/v1/admin/downloads/notas' };
 
 export function ReportsView() {
-  const [tab, setTab] = useState<Tab>('resumo');
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === 'undefined') return 'resumo';
+    const wanted = new URLSearchParams(window.location.search).get('aba');
+    return TABS.some(([key]) => key === wanted) ? wanted as Tab : 'resumo';
+  });
   const [de, setDe] = useState('');
   const [ate, setAte] = useState('');
   const [status, setStatus] = useState('');
@@ -88,9 +104,9 @@ export function ReportsView() {
     if (!quiet) setLoading(true);
     setError('');
     try {
-      const result = await api(`/api/v1/admin/relatorios/${tab}?${query()}`);
+      const result = await api(`${DOC_PATH[tab] ?? `/api/v1/admin/relatorios/${tab}`}?${query()}`);
       if (id !== sequence.current) return;
-      if (tab === 'boloes') setList(result as unknown as Rec[]); else setData(result);
+      if (tab === 'boloes' || DOC_PATH[tab]) setList(result as unknown as Rec[]); else setData(result);
       setUpdatedAt(new Date());
     } catch (failure) { if (id === sequence.current) setError(failure instanceof Error ? failure.message : 'Falha ao carregar o relatório.'); }
     finally { if (id === sequence.current) setLoading(false); }
@@ -114,6 +130,15 @@ export function ReportsView() {
     <button className="admin-button admin-button-small" disabled={Boolean(exporting)} onClick={() => void exportFile(path, 'xlsx', id)}>{exporting === `${id}-xlsx` ? 'Gerando…' : 'Baixar planilha (XLSX)'}</button>
     <button className="admin-button admin-button-small admin-button-ghost" disabled={Boolean(exporting)} onClick={() => void exportFile(path, 'csv', id)}>{exporting === `${id}-csv` ? 'Gerando…' : 'CSV'}</button>
   </div>;
+
+  async function exportZip(path: string, key: string, withPeriod = true) {
+    setExporting(`${key}-zip`); setError('');
+    try { await download(withPeriod ? `${path}?${query()}` : path); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : 'Falha ao baixar.'); }
+    finally { setExporting(''); }
+  }
+  const brDay = (value: string) => value.split('-').reverse().join('/');
+  const periodLabel = de || ate ? `${de ? brDay(de) : 'início'} a ${ate ? brDay(ate) : 'hoje'}` : 'últimos 30 dias';
 
   const summary = tab === 'resumo' ? data : null;
   const rows: Rec[] = tab === 'vendas' || tab === 'nao-pagos' || tab === 'comissoes' || tab === 'pagamentos' || tab === 'notas-fiscais' ? (data?.linhas ?? []) : [];
@@ -177,6 +202,18 @@ export function ReportsView() {
     {!loading && tab === 'notas-fiscais' && <Panel title="Notas fiscais de serviço" action={<ExportButtons path="/api/v1/admin/relatorios/notas-fiscais" id="notas-fiscais" />}>
       <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td>{brl(row.valorNota)}</td><td>{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td>{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma nota fiscal no período" />}
+    </Panel>}
+
+    {!loading && tab === 'recibos' && <Panel title={`Recibos dos pagamentos · ${list.length}`} action={<div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(exporting) || !list.length} onClick={() => void exportZip('/api/v1/admin/downloads/recibos/zip', 'recibos')}>{exporting === 'recibos-zip' ? 'Gerando o arquivo…' : 'Baixar todos (ZIP)'}</button></div>}>
+      <p className="admin-muted-note">Período: {periodLabel}. O ZIP traz o PDF de cada recibo e uma planilha com a lista.</p>
+      <Table minWidth={900}><thead><tr><th>Recibo</th><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th><th>Arquivo</th></tr></thead><tbody>{list.map((row) => <tr key={row.cotaId}><td data-label="Recibo"><strong>{row.numero}</strong></td><td data-label="Participante"><strong>{row.participante}</strong><small>{row.email}</small></td><td data-label="Bolão">{row.modalidade ? `${label(row.modalidade)} #${row.concurso}` : '—'}</td><td data-label="Valor pago">{brl(row.valor)}</td><td data-label="Pago em">{dateTime(row.pagoEm)}</td><td className="td-actions"><div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-secondary" onClick={() => void viewPdf(`/api/v1/cotas/${row.cotaId}/recibo?formato=pdf`).catch((failure) => setError(failure instanceof Error ? failure.message : 'Falha ao abrir.'))}>Ver</button><button className="admin-button admin-button-small" disabled={Boolean(exporting)} onClick={() => void exportZip(`/api/v1/cotas/${row.cotaId}/recibo?formato=pdf`, `r-${row.cotaId}`, false)}>{exporting === `r-${row.cotaId}-zip` ? 'Baixando…' : 'Baixar PDF'}</button></div></td></tr>)}</tbody></Table>
+      {!list.length && <Empty text="Nenhum recibo no período" />}
+    </Panel>}
+
+    {!loading && tab === 'arquivos-notas' && <Panel title={`Notas fiscais · ${list.filter((row) => row.status === 'emitida').length} emitidas`} action={<div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(exporting) || !list.some((row) => row.status === 'emitida')} onClick={() => void exportZip('/api/v1/admin/downloads/notas/zip', 'notas')}>{exporting === 'notas-zip' ? 'Gerando o arquivo…' : 'Baixar todas (ZIP)'}</button></div>}>
+      <p className="admin-muted-note">Período: {periodLabel}. O ZIP traz o PDF e o XML de cada nota emitida e uma planilha com a lista.</p>
+      <Table minWidth={900}><thead><tr><th>Nº</th><th>Tomador</th><th>Situação</th><th>Valor</th><th>Data</th><th>Arquivos</th></tr></thead><tbody>{list.map((row) => <tr key={row.id}><td data-label="Nº"><strong>{row.numero ?? '—'}</strong></td><td data-label="Tomador"><strong>{row.tomador}</strong><small>{row.email}</small></td><td data-label="Situação"><span className={chip(row.status)}>{label(row.status)}</span></td><td data-label="Valor">{brl(row.valor)}</td><td data-label="Data">{dateTime(row.emitidaEm ?? row.criadoEm)}</td><td className="td-actions"><div className="admin-row-actions">{row.pdfUrl ? <a className="admin-button admin-button-small admin-button-secondary" href={row.pdfUrl} target="_blank" rel="noreferrer">Ver PDF</a> : null}{row.xmlUrl ? <a className="admin-button admin-button-small" href={row.xmlUrl} target="_blank" rel="noreferrer" download>XML</a> : null}{!row.pdfUrl && !row.xmlUrl ? <span className="admin-muted-note">sem arquivo</span> : null}</div></td></tr>)}</tbody></Table>
+      {!list.length && <Empty text="Nenhuma nota no período" />}
     </Panel>}
 
     {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
@@ -438,6 +475,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       {(auto || settings.modo === 'manual') && pending > 0 && <button className="admin-button admin-button-primary" disabled={Boolean(busy)} onClick={() => { if (!window.confirm('Emitir agora as notas dos pagamentos que ainda não têm nota (até 50 por vez)?')) return; void run('pending', '/api/v1/admin/notas-fiscais/emitir-pendentes', {}, (result) => result.candidatos ? `${result.emitidas} nota(s) emitida(s)${result.erros ? `; ${result.erros} com problema${result.primeiroErro ? ` (${result.primeiroErro})` : ''}` : ''}.` : 'Não há pagamentos esperando nota.') }}>{busy === 'pending' ? 'Emitindo…' : `Emitir as pendentes (${pending})`}</button>}
       <button className="admin-button" disabled={Boolean(busy) || off} onClick={() => void run('sync', '/api/v1/admin/nfse/sincronizar', {}, (result) => `Sincronizadas ${result.sincronizacao?.verificadas ?? 0} nota(s); ${result.emissao?.emitidas ?? 0} emitida(s) automaticamente.`)}>{busy === 'sync' ? 'Sincronizando…' : 'Sincronizar'}</button>
       <button className="admin-button admin-button-ghost" disabled={Boolean(busy)} onClick={() => void load()}>Atualizar</button>
+      <a className="admin-button admin-button-secondary" href="/admin?view=relatorios&aba=arquivos-notas">Baixar por período</a>
     </div>}</div>
     {loading && <div className="admin-spinner" aria-label="Carregando" />}
     {!loading && settings && <>

@@ -188,6 +188,8 @@ services:
       API_PROXY_URL: http://api:3001
       PLATFORM_TEST_MODE: ${PLATFORM_TEST_MODE:-false}
       PLATFORM_PAYMENTS_ENABLED: ${PAYMENTS_ENABLED:-false}
+      # Endereço público do site para o SEO (links canônicos, sitemap e compartilhamento); usa o mesmo WEB_ORIGIN da API.
+      SITE_URL: ${WEB_ORIGIN:-}
     depends_on:
       api:
         condition: service_healthy

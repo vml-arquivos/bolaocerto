@@ -21,6 +21,11 @@ export function HeaderAuth() {
       .catch(() => { try { localStorage.removeItem(HINT); } catch { /* ok */ } });
     return () => { off = true; };
   }, []);
-  if (role) return <Link className="button button-primary" href={role === 'cotista' ? '/minha-conta' : homeForRole(role)}>{isStaff(role) ? 'Painel' : role === 'afiliado' ? 'Minha área' : 'Minha conta'}</Link>;
+  async function logout() {
+    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
+    try { localStorage.removeItem(HINT); } catch { /* ok */ }
+    window.location.href = '/';
+  }
+  if (role) return <><Link className="button button-primary" href={role === 'cotista' ? '/minha-conta' : homeForRole(role)}>{isStaff(role) ? 'Painel' : role === 'afiliado' ? 'Minha área' : 'Minha conta'}</Link><button type="button" className="button button-ghost header-logout" onClick={() => void logout()}>Sair</button></>;
   return <><Link className="button button-ghost" href="/login">Entrar</Link><Link className="button button-primary" href="/cadastro">Criar conta</Link></>;
 }

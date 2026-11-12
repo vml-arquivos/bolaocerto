@@ -22,7 +22,7 @@ const SECTION_LABELS: Array<[keyof Secoes, string, string]> = [
 ];
 
 /** Reduz a foto no navegador (máx. 1600 px, JPG) para o envio ser rápido e leve. */
-async function shrinkImage(file: File): Promise<Blob> {
+export async function shrinkImage(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');

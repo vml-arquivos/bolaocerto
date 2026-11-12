@@ -37,6 +37,7 @@ const groups = [
     label: 'Administração',
     items: [
       ['vitrine', 'Página inicial', 'PI'],
+      ['blog', 'Blog e SEO', 'BG'],
       ['usuarios', 'Usuários e acessos', 'US'],
       ['documentos', 'Documentos', 'DC'],
       ['funil', 'Funil de conversão', 'FC'],
@@ -56,6 +57,12 @@ const hubItems = [
 type NavItem = readonly [string, string, string];
 const titles: Record<string, string> = Object.fromEntries([...(topItems as readonly NavItem[]), ...(hubItems as readonly NavItem[]), ...groups.flatMap((group) => group.items as readonly NavItem[])].map(([key, label]) => [key, label]));
 const COLLAPSE_KEY = 'bl-admin-sidebar-collapsed';
+
+/** Sai da conta direto do painel (sem passar por Minha conta). */
+async function logout() {
+  await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
+  window.location.href = '/admin/entrar';
+}
 
 export function AdminShell({ children, testMode = false }: { children: ReactNode; testMode?: boolean }) {
   const pathname = usePathname();
@@ -176,6 +183,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
           <div className="admin-install"><InstallAppButton label="Instalar como app" hideWhenInstalled className="admin-install-link" /></div>
           <div className="admin-footer-links">
             <Link href="/minha-conta" className="admin-footer-link"><span>Minha conta</span></Link>
+            <button type="button" className="admin-footer-link admin-footer-logout" onClick={() => void logout()}><span>Sair</span></button>
             <Link href="/" className="admin-footer-link"><span>Ver o site</span></Link>
           </div>
         </div>
@@ -198,6 +206,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
           <div className="admin-topbar-actions">
             <ThemeToggle />
             <Link href="/" className="admin-topbar-link">Ver o site</Link>
+            <button type="button" className="admin-topbar-logout" onClick={() => void logout()}>Sair</button>
           </div>
         </header>
         <main className="admin-main" id="admin-main-content"><PushPrompt audience="equipe" />{children}</main>

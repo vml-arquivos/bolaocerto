@@ -51,6 +51,14 @@ export function PwaRegister() {
   const adminApp = /^\/(admin|afiliado)(\/|$)/.test(pathname);
   const { prompt, installed } = useInstallState();
   const onInstallPage = pathname === '/instalar';
+  // Três aplicativos: cliente (site), painel da equipe (/admin) e área do afiliado (/afiliado). Cada um oferece a própria instalação.
+  const app: 'cliente' | 'admin' | 'afiliado' | null = /^\/admin(\/|$)/.test(pathname) ? 'admin' : /^\/afiliado(\/|$)/.test(pathname) ? 'afiliado' : staff ? null : 'cliente';
+  const dismissKey = app === 'cliente' ? 'bl-install-dismissed-until' : `bl-install-dismissed-until-${app}`;
+  const banner = app === 'admin'
+    ? { title: 'Painel BL Admin no seu celular', text: 'Instale o painel para operar bolões, pagamentos, notas e relatórios direto da tela inicial, como um aplicativo.' }
+    : app === 'afiliado'
+      ? { title: 'Área do afiliado no seu celular', text: 'Instale para acompanhar vendas, comissões e seus links direto da tela inicial.' }
+      : { title: 'Bolão Livre no seu celular', text: 'Instale para acessar bolões, cotas e resultados pela tela inicial.' };
   const [ios, setIos] = useState(false);
   const [hidden, setHidden] = useState(true);
   const [instructions, setInstructions] = useState(false);
@@ -61,7 +69,7 @@ export function PwaRegister() {
   const acceptedUpdate = useRef(false);
   useEffect(() => {
     setIos(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
-    try { setHidden(Number(localStorage.getItem('bl-install-dismissed-until') ?? 0) > Date.now()); } catch { setHidden(false); }
+    try { setHidden(Number(localStorage.getItem(dismissKey) ?? 0) > Date.now()); } catch { setHidden(false); }
     const onInstalled = () => { setInstructions(false); };
     const open = () => { setInstructions(true); setHidden(false); };
     const network = () => setOffline(!navigator.onLine); network();
@@ -90,8 +98,8 @@ export function PwaRegister() {
       registration?.removeEventListener('updatefound', updateFound); installingWorker?.removeEventListener('statechange', stateChange);
       navigator.serviceWorker?.removeEventListener('controllerchange', controllerChange); document.removeEventListener('visibilitychange', checkUpdate);
     };
-  }, []);
-  function dismiss() { setHidden(true); setInstructions(false); try { localStorage.setItem('bl-install-dismissed-until', String(Date.now() + 7 * 86400000)); } catch { /* private browsing */ } }
+  }, [dismissKey]);
+  function dismiss() { setHidden(true); setInstructions(false); try { localStorage.setItem(dismissKey, String(Date.now() + 7 * 86400000)); } catch { /* private browsing */ } }
   async function install() {
     if (!prompt) { setInstructions(true); return; }
     setBusy(true);
@@ -102,7 +110,7 @@ export function PwaRegister() {
   return <>
     {offline && <div className="app-network-status" role="status">Sem conexão. Compras, pagamentos e saldos precisam de conexão. Consulte sua conta ao reconectar antes de repetir uma operação.</div>}
     {(!staff || adminApp) && waiting && <div className="pwa-update" role="status"><span>Nova versão disponível. Conclua compras e edições antes de atualizar.</span><button className="button button-secondary" onClick={() => { if (window.confirm('Atualizar e recarregar o aplicativo agora? Conclua operações em andamento antes de continuar.')) { acceptedUpdate.current = true; waiting.postMessage({ type: 'ACTIVATE_UPDATE' }); } }}>Atualizar aplicativo</button></div>}
-    {!staff && !onInstallPage && !installed && !hidden && (prompt || ios || instructions) && <section className="install-banner" aria-label="Instalar Bolão Livre"><strong>Bolão Livre no seu celular</strong>{instructions || ios ? <p>{ios ? 'No iPhone/iPad: abra no Safari, toque em Compartilhar → Adicionar à Tela de Início. Se aparecer “Abrir como App”, mantenha ativado.' : 'No menu do navegador, procure “Instalar aplicativo” ou “Adicionar à tela inicial”. Se não aparecer, abra este site no Chrome ou Edge atualizado.'}</p> : <span>Instale para acessar bolões, cotas e resultados pela tela inicial.</span>}{prompt && <button className="button button-primary" disabled={busy} onClick={() => void install()}>{busy ? 'Aguarde…' : 'Instalar'}</button>}<button className="button button-ghost" onClick={dismiss}>Agora não</button>{message && <p role="status">{message}</p>}</section>}
-    {!staff && !onInstallPage && installed && instructions && <div className="install-banner"><p>Você já está usando o aplicativo instalado.</p><button className="button" onClick={() => setInstructions(false)}>Fechar</button></div>}
+    {app && !onInstallPage && !installed && !hidden && (prompt || ios || instructions) && <section className={`install-banner install-banner-${app}`} aria-label={`Instalar ${banner.title}`}><strong>{banner.title}</strong>{instructions || ios ? <p>{ios ? 'No iPhone/iPad: abra no Safari, toque em Compartilhar → Adicionar à Tela de Início. Se aparecer “Abrir como App”, mantenha ativado.' : 'No menu do navegador, procure “Instalar aplicativo” ou “Adicionar à tela inicial”. Se não aparecer, abra este site no Chrome ou Edge atualizado.'}</p> : <span>{banner.text}</span>}{prompt && <button className="button button-primary" disabled={busy} onClick={() => void install()}>{busy ? 'Aguarde…' : 'Instalar'}</button>}<button className="button button-ghost" onClick={dismiss}>Agora não</button>{message && <p role="status">{message}</p>}</section>}
+    {app && !onInstallPage && installed && instructions && <div className="install-banner"><p>Você já está usando o aplicativo instalado.</p><button className="button" onClick={() => setInstructions(false)}>Fechar</button></div>}
   </>;
 }

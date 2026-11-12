@@ -12,6 +12,7 @@ import { ComunicadosView } from './admin-comunicados';
 import { DocumentsView } from './admin-documents';
 import { FunnelView } from './admin-funnel';
 import { VitrineView } from './admin-vitrine';
+import { BlogAdminView } from './admin-blog';
 import { AdminModal, AttachmentsPanel, RegisterBetDialog } from './admin-attachments';
 import { ConnectionsView } from './admin-connections';
 import { InvoicesView, ReportsView } from './admin-finance-tools';
@@ -42,7 +43,7 @@ import { WalletAdminView } from './admin-wallet';
 import { PromotionsAdminView } from './admin-promotions';
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'documentos', 'funil']);
+const selfLoadingViews = new Set(['relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'blog', 'documentos', 'funil']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
 const MONTH_LABELS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -229,6 +230,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'crm') return <CrmView notify={notify} onEditUser={setSelectedUser} refreshKey={crmRefresh} />;
     if (view === 'comunicados') return <ComunicadosView notify={notify} />;
     if (view === 'vitrine') return <VitrineView notify={notify} />;
+    if (view === 'blog') return <BlogAdminView notify={notify} />;
     if (view === 'controle') return <PoolControlView notify={notify} />;
     if (view === 'recebimentos' || view === 'pagamentos') return <PaymentsView ctx={ctx} />;
     if (view === 'afiliados') return <AffiliatesView ctx={ctx} />;
