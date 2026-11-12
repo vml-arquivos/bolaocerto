@@ -512,7 +512,7 @@ export class AdminService {
       this.prisma.convite.findMany({ where, include: { afiliadoOrigem: { include: { usuario: { select: { nome: true, email: true } } } }, usadoPorUsuario: { select: { nome: true, email: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.convite.count({ where }),
     ]);
-    return { items: items.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, emailDestino: invite.emailDestino, comissaoPct: invite.comissaoPct ? Number(invite.comissaoPct) : null, expiraEm: invite.expiraEm, usadoEm: invite.usadoEm, afiliadoOrigem: invite.afiliadoOrigem ? { id: invite.afiliadoOrigem.id, codigo: invite.afiliadoOrigem.codigoAfiliado, nome: invite.afiliadoOrigem.usuario.nome } : null, usadoPor: invite.usadoPorUsuario })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((invite) => ({ id: invite.id, codigo: invite.codigo, tipo: invite.tipo, status: invite.status, caminho: invite.status === 'ativo' && invite.expiraEm > new Date() ? `/r/${invite.codigo}` : null, emailDestino: invite.emailDestino, comissaoPct: invite.comissaoPct ? Number(invite.comissaoPct) : null, expiraEm: invite.expiraEm, usadoEm: invite.usadoEm, afiliadoOrigem: invite.afiliadoOrigem ? { id: invite.afiliadoOrigem.id, codigo: invite.afiliadoOrigem.codigoAfiliado, nome: invite.afiliadoOrigem.usuario.nome } : null, usadoPor: invite.usadoPorUsuario })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   /** Cancela um link ainda não usado (cadastro de equipe, afiliado ou cliente). */

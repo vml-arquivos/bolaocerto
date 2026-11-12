@@ -76,6 +76,8 @@ function feeModeLabel(mode: FeeMode, quotaMode: QuotaMode): string {
   if (mode === 'total') return quotaMode === 'total' ? 'R$ sobre o total do registro' : 'R$ do bolão todo';
   return 'Sobra do registro';
 }
+/** Teto da taxa de serviço sobre o registro, mostrado na criação do bolão. */
+const QUOTA_FEE_CAP = 35;
 /** Teto de taxa dos afiliados (o servidor confere o teto exato da modalidade). */
 const AFFILIATE_FEE_CAP = 35;
 
@@ -409,6 +411,11 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   const registroCents: number | null = !modeUi ? null : numbersLater ? (plannedByTable ? plannedCostCents : toCents(manualCost)) : freeMode ? (automatic ? (Number.isFinite(quote?.costCents) ? quote!.costCents : registroLocal) : toCents(manualCost)) : registroLocal;
   const priceIncomplete = (quotaMode === 'digitar' && !quotaValue.trim()) || (feeMode !== 'sobra' && !feeValue.trim());
   const plan = modeUi && !unlimited && registroCents !== null ? planPricing({ costCents: registroCents, shares: Math.trunc(Number(totalCotas)), quotaMode, quotaValue, feeMode, feeValue }) : null;
+  // Teto da cota quando o valor é digitado: a taxa de serviço não passa de 35% sobre o registro (custo por cota × 1,35).
+  const ceilingShares = Math.trunc(Number(totalCotas));
+  const quotaCeilingCents = modeUi && registroCents !== null && registroCents > 0 && ceilingShares > 0 ? totalPctQuotaCents(registroCents, ceilingShares, QUOTA_FEE_CAP) : null;
+  const typedQuotaCents = toCents(quotaValue);
+  const quotaOverCeiling = quotaCeilingCents !== null && typedQuotaCents !== null && typedQuotaCents > quotaCeilingCents;
   // Afiliado: a taxa não passa do teto (35%); o servidor confere o teto exato da modalidade.
   const affiliateCapError = modalMode && plan?.ok && registroCents !== null
     ? (plan.precoPct !== undefined && plan.precoPct > AFFILIATE_FEE_CAP ? `A porcentagem passa do teto de ${AFFILIATE_FEE_CAP}% dos afiliados.`
@@ -605,6 +612,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     {quote && !modeUi && <div className="simple-form-summary" aria-live="polite"><span>Bilhetes <strong>{money(quote.costCents / 100)}</strong></span><span>Administração <strong>{money(quote.adminTotalCents / 100)}</strong></span><span>Reserva de arredondamento <strong>{money(quote.roundingReserveCents / 100)}</strong></span><span>Por cota: bilhete {money(quote.ticketPerShare / 100)} + taxa {money(quote.feePerShare / 100)}</span></div>}
         {modeUi ? <fieldset className="price-free" aria-label="Preço da cota e taxa de serviço">
       <legend>Preço da cota e taxa de serviço</legend>
+      <p className="quota-cap-note">A taxa de serviço tem teto de <strong>{QUOTA_FEE_CAP}%</strong> sobre o custo do registro. No “Eu defino o valor da cota”, o sistema mostra o valor máximo da cota.</p>
       {freeMode && (numbersLater ? !plannedByTable : !automatic) && <label className="admin-field"><span>Custo total do registro na CAIXA (R$)</span><input type="text" inputMode="decimal" value={manualCost} onChange={(event) => setManualCost(event.target.value)} placeholder="Ex.: 60,00" /></label>}
       <div className="price-free-mode" role="radiogroup" aria-label="Como definir o valor da cota">
         <label className={quotaMode === 'total' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'total'} onChange={() => { setQuotaMode('total'); if (!allowedFeeModes('total', role).includes(feeMode)) setFeeMode(allowedFeeModes('total', role)[0]!); }} /><span><strong>% sobre o total do registro</strong></span></label>
@@ -615,7 +623,8 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         <label className="admin-field"><span>Quantidade de cotas</span><input type="number" min="1" step="1" max={groupCapacity ?? undefined} inputMode="numeric" value={totalCotas} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convide alguém antes de criar o bolão.'}</small>}</label>
         <label className="admin-field"><span>Valor da cota (R$){quotaMode !== 'digitar' ? ' · calculado' : ''}</span>{quotaMode === 'digitar'
           ? <input type="text" inputMode="decimal" value={quotaValue} onChange={(event) => setQuotaValue(event.target.value)} placeholder="Ex.: 20,00" />
-          : <input type="text" readOnly value={plan?.ok ? (plan.quotaCents / 100).toFixed(2).replace('.', ',') : ''} placeholder="—" />}</label>
+          : <input type="text" readOnly value={plan?.ok ? (plan.quotaCents / 100).toFixed(2).replace('.', ',') : ''} placeholder="—" />}
+          {quotaMode === 'digitar' && quotaCeilingCents !== null && <small className={`quota-ceiling${quotaOverCeiling ? ' is-over' : ''}`}>Teto: até <strong>{money(quotaCeilingCents / 100)}</strong> por cota (taxa máxima de {QUOTA_FEE_CAP}% sobre o registro).{quotaOverCeiling ? ' O valor digitado passa do teto.' : ''} <button type="button" className="admin-text-button" onClick={() => setQuotaValue((quotaCeilingCents / 100).toFixed(2).replace('.', ','))}>Usar o teto</button></small>}</label>
         <div className="admin-field"><span>{quotaMode === 'digitar' ? 'Taxa de serviço' : 'Acréscimo sobre o registro'}</span><div className="price-free-fee">
           <select aria-label="Como informar a taxa" value={feeMode} onChange={(event) => setFeeMode(event.target.value as FeeMode)}>{allowedFeeModes(quotaMode, role).map((mode) => <option key={mode} value={mode}>{feeModeLabel(mode, quotaMode)}</option>)}</select>
           {feeMode === 'sobra' ? <input type="text" readOnly value={plan?.ok ? (plan.feePerShare / 100).toFixed(2).replace('.', ',') : ''} placeholder="Automática" aria-label="Taxa por cota (automática)" /> : <input type="text" inputMode="decimal" aria-label="Valor da taxa" value={feeValue} onChange={(event) => setFeeValue(event.target.value)} placeholder={feeMode === 'pct' || feeMode === 'acrescimo' ? 'Ex.: 10' : 'Ex.: 2,00'} />}
@@ -637,7 +646,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       {freeMode && plan?.ok && plan.feePct > 35 && <p className="admin-callout admin-callout-warning">A taxa de serviço está em {String(plan.feePct).replace('.', ',')}% da cota, acima de 35%, que é o limite dos afiliados e do modelo antigo. Como administrador você pode seguir. Só confira se está de acordo com o combinado com os participantes.</p>}
     </fieldset> : <div className="admin-form-grid admin-form-grid-four">
       <label className="admin-field"><span>Valor da cota (R$)</span><input readOnly={automatic} type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>
-      <label className="admin-field"><span>Taxa administrativa (%)</span><input type="number" min="0" max="35" step="0.01" value={taxa} onChange={(event) => setTaxa(event.target.value)} /></label>
+      <label className="admin-field"><span>Taxa administrativa (%)</span><input type="number" min="0" max="35" step="0.01" value={taxa} onChange={(event) => setTaxa(event.target.value)} /><small className={Number(taxa) > 35 ? 'quota-ceiling is-over' : 'quota-ceiling'}>Máximo de {QUOTA_FEE_CAP}%.{Number(custo) > 0 && Number(totalCotas) > 0 ? ` Teto da cota: ${money(Math.ceil(Number(custo) * 100 * 1.35 / Number(totalCotas)) / 100)}.` : ''}</small></label>
       <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" max={groupCapacity ?? undefined} value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: o bolão pode ter no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convite alguém para o grupo antes de criar o bolão.'}</small>}</label>
       <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>}
