@@ -1,0 +1,120 @@
+/* Painel da equipe no celular: tudo enquadrado, mesmo padrão em todas as páginas.
+   Só vale dentro do painel (.admin-app) e só em telas estreitas; o computador não muda. */
+
+@media (max-width: 760px) {
+  /* Respiro uniforme */
+  .admin-app .admin-main { padding: 14px 12px 96px; }
+  .admin-app .admin-panel { padding: 14px 12px; border-radius: 16px; margin-bottom: 14px; }
+  .admin-app .admin-panel .admin-panel { padding: 12px 10px; box-shadow: none; }
+  .admin-app .admin-panel-heading { flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .admin-app .admin-panel-heading > * { min-width: 0; }
+  .admin-app h1 { font-size: 1.45rem; line-height: 1.2; }
+
+  /* Abas de módulo: uma linha só, desliza para o lado, sem quebrar em blocos tortos */
+  .admin-app .report-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; gap: 6px; padding-bottom: 12px; margin: 0 -12px 16px; padding-left: 12px; padding-right: 12px; scroll-snap-type: x proximity; }
+  .admin-app .report-tabs::-webkit-scrollbar { display: none; }
+  .admin-app .report-tabs > * { flex: none; white-space: nowrap; scroll-snap-align: start; }
+
+  /* Barra de busca e filtros: grade de duas colunas, botões com a mesma altura */
+  .admin-app .admin-toolbar { gap: 8px; margin-bottom: 14px; }
+  .admin-app .admin-toolbar-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+  .admin-app .admin-toolbar-filters > * { width: 100%; min-width: 0; }
+  .admin-app .admin-toolbar-filters > :only-child, .admin-app .admin-toolbar-filters > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .admin-app .admin-toolbar select, .admin-app .admin-toolbar input, .admin-app .admin-toolbar button { min-height: 42px; }
+
+  /* Botões: alvo de toque confortável, sem estourar a largura */
+  .admin-app .admin-button { min-height: 40px; max-width: 100%; }
+  .admin-app .admin-button-small { min-height: 36px; }
+  .admin-app .admin-page-heading { gap: 10px; }
+  .admin-app .admin-page-heading > :last-child:not(:first-child) { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .admin-app .admin-page-heading > :last-child:not(:first-child) > .admin-button { flex: 1 1 auto; }
+
+  /* Números em destaque: duas colunas iguais */
+  .admin-app .admin-kpi-grid, .admin-app .admin-kpi-grid-four { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .admin-app .admin-mini-stats { gap: 6px; }
+  .admin-app .admin-mini-stats > * { flex: 1 1 calc(50% - 6px); justify-content: space-between; }
+
+  /* Grades de cartões: uma coluna (antes ficavam duas e cortavam o texto) */
+  .admin-app .admin-dashboard-grid, .admin-app .admin-dashboard-grid-three, .admin-app .admin-settings-grid { grid-template-columns: 1fr; gap: 12px; }
+
+  /* Tabelas viram fichas: rótulo à esquerda, valor à direita, tudo alinhado na mesma grade */
+  .admin-app .admin-table tr { padding: 4px 12px; margin-bottom: 10px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  .admin-app .admin-panel .admin-table tr { background: var(--surface-muted); box-shadow: none; }
+  .admin-app .admin-table td, .admin-app .admin-pools-compact .admin-table td {
+    display: grid; grid-template-columns: minmax(84px, 36%) minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: start;
+    padding: 9px 0; font-size: 13px; line-height: 1.35; text-align: right; overflow-wrap: anywhere;
+  }
+  .admin-app .admin-table td + td { border-top: 1px solid var(--border); }
+  .admin-app .admin-table td::before { grid-column: 1; grid-row: 1 / span 6; padding-top: 1px; font-size: 10.5px; line-height: 1.5; }
+  .admin-app .admin-table td > * { grid-column: 2; justify-self: end; min-width: 0; max-width: 100%; }
+  .admin-app .admin-table td > small, .admin-app .admin-table td small { color: var(--text-muted); font-size: 11.5px; }
+  .admin-app .admin-table td > .status-chip, .admin-app .admin-table td .status-chip { justify-self: end; }
+  .admin-app .admin-table td:not([data-label])::before, .admin-app .admin-table td[data-label=""]::before { display: none; }
+  .admin-app .admin-table td:not([data-label]), .admin-app .admin-table td[data-label=""] { grid-template-columns: minmax(0, 1fr); }
+  /* Primeira linha da ficha em destaque (o que é o item) */
+  .admin-app .admin-table td:first-child { font-weight: 600; }
+  /* Ações: ocupam a largura, quebram em linhas iguais */
+  .admin-app .admin-table td.td-actions { display: block; padding: 10px 0 8px; margin-top: 0; text-align: left; }
+  .admin-app .admin-table td.td-actions .admin-row-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+  .admin-app .admin-table td.td-actions .admin-row-actions > * { flex: 1 1 calc(50% - 8px); justify-content: center; text-align: center; min-height: 38px; }
+  .admin-app .admin-table td.td-actions .admin-row-actions > *:only-child { flex-basis: 100%; }
+  .admin-app .admin-table td.td-actions form, .admin-app .admin-table td.td-actions .admin-note-form { flex-basis: 100%; }
+
+  /* Cartão sem nada para mostrar */
+  .admin-app .admin-empty { padding: 22px 12px; }
+
+  /* Formulários dentro do painel: campos em uma coluna */
+  .admin-app .admin-form-grid, .admin-app .admin-form-row { grid-template-columns: 1fr !important; }
+  .admin-app .admin-field input, .admin-app .admin-field select, .admin-app .admin-field textarea { min-height: 42px; font-size: 16px; }
+}
+
+/* Botão Sair do painel: sempre visível na barra de cima e no rodapé do menu */
+.admin-topbar-logout { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text-primary); font-weight: 600; font-size: 13px; cursor: pointer; }
+.admin-topbar-logout:hover { border-color: var(--danger); color: var(--danger); }
+button.admin-footer-logout { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; font-size: 12.5px; color: #c6cee6; }
+button.admin-footer-logout:hover { color: #fff; }
+@media (max-width: 760px) {
+  .admin-app .admin-topbar-link { display: none; }
+  .admin-app .admin-topbar-actions { gap: 6px; }
+}
+
+/* Nota curta abaixo do título de um quadro (ex.: período escolhido nos downloads) */
+.admin-muted-note { margin: -6px 0 12px; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; }
+.admin-app a.admin-button { display: inline-flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; }
+
+/* Blog e SEO (painel) */
+.blog-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 20px; align-items: start; }
+.blog-editor-main, .blog-editor-side { display: grid; gap: 4px; min-width: 0; }
+.blog-editor-text { min-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; line-height: 1.6; }
+.blog-editor-preview { min-height: 320px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); max-width: none; font-size: .98rem; }
+.blog-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.blog-toolbar > button, .blog-toolbar-upload { min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-primary); font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; }
+.blog-toolbar > button.is-on { border-color: var(--primary); color: var(--primary); }
+.blog-cover-box, .blog-seo-box { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted); margin-bottom: 14px; }
+.blog-cover-box > span { color: var(--text-secondary); font-size: 12.5px; font-weight: 560; }
+.blog-cover-box img, .blog-cover-empty { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
+.blog-cover-empty { display: grid; place-items: center; color: var(--text-muted); font-size: 12.5px; background: var(--surface); }
+.blog-cover-box .admin-field, .blog-seo-box .admin-field { margin-bottom: 4px; }
+.seo-counter { color: var(--text-muted); font-size: 11.5px; font-weight: 500; }
+.seo-counter.is-ok { color: var(--success, #15803d); }
+.seo-counter.is-short, .seo-counter.is-long { color: var(--warning, #b45309); }
+.seo-preview { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); font-family: Arial, sans-serif; }
+.seo-preview small { color: #4d5156; font-size: 12px; overflow-wrap: anywhere; }
+.seo-preview strong { color: #1a0dab; font-size: 18px; font-weight: 400; line-height: 1.3; }
+.seo-preview span { color: #4d5156; font-size: 13px; line-height: 1.5; }
+:root[data-theme="dark"] .seo-preview strong { color: #8ab4f8; }
+:root[data-theme="dark"] .seo-preview small, :root[data-theme="dark"] .seo-preview span { color: #bdc1c6; }
+.blog-editor-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
+.blog-admin-list { display: grid; gap: 10px; }
+.blog-admin-item { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted); }
+.blog-admin-item > img, .blog-admin-item > .blog-cover-fallback { width: 96px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 10px; font-size: 1.1rem; }
+.blog-admin-item > div:nth-child(2) { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.blog-admin-item small { color: var(--text-muted); overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .blog-editor { grid-template-columns: 1fr; }
+  .blog-admin-item { grid-template-columns: 72px minmax(0, 1fr); }
+  .blog-admin-item > img, .blog-admin-item > .blog-cover-fallback { width: 72px; }
+  .blog-admin-item > .admin-row-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+  .blog-admin-item > .admin-row-actions > * { flex: 1 1 0; justify-content: center; }
+  .blog-editor-actions > .admin-button { flex: 1 1 100%; }
+}

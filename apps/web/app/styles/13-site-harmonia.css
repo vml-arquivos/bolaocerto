@@ -1,0 +1,113 @@
+/* Site público: ritmo uniforme entre seções, cartões centralizados, perguntas centralizadas e o blog. */
+
+/* Ritmo: seções com o mesmo respiro; duas seções seguidas sem fundo não somam o espaço */
+.section { padding-top: 72px; padding-bottom: 72px; }
+.section.shell + .section.shell { padding-top: 24px; }
+.section-tight { padding-top: 40px; padding-bottom: 8px; }
+.section-title { margin-bottom: 26px; }
+.home-trust { margin-top: 14px; }
+
+/* Grades de bolões: cartões com largura certa e centralizados (um cartão sozinho não fica encostado à esquerda) */
+.pool-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 380px)); justify-content: center; gap: 20px; }
+.pool-grid > * { min-width: 0; }
+
+/* Perguntas frequentes centralizadas, na mesma largura do título */
+#duvidas .section-title { justify-content: center; text-align: center; }
+#duvidas .faq-list { margin: 0 auto; max-width: 820px; }
+
+/* Faixa de jogo responsável alinhada ao conteúdo */
+.responsible-strip { margin: 8px auto 48px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); text-align: center; line-height: 1.6; }
+
+@media (max-width: 760px) {
+  .section { padding-top: 44px; padding-bottom: 44px; }
+  .section.shell + .section.shell { padding-top: 12px; }
+  .section-tight { padding-top: 28px; }
+  /* Título e "ver todos" na mesma linha, sem o vão grande entre eles */
+  .section-title { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 6px 16px; margin-bottom: 18px; }
+  .section-title > div { flex: 1 1 220px; min-width: 0; }
+  .section-title h2 { font-size: 1.6rem; }
+  .section-title p { font-size: .95rem; }
+  .section-link { font-size: .92rem; }
+  .pool-grid { grid-template-columns: 1fr; gap: 14px; }
+  .responsible-strip { margin: 0 16px 32px; font-size: .92rem; }
+}
+
+/* Aplicativo instalado (PWA): só o essencial — conta, comprar bolões e acompanhar. O site completo continua no navegador. */
+@media (display-mode: standalone) {
+  #main-content > #resultados, #main-content > #sorteados, #main-content > #encerrados, #main-content > #concursos,
+  #main-content > #como-funciona, #main-content > #duvidas, #main-content > #blog, #main-content > .numbers-strip, #main-content > .responsible-strip { display: none; }
+}
+
+/* ---------------------------------- Blog ---------------------------------- */
+.blog-page { padding-bottom: 32px; }
+.blog-crumbs { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; color: var(--text-muted); font-size: .88rem; }
+.blog-crumbs a { color: var(--text-secondary); }
+.blog-hero { padding: 56px 0 28px; }
+.blog-hero h1 { margin: 6px 0 10px; font-size: clamp(2rem, 4vw, 2.9rem); line-height: 1.1; letter-spacing: -.02em; color: var(--text-primary); }
+.blog-hero p { margin: 0; max-width: 680px; color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; }
+.blog-body { display: grid; gap: 28px; padding-bottom: 40px; }
+.blog-empty { display: grid; gap: 6px; padding: 28px; border: 1px dashed var(--border-strong); border-radius: 18px; text-align: center; color: var(--text-secondary); }
+.blog-meta { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; color: var(--text-muted); font-size: .84rem; }
+.blog-meta b { color: var(--primary); font-weight: 650; text-transform: uppercase; letter-spacing: .06em; font-size: .74rem; }
+.blog-cover-fallback { display: grid; place-items: center; background: linear-gradient(135deg, var(--primary), var(--accent, #6d28d9)); color: #fff; font-weight: 800; font-size: 2rem; letter-spacing: .04em; }
+
+.blog-feature { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 22px; background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--shadow-sm); transition: transform .2s ease, box-shadow .2s ease; }
+.blog-feature:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.blog-feature img, .blog-feature .blog-cover-fallback { width: 100%; height: 100%; min-height: 280px; object-fit: cover; }
+.blog-feature > div { display: grid; align-content: center; gap: 12px; padding: 32px; }
+.blog-feature h2 { margin: 0; font-size: clamp(1.4rem, 2.4vw, 1.9rem); line-height: 1.2; color: var(--text-primary); }
+.blog-feature p { margin: 0; color: var(--text-secondary); line-height: 1.6; }
+.blog-read { color: var(--primary); font-weight: 650; }
+
+.blog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px; }
+.blog-card { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--shadow-sm); transition: transform .2s ease, box-shadow .2s ease; }
+.blog-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.blog-card img, .blog-card .blog-cover-fallback { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.blog-card > div { display: grid; align-content: start; gap: 8px; padding: 18px; }
+.blog-card h3 { margin: 0; font-size: 1.08rem; line-height: 1.3; color: var(--text-primary); }
+.blog-card p { margin: 0; color: var(--text-secondary); font-size: .93rem; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+.blog-article-head { max-width: 820px; padding-top: 48px; padding-bottom: 20px; display: grid; gap: 10px; }
+.blog-article-head h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.8rem); line-height: 1.12; letter-spacing: -.02em; color: var(--text-primary); }
+.blog-lead { margin: 0; color: var(--text-secondary); font-size: 1.12rem; line-height: 1.6; }
+.blog-article-cover { max-width: 1000px; margin: 8px auto 24px; }
+.blog-article-cover img { width: 100%; max-height: 520px; object-fit: cover; border-radius: 20px; border: 1px solid var(--border); }
+.blog-article-body { max-width: 760px; color: var(--text-secondary); font-size: 1.06rem; line-height: 1.8; }
+.blog-article-body h2 { margin: 36px 0 12px; color: var(--text-primary); font-size: 1.5rem; line-height: 1.25; scroll-margin-top: 90px; }
+.blog-article-body h3 { margin: 28px 0 10px; color: var(--text-primary); font-size: 1.2rem; scroll-margin-top: 90px; }
+.blog-article-body p { margin: 0 0 18px; }
+.blog-article-body ul, .blog-article-body ol { margin: 0 0 18px; padding-left: 22px; display: grid; gap: 6px; }
+.blog-article-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.blog-article-body strong { color: var(--text-primary); }
+.blog-article-body blockquote { margin: 0 0 18px; padding: 14px 18px; border-left: 4px solid var(--primary); border-radius: 0 12px 12px 0; background: var(--surface-muted); color: var(--text-primary); }
+.blog-article-body figure { margin: 24px 0; }
+.blog-article-body figure img { width: 100%; border-radius: 16px; border: 1px solid var(--border); }
+.blog-article-body figcaption { margin-top: 8px; color: var(--text-muted); font-size: .88rem; text-align: center; }
+.blog-article-body hr { margin: 28px 0; border: 0; border-top: 1px solid var(--border); }
+.blog-cta { max-width: 760px; margin: 28px auto 8px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding: 20px 22px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+.blog-cta > div { display: grid; gap: 4px; }
+.blog-cta span { color: var(--text-muted); }
+.blog-more { padding-top: 40px; padding-bottom: 40px; }
+.blog-more h2 { margin: 0 0 18px; font-size: 1.5rem; color: var(--text-primary); }
+
+@media (max-width: 760px) {
+  .blog-hero { padding: 32px 0 12px; }
+  .blog-feature { grid-template-columns: 1fr; }
+  .blog-feature img, .blog-feature .blog-cover-fallback { min-height: 0; aspect-ratio: 16 / 9; }
+  .blog-feature > div { padding: 20px; }
+  .blog-article-head { padding-top: 28px; }
+  .blog-article-cover { margin: 4px 16px 18px; }
+  .blog-article-body { font-size: 1rem; line-height: 1.75; }
+  .blog-cta .button { width: 100%; }
+}
+
+/* Cabeçalho: itens numa linha só (com o Blog no menu não pode quebrar "Minhas cotas" nem "Criar conta") */
+.main-nav a, .header-actions .button { white-space: nowrap; }
+@media (max-width: 1360px) { .main-nav { gap: 18px; font-size: .86rem; } }
+@media (max-width: 1220px) { .main-nav { gap: 14px; } .brand small { display: none; } }
+/* Telas médias: o menu fica com o principal (Comparar, Estatísticas e Modalidades seguem no rodapé e na página) */
+@media (max-width: 1180px) { .main-nav a:nth-child(1), .main-nav a:nth-child(4), .main-nav a:nth-child(6) { display: none; } }
+@media (max-width: 920px) { .main-nav a:nth-child(2), .main-nav a:nth-child(8) { display: none; } }
+/* Sair sempre à vista para quem entrou (também no celular) */
+.site-header .header-actions .header-logout { display: inline-flex; }
+@media (max-width: 760px) { .site-header .header-actions .header-logout { padding: 9px 10px; } }

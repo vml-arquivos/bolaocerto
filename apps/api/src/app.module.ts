@@ -11,6 +11,8 @@ import { SharesModule } from './shares/shares.module';
 import { PaymentsModule } from './payments/payments.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
+import { DownloadsModule } from './downloads/downloads.module';
+import { BlogModule } from './blog/blog.module';
 import { AdminModule } from './admin/admin.module';
 import { CrmModule } from './crm/crm.module';
 import { StatisticsModule } from './statistics/statistics.module';
@@ -41,6 +43,8 @@ import { HealthController } from './health.controller';
     PaymentsModule,
     FiscalModule,
     ReportsModule,
+    DownloadsModule,
+    BlogModule,
     AdminModule,
     CrmModule,
     StatisticsModule,
