@@ -5,6 +5,7 @@ import { concursoNo } from '../lib/contest';
 import { authenticatedFetch as authFetch } from '../lib/client-api';
 import { useIsSuperAdmin } from './staff-gate';
 import { AddressFields } from './address-fields';
+import { DocActions, Pager, SearchBox, usePagedSearch } from './doc-actions';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -42,15 +43,9 @@ async function download(path: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-/** Abre um PDF que precisa de login numa nova aba, para ver na tela antes de baixar. */
-async function viewPdf(path: string) {
-  const tab = window.open('', '_blank');
-  const response = await authFetch(path);
-  if (!response.ok) { tab?.close(); const payload = await response.json().catch(() => ({})); throw new Error(Array.isArray(payload?.message) ? payload.message.join(' ') : payload?.message || 'Não foi possível abrir o arquivo.'); }
-  const url = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type: 'application/pdf' }));
-  if (tab) tab.location.href = url; else window.location.href = url;
-  window.setTimeout(() => URL.revokeObjectURL(url), 120000);
-}
+const noteText = (note: Rec) => [note.participante, note.email, note.numero, note.status, note.origem, note.referencia, note.erro].filter(Boolean).join(' ');
+const docText = (row: Rec) => Object.values(row).filter((value) => typeof value === 'string' || typeof value === 'number').join(' ');
+
 
 function Panel({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return <section className="admin-panel"><div className="admin-panel-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>{children}</section>;
@@ -87,6 +82,7 @@ export function ReportsView() {
   const [list, setList] = useState<Rec[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState('');
+  const docsPage = usePagedSearch<Rec>(list, docText, 25);
   const [error, setError] = useState('');
 
   const query = useCallback((extra: Record<string, string> = {}) => {
@@ -206,14 +202,20 @@ export function ReportsView() {
 
     {!loading && tab === 'recibos' && <Panel title={`Recibos dos pagamentos · ${list.length}`} action={<div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(exporting) || !list.length} onClick={() => void exportZip('/api/v1/admin/downloads/recibos/zip', 'recibos')}>{exporting === 'recibos-zip' ? 'Gerando o arquivo…' : 'Baixar todos (ZIP)'}</button></div>}>
       <p className="admin-muted-note">Período: {periodLabel}. O ZIP traz o PDF de cada recibo e uma planilha com a lista.</p>
-      <Table minWidth={900}><thead><tr><th>Recibo</th><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th><th>Arquivo</th></tr></thead><tbody>{list.map((row) => <tr key={row.cotaId}><td data-label="Recibo"><strong>{row.numero}</strong></td><td data-label="Participante"><strong>{row.participante}</strong><small>{row.email}</small></td><td data-label="Bolão">{row.modalidade ? `${label(row.modalidade)} #${row.concurso}` : '—'}</td><td data-label="Valor pago">{brl(row.valor)}</td><td data-label="Pago em">{dateTime(row.pagoEm)}</td><td className="td-actions"><div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-secondary" onClick={() => void viewPdf(`/api/v1/cotas/${row.cotaId}/recibo?formato=pdf`).catch((failure) => setError(failure instanceof Error ? failure.message : 'Falha ao abrir.'))}>Ver</button><button className="admin-button admin-button-small" disabled={Boolean(exporting)} onClick={() => void exportZip(`/api/v1/cotas/${row.cotaId}/recibo?formato=pdf`, `r-${row.cotaId}`, false)}>{exporting === `r-${row.cotaId}-zip` ? 'Baixando…' : 'Baixar PDF'}</button></div></td></tr>)}</tbody></Table>
+      <div className="doc-filters"><SearchBox value={docsPage.query} onChange={docsPage.setQuery} placeholder="Buscar por nome, e-mail ou número" /></div>
+      <Table minWidth={900}><thead><tr><th>Recibo</th><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th><th>Arquivo</th></tr></thead><tbody>{docsPage.visible.map((row) => <tr key={row.cotaId}><td data-label="Recibo"><strong>{row.numero}</strong></td><td data-label="Participante"><strong>{row.participante}</strong><small>{row.email}</small></td><td data-label="Bolão">{row.modalidade ? `${label(row.modalidade)} #${row.concurso}` : '—'}</td><td data-label="Valor pago">{brl(row.valor)}</td><td data-label="Pago em">{dateTime(row.pagoEm)}</td><td className="td-actions"><DocActions path={`/api/v1/cotas/${row.cotaId}/recibo?formato=pdf`} name={`recibo-${row.numero}.pdf`} onError={setError} /></td></tr>)}</tbody></Table>
       {!list.length && <Empty text="Nenhum recibo no período" />}
+      {list.length > 0 && !docsPage.total && <Empty text="Nada encontrado com essa busca" />}
+      <Pager page={docsPage.page} pages={docsPage.pages} total={docsPage.total} all={docsPage.all} onPage={docsPage.setPage} />
     </Panel>}
 
     {!loading && tab === 'arquivos-notas' && <Panel title={`Notas fiscais · ${list.filter((row) => row.status === 'emitida').length} emitidas`} action={<div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(exporting) || !list.some((row) => row.status === 'emitida')} onClick={() => void exportZip('/api/v1/admin/downloads/notas/zip', 'notas')}>{exporting === 'notas-zip' ? 'Gerando o arquivo…' : 'Baixar todas (ZIP)'}</button></div>}>
       <p className="admin-muted-note">Período: {periodLabel}. O ZIP traz o PDF e o XML de cada nota emitida e uma planilha com a lista.</p>
-      <Table minWidth={900}><thead><tr><th>Nº</th><th>Tomador</th><th>Situação</th><th>Valor</th><th>Data</th><th>Arquivos</th></tr></thead><tbody>{list.map((row) => <tr key={row.id}><td data-label="Nº"><strong>{row.numero ?? '—'}</strong></td><td data-label="Tomador"><strong>{row.tomador}</strong><small>{row.email}</small></td><td data-label="Situação"><span className={chip(row.status)}>{label(row.status)}</span></td><td data-label="Valor">{brl(row.valor)}</td><td data-label="Data">{dateTime(row.emitidaEm ?? row.criadoEm)}</td><td className="td-actions"><div className="admin-row-actions">{row.pdfUrl ? <a className="admin-button admin-button-small admin-button-secondary" href={row.pdfUrl} target="_blank" rel="noreferrer">Ver PDF</a> : null}{row.xmlUrl ? <a className="admin-button admin-button-small" href={row.xmlUrl} target="_blank" rel="noreferrer" download>XML</a> : null}{!row.pdfUrl && !row.xmlUrl ? <span className="admin-muted-note">sem arquivo</span> : null}</div></td></tr>)}</tbody></Table>
+      <div className="doc-filters"><SearchBox value={docsPage.query} onChange={docsPage.setQuery} placeholder="Buscar por nome, e-mail ou número" /></div>
+      <Table minWidth={900}><thead><tr><th>Nº</th><th>Tomador</th><th>Situação</th><th>Valor</th><th>Data</th><th>Arquivos</th></tr></thead><tbody>{docsPage.visible.map((row) => <tr key={row.id}><td data-label="Nº"><strong>{row.numero ?? '—'}</strong></td><td data-label="Tomador"><strong>{row.tomador}</strong><small>{row.email}</small></td><td data-label="Situação"><span className={chip(row.status)}>{label(row.status)}</span></td><td data-label="Valor">{brl(row.valor)}</td><td data-label="Data">{dateTime(row.emitidaEm ?? row.criadoEm)}</td><td className="td-actions">{row.pdfUrl ? <DocActions path={`/api/v1/admin/downloads/notas/${row.id}/arquivo?tipo=pdf`} name={`nota-fiscal-${row.numero ?? row.id.slice(0, 8)}.pdf`} extra={row.xmlUrl ? { label: 'XML', path: `/api/v1/admin/downloads/notas/${row.id}/arquivo?tipo=xml`, name: `nota-fiscal-${row.numero ?? row.id.slice(0, 8)}.xml` } : undefined} onError={setError} /> : <span className="admin-muted-note">sem arquivo</span>}</td></tr>)}</tbody></Table>
       {!list.length && <Empty text="Nenhuma nota no período" />}
+      {list.length > 0 && !docsPage.total && <Empty text="Nada encontrado com essa busca" />}
+      <Pager page={docsPage.page} pages={docsPage.pages} total={docsPage.total} all={docsPage.all} onPage={docsPage.setPage} />
     </Panel>}
 
     {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
@@ -426,6 +428,9 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   const [busy, setBusy] = useState('');
   const [form, setForm] = useState<{ kind: 'emitir' | 'manual' | 'cancelar'; id: string } | null>(null);
   const [viewing, setViewing] = useState<Rec | null>(null);
+  const [noteStatus, setNoteStatus] = useState('');
+  const notesFiltered = (data.notas ?? []).filter((note: Rec) => !noteStatus || note.status === noteStatus);
+  const notesPage = usePagedSearch<Rec>(notesFiltered, noteText, 25);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -527,10 +532,11 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       </Panel>}
 
       <Panel title="Notas emitidas e em andamento">
-        <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Arquivos</th><th>Ações</th></tr></thead><tbody>{(data.notas ?? []).map((note: Rec) => <tr key={note.id}>
+        <div className="doc-filters"><SearchBox value={notesPage.query} onChange={notesPage.setQuery} placeholder="Buscar por nome, e-mail ou número da nota" /><select className="admin-inline-select" value={noteStatus} onChange={(event) => { setNoteStatus(event.target.value); notesPage.setPage(1); }} aria-label="Situação"><option value="">Todas as situações</option><option value="emitida">Emitidas</option><option value="aguardando">Aguardando</option><option value="erro">Com erro</option><option value="cancelada">Canceladas</option></select><a className="admin-button admin-button-small admin-button-secondary" href="/admin?view=relatorios&aba=arquivos-notas">Baixar todas de um período (ZIP)</a></div>
+        <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Documento</th><th>Ações</th></tr></thead><tbody>{notesPage.visible.map((note: Rec) => <tr key={note.id}>
           <td>{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
           <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{splitNoteError(note.erro).resumo}{splitNoteError(note.erro).tecnico ? <details><summary>Texto técnico da Focus</summary>{splitNoteError(note.erro).tecnico}</details> : null}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
-          <td>{note.pdfUrl ? <a className="text-link" href={note.pdfUrl} target="_blank" rel="noreferrer">PDF</a> : '—'}{note.xmlUrl ? <> · <a className="text-link" href={note.xmlUrl} target="_blank" rel="noreferrer">XML</a></> : null}</td>
+          <td>{note.pdfUrl ? <DocActions path={`/api/v1/admin/downloads/notas/${note.id}/arquivo?tipo=pdf`} name={`nota-fiscal-${note.numero ?? note.id.slice(0, 8)}.pdf`} extra={note.xmlUrl ? { label: 'XML', path: `/api/v1/admin/downloads/notas/${note.id}/arquivo?tipo=xml`, name: `nota-fiscal-${note.numero ?? note.id.slice(0, 8)}.xml` } : undefined} onError={(message) => notify('error', message)} /> : <span className="admin-muted-note">sem arquivo</span>}</td>
           <td><div className="admin-row-actions">
             <button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(busy)} onClick={() => void viewNote(note)}>{busy === `view-${note.id}` ? 'Abrindo…' : 'Ver nota'}</button>
             {note.origem !== 'manual' && note.status !== 'cancelada' && <button className="admin-button admin-button-small" disabled={Boolean(busy)} onClick={() => void run(`sync-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/sincronizar`, {}, () => 'Nota atualizada.')}>Atualizar</button>}
@@ -541,7 +547,8 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
           {form && form.kind === 'emitir' && form.id === note.pagamentoId && <NoteForm kind="emitir" busy={busy.endsWith(note.pagamentoId)} onCancel={() => setForm(null)} onSubmit={(values) => void submitPaymentForm('emitir', note.pagamentoId, values)} />}
           {form && form.kind === 'cancelar' && form.id === note.id && <NoteForm kind="cancelar" busy={busy === `cancel-${note.id}`} onCancel={() => setForm(null)} onSubmit={(values) => void run(`cancel-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/cancelar`, values, () => 'Nota cancelada.')} />}
           </td></tr>)}</tbody></Table>
-        {!(data.notas ?? []).length && <Empty text="Nenhuma nota fiscal registrada ainda" />}
+        {!(data.notas ?? []).length ? <Empty text="Nenhuma nota fiscal registrada ainda" /> : !notesPage.total ? <Empty text="Nenhuma nota com esse filtro" /> : null}
+        <Pager page={notesPage.page} pages={notesPage.pages} total={notesPage.total} all={notesPage.all} onPage={notesPage.setPage} />
       </Panel>
     </>}
   </>;

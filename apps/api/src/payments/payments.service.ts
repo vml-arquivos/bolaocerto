@@ -305,6 +305,9 @@ export class PaymentsService {
       const valor = Number(payment.valorBruto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       const jogos = (cota.bolao.jogos ?? []).map(g => ({ ordem: g.ordem, numeros: g.numeros }));
       await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'pagamento.confirmado', payload: { titulo: 'Pagamento confirmado', mensagem: `Recebemos ${valor}. Consulte o recibo interno e os arquivos disponíveis na sua conta. A confirmação do pagamento não substitui o comprovante oficial de registro da aposta.`, link: '/minha-conta', cotaId: cota.id, jogos, valorJogo: payment.valorCustoBilhete.toFixed(2), taxaAdministracao: payment.valorTaxaAdmin.toFixed(2) } } });
+      // Quem compra depois de o registro do jogo já ter sido enviado também recebe o comprovante (aviso, celular e e-mail com o arquivo).
+      const registro = await tx.anexo.findFirst({ where: { bolaoId: cota.bolaoId, cotaId: null, removidoEm: null, visivelParticipantes: true, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } }, orderBy: { criadoEm: 'desc' }, select: { id: true } });
+      if (registro) await tx.notificacao.create({ data: { usuarioId: cota.compradorId, canal: 'push', tipo: 'cota.recibo', payload: { titulo: 'Comprovante disponível', mensagem: 'O comprovante do registro do jogo deste bolão já está disponível e vai anexado neste e-mail. Ele também fica guardado na sua conta.', bolaoId: cota.bolaoId, anexoId: registro.id, cotaId: cota.id, link: '/minha-conta' } } });
     }
     if (settled && cota.afiliadoReferenciaId && Number(payment.valorComissaoAfiliado) > 0) {
       const fee = Number(payment.valorTaxaAdmin);

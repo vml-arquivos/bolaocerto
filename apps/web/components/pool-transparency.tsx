@@ -1,6 +1,6 @@
 import { money, PublicPool, shortDate } from '../lib/domain';
 import { ATTACHMENT_LABELS, fileSize } from '../lib/files';
-import { OpenFileButton } from './open-file-button';
+import { DocActions } from './doc-actions';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -23,7 +23,7 @@ export function PoolTransparency({ pool }: { pool: PublicPool }) {
       <strong>Comprovantes enviados ({info.anexos!.length})</strong>
       <ul>{info.anexos!.map((file) => <li key={file.id}>
         <div><span>{ATTACHMENT_LABELS[file.tipo] ?? 'Arquivo'} · {file.nome}</span><small>{fileSize(file.tamanho)} · {shortDate(file.enviadoEm)} · código {file.sha256.slice(0, 12)}…</small></div>
-        <OpenFileButton id={file.id} label="Abrir" />
+        <DocActions variant="site" path={`/api/v1/anexos/${file.id}/arquivo`} name={file.nome} />
       </li>)}</ul>
       <small>Só quem tem cota neste bolão consegue abrir os arquivos. O código identifica o arquivo: se ele for alterado, o código muda.</small>
     </div>}

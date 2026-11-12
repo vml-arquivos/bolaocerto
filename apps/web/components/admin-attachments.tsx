@@ -2,7 +2,7 @@
 
 import { DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { api, authFetch, dateTime, Empty, modalityNames, Notify, Rec } from './admin-ui';
-import { OpenFileButton } from './open-file-button';
+import { DocActions } from './doc-actions';
 import { ATTACHMENT_LABELS, fileSize } from '../lib/files';
 
 const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp';
@@ -106,7 +106,7 @@ export function AttachmentsPanel({ poolId, shares = [], forceShareId, defaultTyp
           <small className="attach-hash" title="Impressão digital do arquivo: muda se o arquivo for alterado">código {String(file.sha256).slice(0, 12)}…</small>
         </div>
         <div className="attach-actions">
-          <OpenFileButton id={file.id} className="admin-button admin-button-small" />
+          <DocActions path={`/api/v1/anexos/${file.id}/arquivo`} name={file.nome} onError={(message) => notify('error', message)} />
           <button type="button" className={`admin-button admin-button-small ${file.visivelParticipantes ? '' : 'admin-button-ghost'}`} onClick={() => void toggle(file)} title="Quem participa do bolão pode ver?">{file.visivelParticipantes ? 'Visível' : 'Oculto'}</button>
           {file.visivelParticipantes && <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => void resend(file)} title="Manda o aviso, o push e o e-mail com o arquivo anexado para os cotistas">Reenviar aos cotistas</button>}
           <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => void remove(file)}>Remover</button>

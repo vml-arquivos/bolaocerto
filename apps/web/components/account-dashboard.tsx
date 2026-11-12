@@ -7,6 +7,7 @@ import { modalityNames, money, shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
 import { PaymentInstructions, PaymentView } from './payment-instructions';
 import { ReceiptPanel } from './receipt-panel';
+import { DocActions } from './doc-actions';
 import { PushToggle } from './push-toggle';
 import { ModalityAlertsCard } from './modality-alerts-card';
 import { ProfilePanel } from './profile-panel';
@@ -78,8 +79,11 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
       {canCancelReservation && <button type="button" className="button button-danger" disabled={busy} onClick={cancelReservation}>{busy ? 'Cancelando…' : 'Cancelar compra'}</button>}
       {canAsk && <button type="button" className="button button-ghost" disabled={busy} onClick={() => setAsking((value) => !value)}>{asking ? 'Fechar' : 'Pedir cancelamento'}</button>}
       {share.comprovanteIndividualUrl && <a className="button button-secondary" href={share.comprovanteIndividualUrl} target="_blank" rel="noreferrer">Comprovante</a>}
-      {share.pagamento?.notaFiscal?.status === 'emitida' && share.pagamento.notaFiscal.pdfUrl && <a className="button button-secondary" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar nota fiscal</a>}
     </div>
+    {share.pagamento?.status === 'confirmado' && <div className="cota-docs" aria-label="Documentos da cota">
+      <div className="cota-doc"><span>Recibo da cota</span><DocActions variant="site" path={`/api/v1/cotas/${share.id}/recibo?formato=pdf`} name={`recibo-${share.id.slice(0, 8)}.pdf`} /></div>
+      {share.pagamento.notaFiscal?.status === 'emitida' && share.pagamento.notaFiscal.pdfUrl && <div className="cota-doc"><span>Nota fiscal{share.pagamento.notaFiscal.numero ? ` nº ${share.pagamento.notaFiscal.numero}` : ''}</span><DocActions variant="site" path={`/api/v1/cotas/${share.id}/nota-fiscal?tipo=pdf`} name={`nota-fiscal-${share.pagamento.notaFiscal.numero ?? share.id.slice(0, 8)}.pdf`} /></div>}
+    </div>}
     {asking && canAsk && <form className="cota-cancel" onSubmit={(event) => { event.preventDefault(); requestCancellation(); }}>
       <p>Você pode pedir o cancelamento em até {cancel?.ate ? <strong>{shortDate(cancel.ate)}</strong> : '7 dias'} depois do pagamento (direito de arrependimento), enquanto a aposta ainda não foi registrada na loteria. Se for aprovado, o valor volta para a sua carteira ou por Pix.</p>
       <label><span>Motivo (opcional)</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} rows={2} placeholder="Ex.: comprei por engano" /></label>
@@ -96,7 +100,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
       <div className="cota-more-body">
         <small>Titular: {share.titularNome} · cota {share.id.slice(0, 8)}</small>
         {share.bolao && share.bolao.jogos.length > 0 && <div><strong>Jogos ({share.bolao.jogos.length})</strong><ul>{share.bolao.jogos.map((game) => <li key={game.ordem}><small>Jogo {game.ordem}:</small> <code>{game.numeros.map((n) => String(n).padStart(2, '0')).join(' ')}</code></li>)}</ul></div>}
-        {share.pagamento?.notaFiscal && <small className="muted">Nota fiscal de serviço: {NOTE_TEXT[share.pagamento.notaFiscal.status] ?? share.pagamento.notaFiscal.status}{share.pagamento.notaFiscal.numero ? ` · nº ${share.pagamento.notaFiscal.numero}` : ''} {share.pagamento.notaFiscal.pdfUrl && <a className="text-link" href={share.pagamento.notaFiscal.pdfUrl} target="_blank" rel="noreferrer">Baixar PDF</a>}</small>}
+        {share.pagamento?.notaFiscal && <small className="muted">Nota fiscal de serviço: {NOTE_TEXT[share.pagamento.notaFiscal.status] ?? share.pagamento.notaFiscal.status}{share.pagamento.notaFiscal.numero ? ` · nº ${share.pagamento.notaFiscal.numero}` : ''}</small>}
         {share.pagamento?.status === 'confirmado' && <ReceiptPanel shareId={share.id} />}
       </div>
     </details>

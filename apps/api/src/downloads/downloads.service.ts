@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StatusPagamento } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
@@ -112,6 +112,24 @@ export class DownloadsService {
       if (!response.ok) return null;
       return Buffer.from(await response.arrayBuffer());
     } catch { return null; } finally { clearTimeout(timer); }
+  }
+
+  /** Um arquivo da nota (PDF ou XML) para ver, baixar ou imprimir no próprio site, sem sair para a Focus. Cliente só a nota da própria cota. */
+  async noteFile(where: { noteId?: string; cotaId?: string }, tipo: string, user: AuthUser): Promise<DownloadFile> {
+    const kind = tipo === 'xml' ? 'xml' : 'pdf';
+    const note = await this.prisma.notaFiscal.findFirst({
+      where: where.noteId ? { id: where.noteId } : { pagamento: { cotaId: where.cotaId } },
+      select: { id: true, numero: true, status: true, pdfUrl: true, xmlUrl: true, pagamento: { select: { cota: { select: { compradorId: true } } } } },
+    });
+    if (!note) throw new NotFoundException('Nota fiscal não encontrada.');
+    const staff = ['admin', 'operacao'].includes(user.papel);
+    if (!staff && note.pagamento.cota.compradorId !== user.id) throw new ForbiddenException('Esta nota não é sua.');
+    if (!staff && note.status !== 'emitida') throw new NotFoundException('A nota fiscal ainda não foi emitida.');
+    const url = kind === 'pdf' ? note.pdfUrl : note.xmlUrl;
+    if (!url) throw new NotFoundException(kind === 'pdf' ? 'Esta nota ainda não tem PDF.' : 'Esta nota não tem XML.');
+    const data = await this.fetchFile(url);
+    if (!data) throw new BadGatewayException('Não foi possível buscar o arquivo da nota agora. Tente de novo em instantes.');
+    return { filename: `nota-fiscal-${safe(note.numero ?? note.id.slice(0, 8))}.${kind}`, contentType: kind === 'pdf' ? 'application/pdf' : 'application/xml', buffer: data };
   }
 
   /** Notas emitidas do período: PDF e XML de cada uma num .zip, com planilha de índice. O que não baixar fica listado com o link. */

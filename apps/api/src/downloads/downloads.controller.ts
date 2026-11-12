@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -32,8 +32,25 @@ export class DownloadsController {
   @Get('notas')
   notes(@Query() query: ReportQueryDto) { return this.downloads.listNotes(query); }
 
+  @Get('notas/:id/arquivo')
+  async noteFile(@Param('id', ParseUUIDPipe) id: string, @Query('tipo') tipo: string, @CurrentUser() admin: AuthUser, @Res({ passthrough: true }) response: Response) {
+    return send(await this.downloads.noteFile({ noteId: id }, tipo, admin), response);
+  }
+
   @Get('notas/zip')
   async notesZip(@Query() query: ReportQueryDto, @Res({ passthrough: true }) response: Response) {
     return send(await this.downloads.notesZip(query), response);
+  }
+}
+
+/** Nota fiscal da própria cota, para o participante ver, baixar ou imprimir na conta. */
+@Controller('cotas')
+@UseGuards(JwtAuthGuard)
+export class MyNoteController {
+  constructor(private readonly downloads: DownloadsService) {}
+
+  @Get(':id/nota-fiscal')
+  async file(@Param('id', ParseUUIDPipe) id: string, @Query('tipo') tipo: string, @CurrentUser() user: AuthUser, @Res({ passthrough: true }) response: Response) {
+    return send(await this.downloads.noteFile({ cotaId: id }, tipo, user), response);
   }
 }

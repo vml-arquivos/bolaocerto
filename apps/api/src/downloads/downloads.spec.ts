@@ -86,5 +86,20 @@ describe('DownloadsService', () => {
     } finally { spy.mockRestore(); }
   });
 
+  it('nota avulsa: busca o PDF para ver/baixar/imprimir; o participante só a da própria cota', async () => {
+    const row = { id: 'n1', numero: '77', status: 'emitida', pdfUrl: 'https://api.focusnfe.com.br/a.pdf', xmlUrl: null, pagamento: { cota: { compradorId: 'u1' } } };
+    const { service, prisma } = setup();
+    (prisma.notaFiscal as Record<string, jest.Mock>).findFirst = jest.fn().mockResolvedValue(row);
+    const spy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, arrayBuffer: async () => new TextEncoder().encode('%PDF').buffer } as Response);
+    try {
+      const file = await service.noteFile({ cotaId: 'c1' }, 'pdf', { id: 'u1', papel: 'cotista' } as never);
+      expect(file).toMatchObject({ filename: 'nota-fiscal-77.pdf', contentType: 'application/pdf' });
+      await expect(service.noteFile({ cotaId: 'c1' }, 'pdf', { id: 'outro', papel: 'cotista' } as never)).rejects.toThrow(/não é sua/);
+      await expect(service.noteFile({ noteId: 'n1' }, 'xml', admin)).rejects.toThrow(/não tem XML/);
+      spy.mockResolvedValueOnce({ ok: false } as Response);
+      await expect(service.noteFile({ noteId: 'n1' }, 'pdf', admin)).rejects.toThrow(/Tente de novo/);
+    } finally { spy.mockRestore(); }
+  });
+
   it('limite de arquivos por zip', () => { expect(MAX_FILES).toBeGreaterThanOrEqual(100); });
 });

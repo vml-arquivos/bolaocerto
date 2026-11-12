@@ -111,3 +111,28 @@
 /* Sair sempre à vista para quem entrou (também no celular) */
 .site-header .header-actions .header-logout { display: inline-flex; }
 @media (max-width: 760px) { .site-header .header-actions .header-logout { padding: 9px 10px; } }
+
+/* Documentos: Ver, Baixar e Imprimir lado a lado em cada linha (painel e conta) */
+.doc-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.doc-actions .button-small { min-height: 36px; padding: 6px 12px; font-size: .86rem; }
+.doc-actions .doc-view { font-weight: 650; }
+.cota-docs { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted); }
+.cota-doc { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.cota-doc > span { color: var(--text-primary); font-weight: 600; font-size: .92rem; }
+.receipt-files li .doc-actions, .transparency-files .doc-actions { margin-top: 6px; }
+/* Busca e páginas das listas de documentos */
+.doc-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.doc-search { flex: 1 1 260px; display: block; }
+.doc-search input { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); color: var(--text-primary); font: inherit; font-size: 14px; }
+.doc-search input:focus { outline: none; border-color: var(--primary); box-shadow: var(--focus-ring); }
+.doc-pager { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-top: 12px; color: var(--text-muted); }
+.doc-pager > div { display: flex; gap: 6px; }
+@media (max-width: 760px) {
+  .doc-actions { width: 100%; }
+  .doc-actions > * { flex: 1 1 0; justify-content: center; }
+  .doc-filters > * { flex: 1 1 100%; }
+  .admin-app .admin-table td .doc-actions { justify-self: stretch; }
+}
+/* Na conta do cliente: botões leves (contorno); "Ver" em destaque */
+.doc-actions .button.button-secondary { background: var(--surface); color: var(--text-primary); border: 1px solid var(--border-strong); box-shadow: none; }
+.doc-actions .button.button-secondary.doc-view { background: var(--primary); border-color: var(--primary); color: #fff; }

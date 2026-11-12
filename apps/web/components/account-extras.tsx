@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import { shortDate } from '../lib/domain';
 import { authenticatedFetch } from '../lib/client-api';
 import { ATTACHMENT_LABELS, fileSize } from '../lib/files';
-import { OpenFileButton } from './open-file-button';
+import { DocActions } from './doc-actions';
 import { PasswordField } from './password-field';
 import { passwordProblem } from '../lib/password';
 import { modalityNames } from '../lib/domain';
@@ -210,7 +210,7 @@ export function ReceiptsCard() {
     <p className="muted">Guarde estes arquivos: são a prova da sua participação. Para resgatar um prêmio, leve o recibo da sua cota à lotérica ou à CAIXA, junto com um documento.</p>
     <ul className="receipt-files">{files.map((file) => <li key={file.id}>
       <div><strong>{ATTACHMENT_LABELS[file.tipo] ?? 'Arquivo'}</strong><small>{modalityNames[file.modalidade] ?? file.modalidade} · concurso {file.concurso} · {file.nome} · {fileSize(file.tamanho)} · {shortDate(file.enviadoEm)}</small></div>
-      <OpenFileButton id={file.id} label="Abrir" />
+      <DocActions variant="site" path={`/api/v1/anexos/${file.id}/arquivo`} name={file.nome} />
     </li>)}</ul>
   </article>;
 }

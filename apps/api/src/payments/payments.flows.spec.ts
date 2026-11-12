@@ -14,12 +14,13 @@ function cota(overrides: Record<string, unknown> = {}) {
   return { id: 'cota-1', bolaoId: 'bolao-1', quantidade: 2, status: StatusCota.reservada, afiliadoReferenciaId: 'af-1', bolao: { concurso: { status: 'aberto', cutoffAt: new Date(Date.now() + 86400000) }, jogos: [], status: StatusBolao.aberto, cotasIlimitadas: false, totalCotas: 10, cotasVendidas: 5 }, ...overrides };
 }
 
-function setup(options: { payment?: unknown; cota?: unknown; provider?: Partial<PaymentProvider> } = {}) {
+function setup(options: { payment?: unknown; cota?: unknown; provider?: Partial<PaymentProvider>; registro?: unknown } = {}) {
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     cota: { findUniqueOrThrow: jest.fn().mockResolvedValue(options.cota ?? cota()), update: jest.fn().mockResolvedValue({}) },
     bolao: { update: jest.fn().mockResolvedValue({}) },
     notificacao: { create: jest.fn().mockResolvedValue({}) },
+    anexo: { findFirst: jest.fn().mockResolvedValue((options as { registro?: unknown }).registro ?? null) },
     afiliado: { findUnique: jest.fn().mockResolvedValue({ usuarioId: 'seller-user' }) },
     pagamento: { findUniqueOrThrow: jest.fn().mockImplementation(() => Promise.resolve({ ...(options.payment as object ?? payment()), cota: options.cota ?? cota() })), update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...payment(), ...data, valorBruto: new Prisma.Decimal(100) })) },
     comissao: { upsert: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
@@ -52,6 +53,17 @@ describe('PaymentsService — confirmação', () => {
     expect(tx.cota.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: StatusCota.paga }) }));
     expect(tx.comissao.upsert).toHaveBeenCalledTimes(1);
     expect(tx.bolao.update).not.toHaveBeenCalled();
+  });
+
+  it('quem paga depois de o registro do jogo ter sido enviado recebe o comprovante na hora', async () => {
+    const { service, tx } = setup({ registro: { id: 'anexo-1' } });
+    await service.confirmPayment('inv_1', undefined, 100);
+    expect(tx.anexo.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ bolaoId: 'bolao-1', cotaId: null, visivelParticipantes: true }) }));
+    const recibo = tx.notificacao.create.mock.calls.map(([arg]: [{ data: { tipo: string; payload: Record<string, unknown> } }]) => arg.data).find((data: { tipo: string }) => data.tipo === 'cota.recibo');
+    expect(recibo?.payload).toMatchObject({ anexoId: 'anexo-1', cotaId: 'cota-1', bolaoId: 'bolao-1' });
+    const none = setup();
+    await none.service.confirmPayment('inv_1', undefined, 100);
+    expect(none.tx.notificacao.create.mock.calls.some(([arg]: [{ data: { tipo: string } }]) => arg.data.tipo === 'cota.recibo')).toBe(false);
   });
 
   it('BUG CORRIGIDO: pagamento tardio reativa a cota expirada e recontabiliza o estoque', async () => {

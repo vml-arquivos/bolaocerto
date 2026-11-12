@@ -36,23 +36,12 @@ export function ReceiptPanel({ shareId }: { shareId: string }) {
     } catch (issue) { setError(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
   }
 
-  async function download() {
-    setBusy(true); setError('');
-    try {
-      const response = await authenticatedFetch(`/api/v1/cotas/${shareId}/recibo?formato=pdf`);
-      if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.message || 'Não foi possível gerar o PDF.'); }
-      const name = /filename="([^"]+)"/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? 'recibo.pdf';
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; document.body.appendChild(anchor); anchor.click(); anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } catch (issue) { setError(issue instanceof Error ? issue.message : 'Erro inesperado.'); } finally { setBusy(false); }
-  }
+
 
   const v = receipt?.valores;
   return <div>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       <button type="button" className="button button-secondary" onClick={() => void toggle()} aria-expanded={open}>{open ? 'Ocultar recibo' : 'Ver recibo e como seu valor foi dividido'}</button>
-      <button type="button" className="button button-secondary" disabled={busy} onClick={() => void download()}>{busy ? 'Gerando…' : 'Baixar recibo (PDF)'}</button>
     </div>
     {error && <div className="form-message form-error" style={{ marginTop: 8 }}>{error}</div>}
     {open && receipt && v && <div className="receipt-box">
