@@ -116,16 +116,22 @@ export function buildFocusBody(input: FocusEmitInput) {
 }
 
 /**
- * Brasília/DF (IBGE 5300108) exige o código de tributação municipal, que no padrão nacional tem EXATAMENTE 3 números (cTribMun).
- * Sem NFSE_TRIB_MUNICIPAL, usa 001 (o primeiro código do serviço; 000 o fisco não aceita). Se o DF não tiver esse código para o
- * serviço, a Focus devolve "código inexistente" e o valor certo vai em NFSE_TRIB_MUNICIPAL.
+ * Código de tributação municipal (cTribMun, 3 números) no Ambiente Nacional: é OPCIONAL e só existe quando o município cadastrou
+ * um desdobramento próprio para o serviço. Brasília/DF recusou 001 para o item 19.01 (E0314: código inexistente), então por padrão
+ * nada é enviado e vale só o código nacional. Se um dia o DF exigir, o código vai em NFSE_TRIB_MUNICIPAL.
  */
-export function defaultMunicipalCode(ibge: string, nacional: string): string | undefined {
-  return ibge === '5300108' && /^\d{6}$/.test(nacional) ? '001' : undefined;
+export function defaultMunicipalCode(_ibge: string, _nacional: string): string | undefined {
+  return undefined;
 }
 
-/** Item 19.01 da lista de serviços (venda de bilhetes e produtos de loteria): a tabela oficial de correlação liga ao NBS 1.0905.11.00. Só preenche sozinho para esse item; os demais exigem NFSE_NBS. */
+/**
+ * NBS pelo código nacional, conforme a tabela oficial de correlação (LC 116 × NBS):
+ * - 01.03.01/01.03.02 (processamento/hospedagem de aplicativos e sistemas — serviço de tecnologia da plataforma) → 1.1506.21.00 (SaaS);
+ * - 19.01 (produtos de loteria) → 1.0905.11.00.
+ * Os demais itens exigem NFSE_NBS.
+ */
 export function defaultNbs(nacional: string): string | undefined {
+  if (nacional === '010301' || nacional === '010302') return '115062100';
   return nacional === '190101' || nacional === '190102' ? '109051100' : undefined;
 }
 
@@ -135,7 +141,7 @@ export function defaultNbs(nacional: string): string | undefined {
  * então ele vai sempre completo. NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST e NFSE_IBS_CBS_CLASS têm prioridade se preenchidas.
  */
 export function defaultIbsCbs(nacional: string): { indicadorOperacao: string; ibsCbsSituacao: string; ibsCbsClassificacao: string } | undefined {
-  return nacional === '190101' || nacional === '190102' ? { indicadorOperacao: '100301', ibsCbsSituacao: '000', ibsCbsClassificacao: '000001' } : undefined;
+  return ['010301', '010302', '190101', '190102'].includes(nacional) ? { indicadorOperacao: '100301', ibsCbsSituacao: '000', ibsCbsClassificacao: '000001' } : undefined;
 }
 
 /** Traduz a recusa técnica (validação do XML) para o que falta preencher, em português simples. Devolve vazio se não reconhece. */
@@ -144,7 +150,7 @@ export function explainFocusError(raw: string): string {
   const hints: string[] = [];
   if (text.includes('ctribmun') && text.includes('pattern')) hints.push('O código de tributação municipal precisa ter exatamente 3 números (NFSE_TRIB_MUNICIPAL, ex.: 001).');
   else if (text.includes('ctribmun')) hints.push('Falta o código de tributação municipal do serviço (NFSE_TRIB_MUNICIPAL, 3 números).');
-  if (/e0314|e0315|tributa[cç][aã]o municipal inexistente|c[oó]digo de tributa[cç][aã]o municipal/.test(text) && !text.includes('pattern')) hints.push('O DF não reconhece esse código de tributação municipal para o serviço. Veja o código certo na lista do Emissor Nacional (nota de teste, campo "código de tributação municipal") ou com o contador e coloque em NFSE_TRIB_MUNICIPAL (3 números, nunca 000).');
+  if (/e0314|e0315|tributa[cç][aã]o municipal inexistente|c[oó]digo de tributa[cç][aã]o municipal/.test(text) && !text.includes('pattern')) hints.push('O DF não reconhece esse código de tributação municipal para o serviço. Apague a variável NFSE_TRIB_MUNICIPAL no Coolify (o sistema passa a mandar só o código nacional) e tente de novo.');
   if (text.includes('cindop') || text.includes('inddest') || text.includes('ibscbs')) hints.push('O fisco recusou o grupo da reforma tributária (IBS/CBS): ele precisa ir completo (indicador da operação, CST e classificação, além do NBS). Confira NFSE_TRIB_NACIONAL=190101 ou preencha NFSE_NBS, NFSE_INDICADOR_OPERACAO, NFSE_IBS_CBS_CST e NFSE_IBS_CBS_CLASS.');
   if (/endere[cç]o do tomador|e0234/.test(text)) hints.push('O fisco exige o endereço do participante nesta nota. Peça para ele preencher em Minha conta, ou informe aqui em "Informar endereço e tentar de novo".');
   if (/inscri[cç][aã]o (municipal|do prestador)|cf\/df/.test(text)) hints.push('Confira a inscrição do prestador (no DF é o CF/DF, na variável NFSE_MUNICIPAL_REGISTER) e se é a mesma cadastrada na Focus.');

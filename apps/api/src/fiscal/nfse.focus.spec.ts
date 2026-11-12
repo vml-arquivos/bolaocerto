@@ -33,17 +33,21 @@ describe('buildFocusBody', () => {
     expect(body).toMatchObject({ codigo_nbs: '114062000', codigo_indicador_operacao: '100301', ibs_cbs_situacao_tributaria: '000', ibs_cbs_classificacao_tributaria: '000001', finalidade_emissao: 0, consumidor_final: 1, indicador_destinatario: 0 });
   });
 
-  it('Brasília usa 001 como código municipal (3 números) quando não há outro', () => {
-    expect(defaultMunicipalCode('5300108', '100801')).toBe('001');
+  it('não manda código municipal por padrão (o DF recusou 001; no nacional ele é opcional)', () => {
+    expect(defaultMunicipalCode('5300108', '100801')).toBeUndefined();
     expect(defaultMunicipalCode('3550308', '100801')).toBeUndefined();
     expect(defaultMunicipalCode('5300108', '')).toBeUndefined();
+  });
+
+  it('serviço de tecnologia 01.03.01 (plataforma) usa o NBS de SaaS e o grupo da reforma correlacionado', () => {
+    expect(defaultNbs('010301')).toBe('115062100');
+    expect(defaultIbsCbs('010301')).toEqual({ indicadorOperacao: '100301', ibsCbsSituacao: '000', ibsCbsClassificacao: '000001' });
   });
 
   it('item 19.01 (loteria) preenche o NBS sozinho; outros itens não', () => {
     expect(defaultNbs('190101')).toBe('109051100');
     expect(defaultNbs('170901')).toBeUndefined();
-    expect(defaultMunicipalCode('5300108', '190101')).toBe('001');
-    expect(defaultMunicipalCode('5300108', '190101')).toMatch(/^\d{3}$/);
+    expect(defaultMunicipalCode('5300108', '190101')).toBeUndefined();
   });
 
   it('item 19.01 manda o grupo IBS/CBS completo por padrão (100301 / 000 / 000001)', () => {
@@ -204,7 +208,7 @@ describe('NfseService com a Focus NFe', () => {
   });
 
   it('com o grupo da reforma, nota sem endereço do participante não vai ao fisco: avisa o que falta e pede o endereço uma vez', async () => {
-    const { service, focus, prisma } = setup({ values: { NFSE_TRIB_NACIONAL: '190101' } });
+    const { service, focus, prisma } = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'true' } });
     await expect(service.emitForPayment('p', admin)).rejects.toThrow(/Falta o endereço do participante/);
     expect(focus.emit).not.toHaveBeenCalled();
     const saved = prisma.notaFiscal.upsert.mock.calls[0]![0].create;
@@ -213,7 +217,7 @@ describe('NfseService com a Focus NFe', () => {
     expect(prisma.notificacao.create).toHaveBeenCalledTimes(1);
     expect(prisma.notificacao.create.mock.calls[0]![0].data).toMatchObject({ usuarioId: 'u1', tipo: 'nota.endereco' });
     // segunda tentativa, nota já com o mesmo aviso: não pede o endereço de novo
-    const again = setup({ values: { NFSE_TRIB_NACIONAL: '190101' }, payment: payment({ notaFiscal: { id: 'n', status: StatusNotaFiscal.erro, provedorId: 'bl-x-123', erro: ADDRESS_MISSING + ' outro texto' } }) });
+    const again = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'true' }, payment: payment({ notaFiscal: { id: 'n', status: StatusNotaFiscal.erro, provedorId: 'bl-x-123', erro: ADDRESS_MISSING + ' outro texto' } }) });
     await expect(again.service.emitForPayment('p', admin)).rejects.toThrow(/endereço/);
     expect(again.prisma.notificacao.create).not.toHaveBeenCalled();
   });
@@ -222,7 +226,7 @@ describe('NfseService com a Focus NFe', () => {
     const buyer = { ...BUYER, enderecoCep: '70040010', enderecoLogradouro: 'SBS Quadra 2', enderecoNumero: '10', enderecoBairro: 'Asa Sul', enderecoCidade: 'Brasília', enderecoUf: 'DF' };
     const spy = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('sem rede'));
     try {
-      const { service, focus } = setup({ values: { NFSE_TRIB_NACIONAL: '190101' }, payment: payment({ cota: { id: 'cota-1', comprador: buyer } }) });
+      const { service, focus } = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'true' }, payment: payment({ cota: { id: 'cota-1', comprador: buyer } }) });
       await service.emitForPayment('p', admin);
       const input = (focus.emit as jest.Mock).mock.calls[0]![1];
       expect(input.tomador.endereco).toMatchObject({ cep: '70040010', codigoMunicipio: '5300108' });
@@ -250,7 +254,7 @@ describe('NfseService com a Focus NFe', () => {
   });
 
   it('a configuração diz quando o endereço é obrigatório', async () => {
-    expect(await setup({ values: { NFSE_TRIB_NACIONAL: '190101' } }).service.settings()).toMatchObject({ enderecoObrigatorio: true });
+    expect(await setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'true' } }).service.settings()).toMatchObject({ enderecoObrigatorio: true });
     expect(await setup().service.settings()).toMatchObject({ enderecoObrigatorio: false });
   });
 
@@ -269,15 +273,54 @@ describe('NfseService com a Focus NFe', () => {
   });
 
   it('o endereço do participante diz quando é obrigatório para a nota', async () => {
-    const required = setup({ values: { NFSE_TRIB_NACIONAL: '190101' } });
+    const required = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'true' } });
     required.prisma.usuario.findUnique.mockResolvedValue(BUYER);
     expect(await required.service.getAddress('u1')).toMatchObject({ completo: false, obrigatorio: true });
     const optional = setup();
     optional.prisma.usuario.findUnique.mockResolvedValue(BUYER);
     expect(await optional.service.getAddress('u1')).toMatchObject({ obrigatorio: false });
-    const off = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_MODE: 'off' } });
+    const off = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_IBS_CBS_ENVIAR: 'true', NFSE_MODE: 'off' } });
     off.prisma.usuario.findUnique.mockResolvedValue(BUYER);
     expect(await off.service.getAddress('u1')).toMatchObject({ obrigatorio: false });
+  });
+
+  it('em Brasília manda só o código nacional; o municipal só vai se NFSE_TRIB_MUNICIPAL existir', async () => {
+    const buyer = { ...BUYER, enderecoCep: '70040010', enderecoLogradouro: 'SBS Quadra 2', enderecoNumero: '10', enderecoBairro: 'Asa Sul', enderecoCidade: 'Brasília', enderecoUf: 'DF' };
+    const spy = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('sem rede'));
+    try {
+      const plain = setup({ values: { NFSE_TRIB_NACIONAL: '190101' }, payment: payment({ cota: { id: 'cota-1', comprador: buyer } }) });
+      await plain.service.emitForPayment('p', admin);
+      const body = buildFocusBody((plain.focus.emit as jest.Mock).mock.calls[0]![1]);
+      expect(body).not.toHaveProperty('codigo_tributacao_municipal_iss');
+      expect(body).toMatchObject({ codigo_tributacao_nacional_iss: '190101' });
+      const withCode = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_TRIB_MUNICIPAL: '002' }, payment: payment({ cota: { id: 'cota-1', comprador: buyer } }) });
+      await withCode.service.emitForPayment('p', admin);
+      expect(buildFocusBody((withCode.focus.emit as jest.Mock).mock.calls[0]![1])).toMatchObject({ codigo_tributacao_municipal_iss: '002' });
+    } finally { spy.mockRestore(); }
+  });
+
+  it('empresa do Simples Nacional em 2026: sem grupo IBS/CBS e sem exigir endereço (obrigatório só em 2027)', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-11T22:00:00-03:00'));
+    try {
+      const simples = setup({ values: { NFSE_TRIB_NACIONAL: '190101' } });
+      await simples.service.emitForPayment('p', admin);
+      const body = buildFocusBody((simples.focus.emit as jest.Mock).mock.calls[0]![1]);
+      expect(body).not.toHaveProperty('codigo_indicador_operacao');
+      expect(body).not.toHaveProperty('ibs_cbs_situacao_tributaria');
+      expect(body).not.toHaveProperty('codigo_tributacao_municipal_iss');
+      expect(body).toMatchObject({ codigo_tributacao_nacional_iss: '190101', codigo_opcao_simples_nacional: 3 });
+      expect(await setup({ values: { NFSE_TRIB_NACIONAL: '190101' } }).service.settings()).toMatchObject({ enderecoObrigatorio: false });
+      // empresa fora do Simples: o grupo vai
+      const normal = setup({ values: { NFSE_TRIB_NACIONAL: '190101', NFSE_SIMPLES_OPCAO: '1' } });
+      expect(await normal.service.settings()).toMatchObject({ enderecoObrigatorio: true });
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('a partir de 2027 o Simples também manda o grupo IBS/CBS', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2027-01-02T10:00:00-03:00'));
+    try {
+      expect(await setup({ values: { NFSE_TRIB_NACIONAL: '190101' } }).service.settings()).toMatchObject({ enderecoObrigatorio: true });
+    } finally { jest.useRealTimers(); }
   });
 
   it('a configuração informa provedor, ambiente e pendências', async () => {

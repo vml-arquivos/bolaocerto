@@ -33,6 +33,11 @@ export async function lookupIbge(cep: string): Promise<string | null> {
 }
 
 /** Município do tomador: pelo CEP (ViaCEP); se a consulta falhar e o endereço for do DF (que tem um único município), é Brasília. */
+/** Ano no horário de Brasília (a competência da nota). */
+export function brasiliaYear(now = new Date()): number {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric' }).format(now));
+}
+
 export async function resolveIbge(cep: string, uf: string | null | undefined): Promise<string | null> {
   const found = await lookupIbge(cep);
   if (found) return found;
@@ -179,7 +184,13 @@ export class NfseService {
     if (!/^\d{6}$/.test(get('NFSE_TRIB_NACIONAL'))) missing.push('NFSE_TRIB_NACIONAL');
     if (missing.length) return { issuer: null, missing };
     const optionOf = get('NFSE_SIMPLES_OPCAO', '3');
-    const ibs = get('NFSE_IBS_CBS_ENVIAR') === 'false' ? undefined : defaultIbsCbs(get('NFSE_TRIB_NACIONAL'));
+    // Grupo IBS/CBS da reforma: para optante do Simples Nacional (ME/EPP ou MEI) só é obrigatório a partir de 2027 (NT 009).
+    // Sem o grupo, o fisco também não exige o endereço do tomador (regra E0234 vale para o indicador da operação).
+    // NFSE_IBS_CBS_ENVIAR=true força o envio; =false nunca envia.
+    const send = get('NFSE_IBS_CBS_ENVIAR');
+    const simplesBefore2027 = Number(optionOf) !== 1 && brasiliaYear() < 2027;
+    const ibs = send === 'false' || (send !== 'true' && simplesBefore2027) ? undefined : defaultIbsCbs(get('NFSE_TRIB_NACIONAL'));
+    const withGroup = Boolean(ibs) || send === 'true';
     return {
       missing,
       issuer: {
@@ -191,9 +202,9 @@ export class NfseService {
         opcaoSimples: [1, 2, 3].includes(Number(optionOf)) ? Number(optionOf) : 3,
         percentualTributos: Number(get('NFSE_SIMPLES_PCT', '0')) || 0,
         nbs: get('NFSE_NBS') || defaultNbs(get('NFSE_TRIB_NACIONAL')),
-        indicadorOperacao: get('NFSE_INDICADOR_OPERACAO') || ibs?.indicadorOperacao,
-        ibsCbsSituacao: get('NFSE_IBS_CBS_CST') || ibs?.ibsCbsSituacao,
-        ibsCbsClassificacao: get('NFSE_IBS_CBS_CLASS') || ibs?.ibsCbsClassificacao,
+        indicadorOperacao: withGroup ? get('NFSE_INDICADOR_OPERACAO') || ibs?.indicadorOperacao : undefined,
+        ibsCbsSituacao: withGroup ? get('NFSE_IBS_CBS_CST') || ibs?.ibsCbsSituacao : undefined,
+        ibsCbsClassificacao: withGroup ? get('NFSE_IBS_CBS_CLASS') || ibs?.ibsCbsClassificacao : undefined,
       },
     };
   }
@@ -398,7 +409,7 @@ export class NfseService {
       cpf: buyer.cpf, nome: buyer.nome, email: buyer.email, telefone: buyer.telefone,
       endereco: address && ibge ? { cep: address.zip_code, logradouro: address.street, numero: address.number, complemento: address.complement, bairro: address.district, codigoMunicipio: ibge } : null,
     };
-    const description = `${this.config.get<string>('NFSE_DESCRIPTION', 'Serviço de intermediação e administração de participação em bolão')} (pagamento ${payment.id.slice(0, 8)})`;
+    const description = `${this.config.get<string>('NFSE_DESCRIPTION', 'Serviço de tecnologia: uso da plataforma digital Bolão Livre')} (pagamento ${payment.id.slice(0, 8)})`;
     // Mesma referência enquanto a nota anterior deu erro (a Focus aceita reenviar); depois de cancelada, uma referência nova.
     const previous = payment.notaFiscal;
     const ref = previous?.provedorId && previous.status !== StatusNotaFiscal.cancelada ? previous.provedorId : `bl-${payment.id}${previous ? `-${Date.now().toString(36)}` : ''}`;
