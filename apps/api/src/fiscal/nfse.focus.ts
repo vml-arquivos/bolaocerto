@@ -77,7 +77,6 @@ export function buildFocusBody(input: FocusEmitInput) {
     data_competencia: competencia,
     codigo_municipio_emissora: Number(issuer.codigoMunicipio),
     cnpj_prestador: issuer.cnpj,
-    inscricao_municipal_prestador: issuer.inscricaoMunicipal,
     codigo_opcao_simples_nacional: issuer.opcaoSimples,
     regime_especial_tributacao: 0,
     ...(issuer.opcaoSimples === 3 ? { regime_tributario_simples_nacional: '1' } : {}),
