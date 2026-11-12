@@ -59,6 +59,12 @@ describe('AdminService.updateUserRole', () => {
     await service.updateUserRole('u2', { papel: 'operacao' }, admin);
     expect(tx.afiliado.update.mock.calls[0][0].data.statusAprovacao).toBe('inativo');
   });
+  it('afiliado volta a ser cotista: papel cotista e cadastro de afiliado inativo', async () => {
+    const { service, tx } = setup({ target: { papel: 'afiliado' }, affiliate: { id: 'a1', statusAprovacao: 'aprovado' } });
+    await expect(service.updateUserRole('u2', { papel: 'cotista' }, admin)).resolves.toEqual({ id: 'u2', papel: 'cotista' });
+    expect(tx.usuario.update.mock.calls[0][0].data.papel).toBe('cotista');
+    expect(tx.afiliado.update.mock.calls[0][0]).toEqual({ where: { id: 'a1' }, data: { statusAprovacao: 'inativo' } });
+  });
   it('o administrador não tira o próprio acesso', async () => {
     const { service } = setup({});
     await expect(service.updateUserRole('u1', { papel: 'cotista' }, admin)).rejects.toBeInstanceOf(ConflictException);

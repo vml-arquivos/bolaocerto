@@ -100,5 +100,8 @@ describe('AdminService — busca de afiliados', () => {
     const where = prisma.afiliado.findMany.mock.calls[0][0].where;
     expect(JSON.stringify(where.OR)).toContain('"email":{"contains":"maria@exemplo.com"');
     expect(where.OR).toHaveLength(3);
+    expect(where.statusAprovacao).toEqual({ not: 'inativo' });
+    await service.listAffiliates({ status: 'inativo' } as any);
+    expect(prisma.afiliado.findMany.mock.calls[1][0].where.statusAprovacao).toBe('inativo');
   });
 });

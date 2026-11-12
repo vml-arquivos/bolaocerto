@@ -18,15 +18,20 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
   const [savedEmail, setSavedEmail] = useState('');
   const [resetLink, setResetLink] = useState<{ link: string; expiraEm: string; aviso: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedRole, setSavedRole] = useState('');
   const messageRef = useRef<HTMLParagraphElement>(null);
   // O aviso fica no topo do painel: leva a tela até ele para o erro não passar despercebido.
   useEffect(() => { if (message) messageRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [message]);
-  useEffect(() => { let cancelled = false; void api(`/api/v1/admin/usuarios/${id}`).then(data => { if (!cancelled) { setUser(data); setSavedEmail(data.email); } }).catch(error => { if (!cancelled) setMessage(error.message); }); return () => { cancelled = true; }; }, [id]);
+  useEffect(() => { let cancelled = false; void api(`/api/v1/admin/usuarios/${id}`).then(data => { if (!cancelled) { setUser(data); setSavedEmail(data.email); setSavedRole(data.papel); } }).catch(error => { if (!cancelled) setMessage(error.message); }); return () => { cancelled = true; }; }, [id]);
   async function save(event: FormEvent) {
     event.preventDefault(); if (!user || busy) return;
     setBusy(true); setMessage('');
     try {
+      // Um só "Salvar": se o perfil de acesso também foi trocado, ele é aplicado junto (antes só o botão de baixo aplicava).
+      const roleChanged = user.papel !== savedRole;
+      if (roleChanged && !window.confirm(`Mudar o perfil para "${roleLabels[user.papel] ?? user.papel}"? As sessões atuais da pessoa serão encerradas.`)) { setBusy(false); return; }
       await api(`/api/v1/admin/usuarios/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: user.nome, email: user.email, telefone: user.telefone ?? '', ...(user.dataNascimento ? { dataNascimento: user.dataNascimento.slice(0, 10) } : {}) }) });
+      if (roleChanged) await applyRole(user.papel);
       await onDone(); onClose();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao salvar.'); } finally { setBusy(false); }
   }
@@ -45,18 +50,26 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       else { await onDone(); onClose(); }
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha na operação.'); } finally { setBusy(false); }
   }
+  /** Grava o perfil e confere a resposta do servidor: só dá como feito se o perfil salvo for o escolhido. */
+  async function applyRole(papel: string) {
+    const result = await api(`/api/v1/admin/usuarios/${id}/papel`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ papel }) });
+    if (result?.papel !== papel) throw new Error('O perfil não foi alterado. Atualize a página e tente de novo.');
+    setSavedRole(papel);
+  }
   async function saveRole() {
-    if (!user || busy || !window.confirm('Aplicar este perfil de acesso? As sessões atuais serão encerradas.')) return;
+    if (!user || busy) return;
+    if (user.papel === savedRole) { setMessage('Escolha outro perfil na lista antes de aplicar.'); return; }
+    if (!window.confirm(`Mudar o perfil para "${roleLabels[user.papel] ?? user.papel}"? As sessões atuais da pessoa serão encerradas.`)) return;
     setBusy(true); setMessage('');
     try {
-      await api(`/api/v1/admin/usuarios/${id}/papel`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ papel: user.papel }) });
+      await applyRole(user.papel);
       await onDone(); onClose();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao alterar acesso.'); } finally { setBusy(false); }
   }
   return <AdminModal title="Usuário, equipe e acessos" onClose={() => { if (!busy) onClose(); }}>
     {message && <p role="alert" ref={messageRef} className="notice admin-editor-message">{message}</p>}
     {!user && !message && <p>Carregando cadastro…</p>}
-    {user && <><p><strong>{roleLabels[user.papel] ?? user.papel}</strong> · {user.desativadoEm ? 'Acesso removido' : 'Conta ativa'} · {user._count.cotasCompradas} participações · {user._count.boloesCriados} bolões criados</p>
+    {user && <><p><strong>{roleLabels[savedRole] ?? savedRole}</strong> · {user.desativadoEm ? 'Acesso removido' : 'Conta ativa'} · {user._count.cotasCompradas} participações · {user._count.boloesCriados} bolões criados</p>
       <form className="admin-form-grid" onSubmit={save}>
         <label className="admin-field"><span>Nome</span><input required minLength={2} maxLength={150} value={user.nome} onChange={e => setUser({ ...user, nome: e.target.value })}/></label>
         <label className="admin-field"><span>E-mail</span><input required type="email" maxLength={180} value={user.email} onChange={e => setUser({ ...user, email: e.target.value })}/></label>
@@ -68,7 +81,8 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       <hr/><h3>Perfil de acesso</h3>
       <label className="admin-field"><span>Permissões do usuário</span><select value={user.papel} disabled={busy} onChange={e => setUser({ ...user, papel: e.target.value })}><option value="cotista">Cliente / cotista</option><option value="afiliado">Afiliado</option><option value="operacao">Equipe de operação</option>{(superAdmin || user.papel === 'admin') && <option value="admin">Administrador</option>}</select></label>
       
-      <button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void saveRole()}>Aplicar perfil de acesso</button>
+      {user.papel !== savedRole && <p className="admin-help">Perfil atual: <strong>{roleLabels[savedRole] ?? savedRole}</strong>. A troca vale ao clicar em "Aplicar perfil de acesso" ou em "Salvar alterações".{savedRole === 'afiliado' ? ' O cadastro de afiliado fica inativo (o histórico de comissões é mantido).' : ''}</p>}
+      <button type="button" className="admin-button" disabled={busy || user.papel === savedRole} onClick={() => void saveRole()}>{busy ? 'Processando…' : 'Aplicar perfil de acesso'}</button>
       <hr/><h3>Recuperação de senha</h3>
       
       <div className="admin-row-actions"><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('link')}>Gerar link de redefinição</button><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('reset')}>Enviar redefinição de senha</button><button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void action(user.desativadoEm ? 'restore' : 'remove')}>{user.desativadoEm ? 'Reativar conta' : 'Remover acesso'}</button></div>
