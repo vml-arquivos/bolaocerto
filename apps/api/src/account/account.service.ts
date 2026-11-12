@@ -6,7 +6,7 @@ import { createHash, randomBytes } from 'crypto';
 import { AuditService } from '../common/audit.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
-import { assertCanManage } from '../admin/superadmin';
+import { assertCanManage, assertCanSeeAccount } from '../admin/superadmin';
 import { NotificationsService } from '../notifications/notifications.service';
 import { isValidNewPassword, NEW_PASSWORD_MESSAGE } from '../auth/password-policy';
 import { detectFileType } from '../attachments/file-type';
@@ -122,6 +122,7 @@ export class AccountService {
       const user = await tx.usuario.findUnique({ where: { id: usuarioId }, select: { id: true, email: true, papel: true, desativadoEm: true } });
       if (!user) throw new NotFoundException('Usuário não encontrado.');
       assertCanManage(actor, user);
+      await assertCanSeeAccount(tx, actor, user);
       if (user.desativadoEm) throw new ConflictException('Reative a conta antes de gerar um link.');
       const recent = await tx.tokenSenha.count({ where: { usuarioId, criadoEm: { gt: new Date(Date.now() - 3_600_000) } } });
       if (recent >= RESET_MAX_PER_HOUR) throw new ConflictException('Limite de 3 solicitações por hora. Aguarde antes de gerar outro link.');

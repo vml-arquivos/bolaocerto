@@ -20,7 +20,13 @@ describe('AdminService', () => {
     const audit = { record: jest.fn() };
     const service = new AdminService(prisma as any, audit as any);
 
-    await service.approveAffiliate('affiliate-1', { comissaoPadraoPct: 12 }, { id: 'admin-1', papel: 'admin' } as any);
+    const old = process.env.ADMIN_BOOTSTRAP_EMAIL; process.env.ADMIN_BOOTSTRAP_EMAIL = 'principal@x.com';
+    try {
+      // Pedido sem dono (ninguém trouxe): administrador comum não aprova; a conta principal aprova.
+      await expect(service.approveAffiliate('affiliate-1', { comissaoPadraoPct: 12 }, { id: 'admin-2', email: 'outro@x.com', papel: 'admin' } as any)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tx.afiliado.update).not.toHaveBeenCalled();
+      await service.approveAffiliate('affiliate-1', { comissaoPadraoPct: 12 }, { id: 'admin-1', email: 'principal@x.com', papel: 'admin' } as any);
+    } finally { if (old === undefined) delete process.env.ADMIN_BOOTSTRAP_EMAIL; else process.env.ADMIN_BOOTSTRAP_EMAIL = old; }
 
     expect(tx.afiliado.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'affiliate-1' } }));
     expect(tx.usuario.update).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { papel: 'afiliado' } });

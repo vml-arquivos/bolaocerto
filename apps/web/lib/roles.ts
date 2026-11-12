@@ -17,7 +17,7 @@ export function homeForRole(papel?: string | null) {
 export const STAFF_VIEWS = ['operacao'] as const;
 
 /** Telas só da conta principal do sistema (a API também bloqueia os demais administradores). */
-export const SUPERADMIN_VIEWS = ['conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'auditoria', 'configuracoes'] as const;
+export const SUPERADMIN_VIEWS = ['conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'auditoria', 'configuracoes', 'documentos'] as const;
 
 const SHARED_PREFIXES = ['/boloes', '/aplicativo', '/minha-conta', '/resultados', '/estatisticas', '/checkout'];
 const ALLOWED_NEXT: Record<Papel, string[]> = {

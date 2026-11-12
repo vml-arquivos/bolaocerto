@@ -7,7 +7,7 @@ import { AuditService } from '../common/audit.service';
 import { MailService } from '../common/mail.service';
 import { IsDateString, IsEmail, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
 import { formatCpf } from '../reports/export.util';
-import { assertCanManage, isSuperAdmin } from './superadmin';
+import { assertCanManage, assertCanSeeAccount, isSuperAdmin } from './superadmin';
 
 export class EditManagedUserDto {
   @IsString() @Length(2, 150) nome!: string;
@@ -34,6 +34,7 @@ export class AdminUsersService {
     const user = await this.prisma.usuario.findUnique({ where: { id }, select: { ...view, _count: { select: { cotasCompradas: true, boloesCriados: true } } } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
     assertCanManage(actor, user);
+    await assertCanSeeAccount(this.prisma, actor, user);
     return { ...user, cpf: formatCpf(user.cpf) };
   }
   async edit(id: string, dto: EditManagedUserDto, actor: AuthUser) {
@@ -48,6 +49,7 @@ export class AdminUsersService {
         const before = await tx.usuario.findUnique({ where: { id }, select: view });
         if (!before) throw new NotFoundException('Usuário não encontrado.');
         assertCanManage(actor, before);
+        await assertCanSeeAccount(tx, actor, before);
         const emailChanged = before.email !== email;
         const updated = await tx.usuario.update({ where: { id }, data: { nome, email, ...(dto.telefone !== undefined ? { telefone: dto.telefone.trim() || null } : {}), ...(birth ? { dataNascimento: birth } : {}), ...(emailChanged ? { tokenVersion: { increment: 1 } } : {}) }, select: view });
         if (emailChanged) await tx.tokenSenha.updateMany({ where: { usuarioId: id, usadoEm: null }, data: { usadoEm: new Date() } });
@@ -67,6 +69,7 @@ export class AdminUsersService {
       const target = await tx.usuario.findUnique({ where: { id }, select: { id: true, email: true, papel: true, desativadoEm: true } });
       if (!target) throw new NotFoundException('Usuário não encontrado.');
       assertCanManage(actor, target);
+      await assertCanSeeAccount(tx, actor, target);
       if (active === !target.desativadoEm) return { id, ativo: active };
       await tx.usuario.update({ where: { id }, data: { desativadoEm: active ? null : new Date(), tokenVersion: { increment: 1 } } });
       await tx.tokenSenha.updateMany({ where: { usuarioId: id, usadoEm: null }, data: { usadoEm: new Date() } });
@@ -90,6 +93,7 @@ export class AdminUsersService {
         const target = await tx.usuario.findUnique({ where: { id }, include: { _count: true, afiliado: { select: { id: true, _count: { select: { comissoes: true, cotasReferenciadas: true } } } } } });
         if (!target) throw new NotFoundException('Usuário não encontrado.');
         assertCanManage(actor, target);
+        await assertCanSeeAccount(tx, actor, target);
         if (isSuperAdmin(target)) throw new ConflictException('A conta principal do sistema não pode ser excluída.');
         const disposable = superAdmin ? new Set([...DISPOSABLE_RELATIONS, 'aceitesLegais', 'gruposCriados']) : DISPOSABLE_RELATIONS;
         const blockers = Object.entries(target._count).filter(([name, count]) => !disposable.has(name) && count > 0).map(([name, count]) => `${count} ${RELATION_LABELS[name] ?? name}`);
@@ -133,6 +137,7 @@ export class AdminUsersService {
       const target = await tx.usuario.findUnique({ where: { id }, select: { id: true, nome: true, email: true, papel: true, desativadoEm: true } });
       if (!target) throw new NotFoundException('Usuário não encontrado.');
       assertCanManage(actor, target);
+      await assertCanSeeAccount(tx, actor, target);
       if (target.desativadoEm) throw new ConflictException('Reative a conta antes de solicitar uma nova senha.');
       if (await tx.tokenSenha.count({ where: { usuarioId: id, criadoEm: { gt: new Date(Date.now() - 3_600_000) } } }) >= 3) throw new ConflictException('Limite de 3 solicitações por hora. Aguarde antes de reenviar.');
       await tx.tokenSenha.updateMany({ where: { usuarioId: id, usadoEm: null }, data: { usadoEm: new Date() } });

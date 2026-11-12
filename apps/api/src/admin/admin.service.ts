@@ -1,6 +1,6 @@
 import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { effectiveSaleWindow } from '../pools/sales-rules';
-import { assertCanGrantRole, assertCanManage, isSuperAdmin } from './superadmin';
+import { assertCanGrantRole, assertCanManage, assertCanSeeAccount, assertOwnsAffiliate, isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
@@ -332,10 +332,11 @@ export class AdminService {
     return { items: items.map((payment) => ({ ...payment, valorBruto: payment.valorBruto.toFixed(2), valorTaxaAdmin: payment.valorTaxaAdmin.toFixed(2), valorComissaoAfiliado: payment.valorComissaoAfiliado.toFixed(2), valorCustoBilhete: payment.valorCustoBilhete.toFixed(2) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
-  async listAffiliates(query: AdminListQueryDto = {}) {
+  async listAffiliates(query: AdminListQueryDto = {}, actor?: AuthUser) {
     const { page, pageSize, skip, take } = this.pagination(query);
     // Sem filtro, quem deixou de ser afiliado (inativo) não aparece; continua visível com o filtro "Inativo".
-    const where: Prisma.AfiliadoWhereInput = { ...(query.status ? { statusAprovacao: query.status } : { statusAprovacao: { not: 'inativo' } }), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }, { usuario: { email: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
+    // Administrador comum só vê os afiliados que ele trouxe (cadastrou, aprovou ou mandou o link); o superadmin vê todos.
+    const where: Prisma.AfiliadoWhereInput = { ...(actor && actor.papel === 'admin' && !isSuperAdmin(actor) ? { aprovadoPor: actor.id } : {}), ...(query.status ? { statusAprovacao: query.status } : { statusAprovacao: { not: 'inativo' } }), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }, { usuario: { email: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
     const [items, total] = await Promise.all([
       this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.afiliado.count({ where }),
@@ -579,7 +580,7 @@ export class AdminService {
   async listGroups(query: AdminListQueryDto = {}, actor: AuthUser) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const where: Prisma.GrupoWhereInput = actor.papel === 'afiliado' ? { afiliadoId: (await this.requireApprovedAffiliate(actor)).id } : { ...(query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { slug: { contains: query.busca, mode: 'insensitive' } }] } : {}) };
-    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, _count: { select: { boloes: true, membros: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }), this.prisma.grupo.count({ where })]);
+    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, criador: { select: { nome: true } }, _count: { select: { boloes: true, membros: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }), this.prisma.grupo.count({ where })]);
     return { items: items.map((group) => ({ ...group, totalMembros: group._count.membros, capacidade: group._count.membros + group.capacidadeExtra })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
@@ -653,7 +654,7 @@ export class AdminService {
     const search: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
     const roleFilter: Prisma.UsuarioWhereInput = query.papel === 'equipe' ? { papel: { in: ['admin', 'operacao'] } } : query.papel ? { papel: query.papel as PapelUsuario } : {};
     // Só aparecem contas de nível menor que o do ator (e a própria): um administrador comum não vê o superadmin nem outros administradores.
-    const visibility: Prisma.UsuarioWhereInput = isSuperAdmin(actor) ? {} : { OR: [{ id: actor.id }, { papel: { in: ['cotista', 'afiliado', 'operacao'] } }] };
+    const visibility: Prisma.UsuarioWhereInput = isSuperAdmin(actor) ? {} : { OR: [{ id: actor.id }, { papel: { in: ['cotista', 'operacao'] } }, { papel: 'afiliado', afiliado: { aprovadoPor: actor.id } }] };
     const where: Prisma.UsuarioWhereInput = { AND: [visibility], ...search, ...roleFilter, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
     const [items, total] = await Promise.all([
       this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
@@ -667,6 +668,7 @@ export class AdminService {
     const target = await this.prisma.usuario.findUnique({ where: { id }, select: { id: true, nome: true, email: true, papel: true } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
     assertCanManage(user, target);
+    await assertCanSeeAccount(this.prisma, user, target);
     if (id !== user.id) assertCanGrantRole(user, dto.papel);
     const updated = await this.prisma.$transaction(async (tx) => {
       await lockAdminActor(tx, user.id);
@@ -692,6 +694,7 @@ export class AdminService {
     const target = await this.prisma.usuario.findUnique({ where: { id } });
     if (!target) throw new NotFoundException('Usuário não encontrado.');
     assertCanManage(user, target);
+    await assertCanSeeAccount(this.prisma, user, target);
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.usuario.update({ where: { id }, data: { statusKyc: dto.statusKyc } });
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.kyc.alterado', atorId: user.id, payloadAntes: target as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });
@@ -744,6 +747,7 @@ export class AdminService {
   async approveAffiliate(id: string, dto: ApproveAffiliateDto, user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { id }, include: { usuario: true } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
+    assertOwnsAffiliate(user, affiliate.aprovadoPor);
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.afiliado.update({ where: { id }, data: { statusAprovacao: 'aprovado', comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct), aprovadoPor: user.id, aprovadoEm: new Date() } });
       await tx.usuario.update({ where: { id: affiliate.usuarioId }, data: { papel: 'afiliado' } });
@@ -756,8 +760,9 @@ export class AdminService {
   }
 
   async updateAffiliateNetwork(id: string, dto: UpdateAffiliateNetworkDto, user: AuthUser) {
-    const target = await this.prisma.afiliado.findUnique({ where: { id }, select: { id: true, parentAfiliadoId: true } });
+    const target = await this.prisma.afiliado.findUnique({ where: { id }, select: { id: true, parentAfiliadoId: true, aprovadoPor: true } });
     if (!target) throw new NotFoundException('Afiliado não encontrado.');
+    assertOwnsAffiliate(user, target.aprovadoPor);
     if (dto.parentAfiliadoId === id) throw new ConflictException('Um afiliado não pode ser pai de si mesmo.');
     if (dto.parentAfiliadoId) {
       const parent = await this.prisma.afiliado.findFirst({ where: { id: dto.parentAfiliadoId, statusAprovacao: 'aprovado' }, select: { id: true, parentAfiliadoId: true } });
@@ -780,6 +785,7 @@ export class AdminService {
   async updateAffiliateCommission(id: string, dto: UpdateAffiliateCommissionDto, user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { id } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
+    assertOwnsAffiliate(user, affiliate.aprovadoPor);
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.afiliado.update({ where: { id }, data: { comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct) } });
       await this.audit.record(tx, { entidade: 'afiliado', entidadeId: id, evento: 'afiliado.comissao.alterada', atorId: user.id, payloadAntes: affiliate as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });

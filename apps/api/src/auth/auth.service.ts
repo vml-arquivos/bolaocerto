@@ -1,4 +1,4 @@
-import { assertCanManage, isSuperAdmin } from '../admin/superadmin';
+import { assertCanManage, assertCanSeeAccount, isSuperAdmin } from '../admin/superadmin';
 import { ConflictException, ForbiddenException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sessionIdleMinutes } from './session-policy';
@@ -337,6 +337,7 @@ export class AuthService {
     const actor = await this.prisma.usuario.findUnique({ where: { id: adminId }, select: { id: true, email: true, papel: true } });
     if (!actor) throw new ForbiddenException('Acesso administrativo indisponível.');
     assertCanManage(actor, target);
+    await assertCanSeeAccount(this.prisma, actor, target);
     await this.prisma.usuario.update({ where: { id: targetId }, data: { totpAtivo: false, totpSecret: null, totpRecuperacao: [], tokenVersion: { increment: 1 } } });
     await this.audit?.record(this.prisma, { entidade: 'usuario', entidadeId: targetId, evento: 'auth.2fa_redefinido_por_admin', atorId: adminId }).catch(() => undefined);
     return { ok: true };

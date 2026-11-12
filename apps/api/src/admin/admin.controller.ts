@@ -62,8 +62,8 @@ export class AdminController {
 
   @Get('admin/afiliados')
   @Roles('admin')
-  affiliates(@Query() query: AdminListQueryDto) {
-    return this.admin.listAffiliates(query);
+  affiliates(@Query() query: AdminListQueryDto, @CurrentUser() user: AuthUser) {
+    return this.admin.listAffiliates(query, user);
   }
 
   @Get('admin/comissoes')

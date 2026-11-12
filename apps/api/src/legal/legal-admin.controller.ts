@@ -4,6 +4,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { SuperAdminGuard } from '../auth/superadmin.guard';
 import { assertKind, LegalPublishingService } from './legal-publishing.service';
 
 export class PublishDocumentDto {
@@ -14,7 +15,8 @@ export class PublishDocumentDto {
 
 /** Documentos do sistema (termos, privacidade e contratos): ver o texto vigente, publicar versão nova, voltar ao padrão. */
 @Controller('admin/documentos')
-@UseGuards(JwtAuthGuard, RolesGuard)
+/** Só a conta principal (superadmin): os demais administradores não veem nem publicam documentos. */
+@UseGuards(JwtAuthGuard, RolesGuard, SuperAdminGuard)
 @Roles('admin')
 export class LegalAdminController {
   constructor(private readonly publishing: LegalPublishingService) {}

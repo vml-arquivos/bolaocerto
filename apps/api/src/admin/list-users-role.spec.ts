@@ -38,7 +38,7 @@ describe('Lista de usuários por tipo de pessoa', () => {
     it('administrador comum só vê níveis abaixo e a própria conta', async () => {
       const { service, prisma } = setup();
       await service.listUsers({} as any, OUTRO_ADMIN);
-      expect(prisma.usuario.findMany.mock.calls[0][0].where.AND).toEqual([{ OR: [{ id: 'adm2' }, { papel: { in: ['cotista', 'afiliado', 'operacao'] } }] }]);
+      expect(prisma.usuario.findMany.mock.calls[0][0].where.AND).toEqual([{ OR: [{ id: 'adm2' }, { papel: { in: ['cotista', 'operacao'] } }, { papel: 'afiliado', afiliado: { aprovadoPor: 'adm2' } }] }]);
     });
   });
 });

@@ -35,3 +35,27 @@ export function assertCanManage(actor: Parameters<typeof canManage>[0], target: 
 export function assertCanGrantRole(actor: Parameters<typeof canManage>[0], papel: string, env: NodeJS.ProcessEnv = process.env): void {
   if ((RANK[papel] ?? 0) >= rankOf(actor, env)) throw new ForbiddenException('Você só pode criar ou conceder papéis abaixo do seu.');
 }
+
+type Actor = { id?: string; email?: string | null; papel?: string | null };
+type AffiliateLookup = { afiliado: { findUnique: (args: { where: { usuarioId: string }; select: { aprovadoPor: true } }) => Promise<{ aprovadoPor: string | null } | null> } };
+const NOT_YOUR_AFFILIATE = 'Este afiliado foi trazido por outro administrador. Só quem o cadastrou (ou a conta principal) pode ver e alterar.';
+
+/**
+ * Afiliado "é" do administrador que o trouxe (cadastrou, aprovou ou mandou o link). Administrador comum só vê e mexe
+ * nos próprios afiliados; o superadmin vê todos. Quem não é administrador não passa por esta regra.
+ */
+export function ownsAffiliate(actor: Actor, aprovadoPor: string | null | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (actor.papel !== 'admin' || isSuperAdmin(actor, env)) return true;
+  return Boolean(actor.id) && aprovadoPor === actor.id;
+}
+
+export function assertOwnsAffiliate(actor: Actor, aprovadoPor: string | null | undefined, env: NodeJS.ProcessEnv = process.env): void {
+  if (!ownsAffiliate(actor, aprovadoPor, env)) throw new ForbiddenException(NOT_YOUR_AFFILIATE);
+}
+
+/** Conta de afiliado de outro administrador: o administrador comum não abre nem altera (vale para editar, papel, senha, acesso). */
+export async function assertCanSeeAccount(db: AffiliateLookup, actor: Actor, target: { id: string; papel?: string | null }, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  if (target.papel !== 'afiliado' || actor.papel !== 'admin' || isSuperAdmin(actor, env) || (actor.id && actor.id === target.id)) return;
+  const affiliate = await db.afiliado.findUnique({ where: { usuarioId: target.id }, select: { aprovadoPor: true } });
+  assertOwnsAffiliate(actor, affiliate?.aprovadoPor ?? null, env);
+}
