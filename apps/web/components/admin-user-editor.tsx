@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
 import { AdminModal } from './admin-attachments';
 import { useIsSuperAdmin } from './staff-gate';
+import { AccessPanel } from './admin-access-panel';
 type User = { id: string; nome: string; email: string; cpf: string; telefone: string | null; dataNascimento: string | null; papel: string; statusKyc: string; desativadoEm: string | null; criadoEm: string; _count: { cotasCompradas: number; boloesCriados: number } };
 async function api(path: string, options?: RequestInit) {
   const response = await authenticatedFetch(path, { ...options, cache: 'no-store' });
@@ -83,6 +84,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       
       {user.papel !== savedRole && <p className="admin-help">Perfil atual: <strong>{roleLabels[savedRole] ?? savedRole}</strong>. A troca vale ao clicar em "Aplicar perfil de acesso" ou em "Salvar alterações".{savedRole === 'afiliado' ? ' O cadastro de afiliado fica inativo (o histórico de comissões é mantido).' : ''}</p>}
       <button type="button" className="admin-button" disabled={busy || user.papel === savedRole} onClick={() => void saveRole()}>{busy ? 'Processando…' : 'Aplicar perfil de acesso'}</button>
+      {superAdmin && (savedRole === 'admin' || savedRole === 'operacao') && <AccessPanel key={`${id}-${savedRole}`} userId={id} />}
       <hr/><h3>Recuperação de senha</h3>
       
       <div className="admin-row-actions"><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('link')}>Gerar link de redefinição</button><button className="admin-button admin-button-ghost" disabled={busy || Boolean(user.desativadoEm)} onClick={() => void action('reset')}>Enviar redefinição de senha</button><button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void action(user.desativadoEm ? 'restore' : 'remove')}>{user.desativadoEm ? 'Reativar conta' : 'Remover acesso'}</button></div>

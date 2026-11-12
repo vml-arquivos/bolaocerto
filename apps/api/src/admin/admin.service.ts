@@ -1,5 +1,6 @@
 import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { effectiveSaleWindow } from '../pools/sales-rules';
+import { forgetAccess } from '../access/access.service';
 import { assertCanGrantRole, assertCanManage, assertCanSeeAccount, assertOwnsAffiliate, isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
@@ -687,6 +688,11 @@ export class AdminService {
       await this.audit.record(tx, { entidade: 'usuario', entidadeId: id, evento: 'usuario.papel.alterado', atorId: user.id, payloadAntes: target as unknown as Prisma.InputJsonValue, payloadDepois: { id: result.id, papel: result.papel } });
       return result;
     });
+    // Perfil novo = acesso por função volta ao padrão do novo perfil (a conta principal personaliza de novo, se quiser).
+    if (target.papel !== dto.papel) {
+      try { await this.prisma.configuracaoSistema.deleteMany({ where: { chave: `acesso.usuario.${id}` } }); } catch { /* sem personalização */ }
+      forgetAccess(id);
+    }
     return { id: updated.id, papel: updated.papel };
   }
 

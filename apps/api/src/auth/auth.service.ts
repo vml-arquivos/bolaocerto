@@ -1,4 +1,5 @@
 import { assertCanManage, assertCanSeeAccount, isSuperAdmin } from '../admin/superadmin';
+import { AccessService } from '../access/access.service';
 import { ConflictException, ForbiddenException, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sessionIdleMinutes } from './session-policy';
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly config: ConfigService,
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly mail?: MailService,
+    @Optional() private readonly access?: AccessService,
   ) {}
 
   private dummyHash?: Promise<string>;
@@ -361,7 +363,11 @@ export class AuthService {
       where: { id },
       select: { id: true, nome: true, email: true, telefone: true, papel: true, statusKyc: true, totpAtivo: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } } },
     });
-    return { ...user, superadmin: isSuperAdmin(user) };
+    const superadmin = isSuperAdmin(user);
+    // Funções do painel liberadas para a pessoa (a conta principal tem todas). Cliente e afiliado: lista vazia.
+    const modulos = this.access ? await this.access.effectiveModules(user).catch(() => null) : null;
+    const personalizado = this.access && !superadmin && (user.papel === 'admin' || user.papel === 'operacao') ? (await this.access.customModules(user.id).catch(() => null)) !== null : false;
+    return { ...user, superadmin, modulos, acessoPersonalizado: personalizado };
   }
 
   /** Minutos sem uso até pedir login de novo, para a tela avisar e encerrar a sessão no tempo certo. */

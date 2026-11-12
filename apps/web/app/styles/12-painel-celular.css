@@ -145,3 +145,13 @@ button.admin-footer-logout:hover { color: #fff; }
 .admin-generated-link .invite-link-buttons { display: flex; flex-direction: row; flex-wrap: wrap; }
 .admin-generated-link .invite-link-buttons > * { flex: 0 0 auto; }
 .admin-generated-link > .admin-text-button { justify-self: start; }
+
+/* Funções liberadas (só a conta principal vê, no cadastro da pessoa da equipe) */
+.access-panel { display: grid; gap: 10px; }
+.access-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.access-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.access-section { margin: 0; padding: 10px 12px; border: 1px solid var(--border, #d6dbe6); border-radius: 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.access-section legend { padding: 0 6px; font-weight: 700; font-size: .82rem; text-transform: uppercase; letter-spacing: .05em; }
+.access-item { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: start; font-size: .9rem; line-height: 1.35; cursor: pointer; }
+.access-item input { margin-top: 2px; width: 18px; height: 18px; }
+.access-item small { grid-column: 2; color: var(--text-muted, #64748b); font-size: .74rem; }

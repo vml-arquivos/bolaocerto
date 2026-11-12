@@ -6,6 +6,9 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
+import { SuperAdminGuard } from './superadmin.guard';
+import { AccessService } from '../access/access.service';
+import { AccessController } from '../access/access.controller';
 
 @Global()
 @Module({
@@ -17,8 +20,8 @@ import { RolesGuard } from './roles.guard';
       useFactory: () => ({}),
     }),
   ],
-  controllers: [AuthController],
-  providers: [PrismaService, AuthService, JwtAuthGuard, RolesGuard],
-  exports: [JwtModule, AuthService, JwtAuthGuard, RolesGuard],
+  controllers: [AuthController, AccessController],
+  providers: [PrismaService, AuthService, JwtAuthGuard, RolesGuard, SuperAdminGuard, AccessService],
+  exports: [JwtModule, AuthService, JwtAuthGuard, RolesGuard, SuperAdminGuard, AccessService],
 })
 export class AuthModule {}

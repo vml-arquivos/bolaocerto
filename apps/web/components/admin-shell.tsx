@@ -5,9 +5,9 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
 import { InstallAppButton } from './pwa-register';
-import { useIsSuperAdmin, useStaffRole } from './staff-gate';
+import { useCanOpen } from './staff-gate';
 import { PushPrompt } from './push-prompt';
-import { STAFF_VIEWS, SUPERADMIN_VIEWS } from '../lib/roles';
+import { menuTarget } from '../lib/access';
 import { hubOf, viewTitle } from '../lib/admin-nav';
 
 /** Atalhos fixos no topo do menu. */
@@ -70,16 +70,12 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
   const current = params.get('view') || 'visao-geral';
   // Telas que são abas de um mesmo item (Financeiro, Operação, Bolões) marcam o item do menu.
   const activeKey = hubOf(current)?.entry ?? current;
-  const staffRole = useStaffRole();
-  const allowed = (key: string) => staffRole !== 'operacao' || (STAFF_VIEWS as readonly string[]).includes(key);
-  const visibleTop = topItems.filter(([key]) => allowed(key));
-  const superAdmin = useIsSuperAdmin();
-  const visibleGroups = staffRole === 'operacao'
-    ? groups.map((group) => ({ ...group, items: group.items.filter(([key]) => (STAFF_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length)
-    : superAdmin
-      ? groups
-      : groups.map((group) => ({ ...group, items: group.items.filter(([key]) => !(SUPERADMIN_VIEWS as readonly string[]).includes(key)) })).filter((group) => group.items.length);
-  const visibleHubItems = hubItems.filter(([key]) => allowed(key));
+  // Menu: só as funções liberadas para a pessoa. Item com abas (Financeiro, Operação, Integrações) abre na primeira aba liberada.
+  const canOpen = useCanOpen();
+  const target = (key: string) => menuTarget(key, canOpen);
+  const visibleTop = topItems.filter(([key]) => target(key));
+  const visibleGroups = groups.map((group) => ({ ...group, items: group.items.filter(([key]) => target(key)) })).filter((group) => group.items.length);
+  const visibleHubItems = hubItems.filter(([key]) => target(key));
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(null);
@@ -136,7 +132,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
     return (
       <Link
         key={key}
-        href={`${pathname}?view=${key}`}
+        href={`${pathname}?view=${target(key) ?? key}`}
         className={`admin-nav-link ${activeKey === key ? 'is-active' : ''}`}
         onClick={() => setOpen(false)}
         onMouseEnter={(event) => showTooltip(label, event.currentTarget)}

@@ -46,10 +46,10 @@ describe('SuperAdminGuard', () => {
   beforeEach(() => { process.env.ADMIN_BOOTSTRAP_EMAIL = 'dono@exemplo.com'; });
   afterEach(() => { if (OLD === undefined) delete process.env.ADMIN_BOOTSTRAP_EMAIL; else process.env.ADMIN_BOOTSTRAP_EMAIL = OLD; });
   const ctx = (user?: unknown) => ({ switchToHttp: () => ({ getRequest: () => ({ user }) }) }) as any;
-  it('libera a conta principal', () => { expect(new SuperAdminGuard().canActivate(ctx(dono))).toBe(true); });
-  it('bloqueia outro administrador, operação e sessão sem usuário', () => {
-    expect(() => new SuperAdminGuard().canActivate(ctx(admin))).toThrow(ForbiddenException);
-    expect(() => new SuperAdminGuard().canActivate(ctx(op))).toThrow(ForbiddenException);
-    expect(() => new SuperAdminGuard().canActivate(ctx(undefined))).toThrow(ForbiddenException);
+  it('libera a conta principal', async () => { await expect(new SuperAdminGuard().canActivate(ctx(dono))).resolves.toBe(true); });
+  it('bloqueia outro administrador, operação e sessão sem usuário', async () => {
+    await expect(new SuperAdminGuard().canActivate(ctx(admin))).rejects.toThrow(ForbiddenException);
+    await expect(new SuperAdminGuard().canActivate(ctx(op))).rejects.toThrow(ForbiddenException);
+    await expect(new SuperAdminGuard().canActivate(ctx(undefined))).rejects.toThrow(ForbiddenException);
   });
 });
