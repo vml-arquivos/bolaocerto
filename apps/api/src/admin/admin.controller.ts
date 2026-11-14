@@ -5,8 +5,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { SuperAdminGuard } from '../auth/superadmin.guard';
 import { AdminService } from './admin.service';
+import { ShareSaleTransferService } from './share-sale-transfer.service';
 import {
   AdminListQueryDto,
+  TransferShareSaleDto,
   ApproveAffiliateDto,
   CreateAffiliateDto,
   CreateGroupDto,
@@ -28,7 +30,7 @@ import {
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(private readonly admin: AdminService, private readonly saleTransfer: ShareSaleTransferService) {}
 
   @Get('admin/dashboard')
   @Roles('admin')
@@ -52,6 +54,13 @@ export class AdminController {
   @Roles('admin')
   shares(@Query() query: AdminListQueryDto) {
     return this.admin.listShares(query);
+  }
+
+  /** Transfere a venda (e a comissão) de uma cota para outro afiliado, ou para venda direta. */
+  @Patch('admin/cotas/:id/afiliado')
+  @Roles('admin')
+  transferShareSale(@Param('id', ParseUUIDPipe) id: string, @Body() dto: TransferShareSaleDto, @CurrentUser() user: AuthUser) {
+    return this.saleTransfer.transfer(id, { afiliadoId: dto.afiliadoId ?? null, motivo: dto.motivo }, user);
   }
 
   @Get('admin/recebimentos')

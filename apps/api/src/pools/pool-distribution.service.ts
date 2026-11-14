@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, StatusBolao, StatusCota } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
@@ -11,6 +11,28 @@ const STAFF = ['admin', 'operacao'];
 
 export const distributionPath = (codigo: string) => `/bolao-afiliado/${codigo}`;
 export const newDistributionCode = () => randomBytes(9).toString('base64url');
+
+/**
+ * Termo que o afiliado aceita para colocar um bolão da equipe no próprio painel. O aceite fica guardado (data, IP, texto e
+ * bolão), um por bolão. Mudou o texto? Troque a versão.
+ */
+export const DISTRIBUTION_TERM = {
+  tipo: 'venda_bolao',
+  versao: '2026-11-14',
+  titulo: 'Termo de venda de bolão do BL',
+  texto: [
+    'Ao aceitar, este bolão entra no meu painel de afiliado para eu vender as cotas pelo meu link.',
+    'Entendo que as cotas são compartilhadas com a equipe do BL e com outros afiliados que receberam o mesmo bolão: quando acabarem, a venda encerra para todos.',
+    'Só contam para mim as vendas feitas pelo meu link ou com o meu código. Minha comissão segue o meu contrato de afiliado e só vale para cotas pagas.',
+    'Não posso mudar o valor, os jogos ou as regras do bolão, nem repassar este bolão ou o link de recebimento para outras pessoas venderem. Não cadastro nem convido outros afiliados.',
+    'Divulgo o bolão de forma honesta: sem promessa de prêmio ou de ganho, só para maiores de 18 anos, deixando claro que o BL é uma plataforma independente e não é a CAIXA.',
+    'O BL pode tirar o bolão do meu painel a qualquer momento. As vendas que eu já fiz continuam registradas e a comissão delas segue o meu contrato.',
+  ].join('\n\n'),
+} as const;
+
+/** Cada bolão tem o seu aceite: o hash junta o texto do termo e o bolão. */
+export const distributionTermHash = (bolaoId: string) => createHash('sha256').update(`${DISTRIBUTION_TERM.versao}\n${DISTRIBUTION_TERM.texto}\n${bolaoId}`).digest('hex');
+const termView = () => ({ titulo: DISTRIBUTION_TERM.titulo, versao: DISTRIBUTION_TERM.versao, texto: DISTRIBUTION_TERM.texto });
 
 /**
  * Distribuição de bolão para afiliados. A equipe (administrador ou operação) gera um link do bolão; cada afiliado que abre o
@@ -112,12 +134,16 @@ export class PoolDistributionService {
       aberto: pool.status === StatusBolao.aberto,
       direcionado: Boolean(link.afiliadoAlvoId),
       enviadoPor: link.criador.nome.split(' ')[0],
+      termo: termView(),
       bolao: { id: pool.id, modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, nomeEspecial: pool.concurso.nomeEspecial, valorCota: pool.valorCota.toFixed(2), cotasIlimitadas: pool.cotasIlimitadas, cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0), encerraEm: pool.vendaFimEm && pool.vendaFimEm < pool.concurso.cutoffAt ? pool.vendaFimEm : pool.concurso.cutoffAt },
     };
   }
 
-  /** O afiliado abriu o link logado: o bolão entra no painel dele (de novo, não duplica). */
-  async accept(codigo: string, user: AuthUser) {
+  /**
+   * O afiliado aceitou o termo: o bolão entra no painel dele (de novo, não duplica). Sem o aceite do termo, nada entra.
+   * O aceite fica guardado com data, IP, navegador e o texto aceito.
+   */
+  async accept(codigo: string, user: AuthUser, consent: { aceiteTermo?: boolean; ip?: string; userAgent?: string } = {}) {
     const affiliate = await this.affiliateOf(user);
     const link = await this.prisma.distribuicaoBolao.findUnique({ where: { codigo: codigo.trim().slice(0, 40) }, include: { bolao: { select: { id: true, status: true } } } });
     if (!link || link.revogadoEm) throw new NotFoundException('Este link não vale mais. Peça um novo para a equipe do BL.');
@@ -125,10 +151,13 @@ export class PoolDistributionService {
     if (link.bolao.status !== StatusBolao.aberto) throw new ConflictException('Este bolão não está mais aberto para venda.');
     const existing = await this.prisma.bolaoAfiliado.findUnique({ where: { bolaoId_afiliadoId: { bolaoId: link.bolaoId, afiliadoId: affiliate.id } } });
     if (existing && !existing.removidoEm) return { ok: true as const, jaTinha: true, bolaoId: link.bolaoId, linkVenda: `/r/${affiliate.codigoAfiliado}?bolao=${link.bolaoId}` };
+    if (consent.aceiteTermo !== true) throw new BadRequestException('Para colocar o bolão no seu painel, leia e aceite o termo de venda.');
+    const hash = distributionTermHash(link.bolaoId);
     await this.prisma.$transaction(async (tx) => {
+      await tx.aceiteLegal.upsert({ where: { usuarioId_tipo_hash: { usuarioId: user.id, tipo: DISTRIBUTION_TERM.tipo, hash } }, update: {}, create: { usuarioId: user.id, tipo: DISTRIBUTION_TERM.tipo, hash, versao: DISTRIBUTION_TERM.versao, texto: `${DISTRIBUTION_TERM.texto}\n\nBolão: ${link.bolaoId}`, ip: (consent.ip || 'desconhecido').slice(0, 64), userAgent: consent.userAgent?.slice(0, 500) } });
       if (existing) await tx.bolaoAfiliado.update({ where: { id: existing.id }, data: { removidoEm: null, removidoPor: null, aceitoEm: new Date(), distribuicaoId: link.id, enviadoPor: link.criadoPor } });
       else await tx.bolaoAfiliado.create({ data: { bolaoId: link.bolaoId, afiliadoId: affiliate.id, distribuicaoId: link.id, enviadoPor: link.criadoPor } });
-      await this.audit.record(tx, { entidade: 'bolao', entidadeId: link.bolaoId, evento: 'bolao.distribuicao_aceita', atorId: user.id, payloadDepois: { afiliadoId: affiliate.id, distribuicaoId: link.id, enviadoPor: link.criadoPor } as Prisma.InputJsonValue });
+      await this.audit.record(tx, { entidade: 'bolao', entidadeId: link.bolaoId, evento: 'bolao.distribuicao_aceita', atorId: user.id, payloadDepois: { afiliadoId: affiliate.id, distribuicaoId: link.id, enviadoPor: link.criadoPor, termo: DISTRIBUTION_TERM.versao, termoHash: hash } as Prisma.InputJsonValue });
     });
     await this.notifications?.notify(link.criadoPor, 'bolao.distribuicao_aceita', { titulo: 'Afiliado aceitou o bolão', mensagem: `${affiliate.usuario.nome} agora pode vender o bolão que você enviou.`, link: '/admin?view=boloes', semEmail: true });
     return { ok: true as const, jaTinha: false, bolaoId: link.bolaoId, linkVenda: `/r/${affiliate.codigoAfiliado}?bolao=${link.bolaoId}` };
@@ -143,7 +172,34 @@ export class PoolDistributionService {
       include: { remetente: { select: { nome: true } }, bolao: { include: { concurso: { select: { modalidade: true, numeroConcurso: true, nomeEspecial: true, cutoffAt: true } }, grupo: { select: { nome: true } } } } },
     });
     const mine = rows.length ? await this.prisma.cota.groupBy({ by: ['bolaoId', 'status'], where: { afiliadoReferenciaId: affiliate.id, bolaoId: { in: rows.map((row) => row.bolaoId) }, OR: [{ status: { in: SOLD } }, { status: StatusCota.reservada, expiraReservaEm: { gt: new Date() } }] }, _sum: { quantidade: true } }) : [];
+    // Bolões enviados só para este afiliado que ele ainda não aceitou: aparecem no painel para ler o termo e aceitar.
+    // Já está no painel: não pede de novo. Foi retirado pela equipe: só volta a pedir com um link enviado depois disso.
+    const mineAll = await this.prisma.bolaoAfiliado.findMany({ where: { afiliadoId: affiliate.id }, select: { bolaoId: true, removidoEm: true } });
+    const state = new Map(mineAll.map((row) => [row.bolaoId, row.removidoEm]));
+    const waiting = await this.prisma.distribuicaoBolao.findMany({
+      where: { afiliadoAlvoId: affiliate.id, revogadoEm: null, bolao: { status: StatusBolao.aberto } },
+      orderBy: { criadoEm: 'desc' }, take: 50,
+      include: { criador: { select: { nome: true } }, bolao: { include: { concurso: { select: { modalidade: true, numeroConcurso: true, nomeEspecial: true, cutoffAt: true } } } } },
+    });
+    const seen = new Set<string>();
+    const pendentes = waiting.filter((link) => {
+      if (seen.has(link.bolaoId)) return false;
+      if (state.has(link.bolaoId)) { const removed = state.get(link.bolaoId); if (!removed || link.criadoEm <= removed) return false; }
+      seen.add(link.bolaoId);
+      return true;
+    }).map((link) => {
+      const pool = link.bolao;
+      return {
+        codigo: link.codigo, bolaoId: pool.id, modalidade: pool.concurso.modalidade, numeroConcurso: pool.concurso.numeroConcurso, nomeEspecial: pool.concurso.nomeEspecial,
+        valorCota: pool.valorCota.toFixed(2), cotasIlimitadas: pool.cotasIlimitadas, totalCotas: pool.totalCotas,
+        cotasDisponiveis: pool.cotasIlimitadas ? null : Math.max((pool.totalCotas ?? 0) - pool.cotasVendidas, 0),
+        encerraEm: pool.vendaFimEm && pool.vendaFimEm < pool.concurso.cutoffAt ? pool.vendaFimEm : pool.concurso.cutoffAt,
+        enviadoPor: link.criador.nome, enviadoEm: link.criadoEm,
+      };
+    });
     return {
+      termo: termView(),
+      pendentes,
       items: rows.map((row) => {
         const pool = row.bolao;
         const mineRows = mine.filter((item) => item.bolaoId === pool.id);

@@ -20,7 +20,8 @@ export function PoolDistributionPanel({ pool, onClose, onDone, notify }: { pool:
   const [data, setData] = useState<Overview | null>(null);
   const [loadError, setLoadError] = useState('');
   const [affiliates, setAffiliates] = useState<Array<{ id: string; nome: string; codigoAfiliado: string }>>([]);
-  const [targetId, setTargetId] = useState('');
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState('');
   const box = useRef<HTMLDivElement>(null);
@@ -42,16 +43,32 @@ export function PoolDistributionPanel({ pool, onClose, onDone, notify }: { pool:
     try { await navigator.clipboard.writeText(fullUrl(path)); setCopied(key); window.setTimeout(() => setCopied(''), 2200); }
     catch { window.prompt('Copie o link:', fullUrl(path)); }
   }
-  async function createLink() {
+  async function createGeneral() {
     setBusy(true);
     try {
-      const link = await json('POST', `/api/v1/admin/boloes/${pool.id}/distribuicao`, targetId ? { afiliadoId: targetId } : {});
+      const link = await json('POST', `/api/v1/admin/boloes/${pool.id}/distribuicao`, {});
       await load(); await onDone();
       await copy(link.caminho, link.id);
-      notify('success', targetId ? 'Link criado e o afiliado foi avisado. O link também foi copiado.' : 'Link criado e copiado. Envie para os afiliados.');
-      setTargetId('');
+      notify('success', 'Link geral criado e copiado. Qualquer afiliado aprovado que abrir aceita o termo e recebe o bolão.');
     } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível criar o link.'); }
     finally { setBusy(false); }
+  }
+  /** Um link para cada afiliado escolhido: cada um é avisado e vê o bolão em "Bolões para aceitar" no painel dele. */
+  async function sendToChosen() {
+    if (!chosen.length) return;
+    setBusy(true);
+    const failedIds: string[] = [];
+    for (const id of chosen) {
+      try { await json('POST', `/api/v1/admin/boloes/${pool.id}/distribuicao`, { afiliadoId: id }); }
+      catch { failedIds.push(id); }
+    }
+    const failed = failedIds.map((id) => affiliates.find((item) => item.id === id)?.nome ?? id);
+    await load(); await onDone();
+    const sent = chosen.length - failed.length;
+    if (sent) notify('success', `Enviado para ${sent} ${sent === 1 ? 'afiliado' : 'afiliados'}. Cada um foi avisado e aceita o termo no próprio painel.`);
+    if (failed.length) notify('error', `Não foi possível enviar para: ${failed.join(', ')}.`);
+    setChosen(failedIds);
+    setBusy(false);
   }
   async function revoke(id: string) {
     if (!window.confirm('Cancelar este link? Quem ainda não abriu não vai conseguir receber o bolão. Quem já recebeu continua com ele.')) return;
@@ -66,20 +83,31 @@ export function PoolDistributionPanel({ pool, onClose, onDone, notify }: { pool:
 
   const sold = data?.bolao.cotasVendidas ?? 0;
   const activeAffiliates = data?.afiliados.filter((item) => !item.removidoEm) ?? [];
-  return <div ref={box}><Panel title={`Enviar para afiliados · ${name}`} description="Gere um link e mande para os afiliados. Quem abrir o link como afiliado recebe este bolão no painel para vender. As cotas são as mesmas para todos: cada venda, de qualquer afiliado ou direta, diminui o que sobra, e quando acabar a venda encerra para todos. Cliente que abrir o link só compra a própria cota.">
+  return <div ref={box}><Panel title={`Enviar para afiliados · ${name}`} description="Escolha os afiliados que vão vender este bolão. Cada um recebe o aviso e, no painel de afiliado, aceita o termo de venda: só então o bolão entra no painel dele. Se preferir, crie um link geral para mandar a vários afiliados. As cotas são as mesmas para todos: cada venda, de qualquer afiliado ou direta, diminui o que sobra, e quando acabar a venda encerra para todos. Cliente que abrir o link só compra a própria cota.">
     {loadError && <p className="admin-note" role="alert">{loadError}</p>}
     {!data && !loadError && <p className="admin-note">Carregando…</p>}
     {data && <>
       <p className="admin-muted">Bolão criado por <strong>{data.bolao.criadoPor}</strong> · {sold} cota(s) vendidas{data.bolao.ilimitado ? '' : ` de ${data.bolao.totalCotas ?? 0}`} · {activeAffiliates.length} afiliado(s) com o bolão no painel</p>
       {data.podeEnviar
-        ? <div className="admin-form-grid" style={{ marginTop: 10 }}>
-          <label className="admin-field admin-field-wide"><span>Para quem</span>
-            <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
-              <option value="">Link geral (qualquer afiliado aprovado que abrir)</option>
-              {affiliates.map((item) => <option key={item.id} value={item.id}>Só para {item.nome} · {item.codigoAfiliado}</option>)}
-            </select>
-          </label>
-          <div className="admin-field" style={{ alignSelf: 'end' }}><button type="button" className="admin-button admin-button-primary" disabled={busy} onClick={() => void createLink()}>{busy ? 'Criando…' : 'Criar e copiar link'}</button></div>
+        ? <div className="distribution-send">
+          <div className="admin-field admin-field-wide"><span>Escolha os afiliados (cada um recebe o aviso e aceita o termo no próprio painel)</span>
+            <input type="search" value={search} placeholder="Buscar afiliado por nome ou código" onChange={(event) => setSearch(event.target.value)} />
+            <div className="distribution-pick" role="group" aria-label="Afiliados">
+              {(() => {
+                const taken = new Set((data.afiliados ?? []).filter((item) => !item.removidoEm).map((item) => item.afiliadoId));
+                const term = search.trim().toLowerCase();
+                const list = affiliates.filter((item) => !term || `${item.nome} ${item.codigoAfiliado}`.toLowerCase().includes(term));
+                return list.length ? list.map((item) => <label key={item.id} className={`distribution-pick-item ${taken.has(item.id) ? 'is-taken' : ''}`}>
+                  <input type="checkbox" disabled={busy || taken.has(item.id)} checked={chosen.includes(item.id)} onChange={(event) => setChosen((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} />
+                  <span>{item.nome} <small>{item.codigoAfiliado}{taken.has(item.id) ? ' · já tem no painel' : ''}</small></span>
+                </label>) : <p className="admin-muted">Nenhum afiliado aprovado encontrado.</p>;
+              })()}
+            </div>
+          </div>
+          <div className="distribution-send-actions">
+            <button type="button" className="admin-button admin-button-primary" disabled={busy || !chosen.length} onClick={() => void sendToChosen()}>{busy ? 'Enviando…' : chosen.length ? `Enviar para ${chosen.length} ${chosen.length === 1 ? 'afiliado' : 'afiliados'}` : 'Enviar para os escolhidos'}</button>
+            <button type="button" className="admin-button admin-button-ghost" disabled={busy} onClick={() => void createGeneral()}>Criar link geral e copiar</button>
+          </div>
         </div>
         : <p className="admin-note">Só bolão aberto para venda pode ser enviado. Os links já enviados e as vendas continuam aparecendo abaixo.</p>}
 

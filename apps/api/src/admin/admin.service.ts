@@ -317,10 +317,10 @@ export class AdminService {
       ...(query.modalidade ? { bolao: { concurso: { modalidade: query.modalidade } } } : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.cota.findMany({ where, include: { comprador: { select: { id: true, nome: true, email: true } }, bolao: { include: { concurso: true } }, afiliadoReferencia: { select: { id: true, codigoAfiliado: true } }, pagamento: true }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.cota.findMany({ where, include: { comprador: { select: { id: true, nome: true, email: true } }, bolao: { include: { concurso: true } }, afiliadoReferencia: { select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } }, pagamento: true, comissao: { select: { status: true, valor: true, loteRepasseId: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.cota.count({ where }),
     ]);
-    return { items: items.map((share) => ({ ...share, titularCpf: `${share.titularCpf.slice(0, 3)}.***.***-${share.titularCpf.slice(-2)}`, valorPago: share.valorPago?.toFixed(2) ?? null, pagamento: share.pagamento ? { ...share.pagamento, valorBruto: share.pagamento.valorBruto.toFixed(2), valorTaxaAdmin: share.pagamento.valorTaxaAdmin.toFixed(2), valorComissaoAfiliado: share.pagamento.valorComissaoAfiliado.toFixed(2), valorCustoBilhete: share.pagamento.valorCustoBilhete.toFixed(2) } : null })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((share) => ({ ...share, titularCpf: `${share.titularCpf.slice(0, 3)}.***.***-${share.titularCpf.slice(-2)}`, valorPago: share.valorPago?.toFixed(2) ?? null, pagamento: share.pagamento ? { ...share.pagamento, valorBruto: share.pagamento.valorBruto.toFixed(2), valorTaxaAdmin: share.pagamento.valorTaxaAdmin.toFixed(2), valorComissaoAfiliado: share.pagamento.valorComissaoAfiliado.toFixed(2), valorCustoBilhete: share.pagamento.valorCustoBilhete.toFixed(2) } : null, comissao: share.comissao ? { status: share.comissao.status, valor: share.comissao.valor.toFixed(2), emLote: Boolean(share.comissao.loteRepasseId) } : null })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async listPayments(query: AdminListQueryDto = {}) {

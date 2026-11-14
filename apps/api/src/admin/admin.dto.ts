@@ -314,3 +314,9 @@ export class UpdateSettingsDto {
   @IsBoolean()
   pagamentosHabilitados?: boolean;
 }
+
+/** Transferir a venda de uma cota: afiliado novo (id) ou null para venda direta. */
+export class TransferShareSaleDto {
+  @IsOptional() @IsUUID() afiliadoId?: string | null;
+  @IsOptional() @IsString() @MaxLength(300) motivo?: string;
+}

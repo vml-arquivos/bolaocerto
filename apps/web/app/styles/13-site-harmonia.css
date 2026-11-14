@@ -136,3 +136,21 @@
 /* Na conta do cliente: botões leves (contorno); "Ver" em destaque */
 .doc-actions .button.button-secondary { background: var(--surface); color: var(--text-primary); border: 1px solid var(--border-strong); box-shadow: none; }
 .doc-actions .button.button-secondary.doc-view { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+/* Bolão enviado pela equipe: termo de venda que o afiliado aceita antes de o bolão entrar no painel */
+.distribution-term { display: grid; gap: 10px; margin-top: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted, var(--surface)); }
+.distribution-term > strong { color: var(--text-primary); }
+.distribution-term-text { max-height: 220px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-secondary); font-size: .9rem; line-height: 1.55; }
+.distribution-term-text p { margin: 0 0 8px; }
+.distribution-term-text p:last-child { margin-bottom: 0; }
+.distribution-term-check { display: flex; gap: 10px; align-items: flex-start; color: var(--text-primary); font-size: .92rem; line-height: 1.4; cursor: pointer; }
+.distribution-term-check input { width: 20px; height: 20px; margin-top: 1px; flex: 0 0 auto; }
+.distribution-term .button { justify-self: start; }
+.distribution-accept-box { display: grid; gap: 8px; max-width: 760px; }
+.affiliate-pending-banner { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--primary); border-radius: 16px; background: var(--surface); }
+.affiliate-pending-banner > div { display: grid; gap: 2px; }
+.affiliate-pending-banner small { color: var(--text-muted); }
+.affiliate-status.aguardando { color: #b45309; }
+@media (max-width: 760px) {
+  .distribution-term .button, .affiliate-pending-banner .button { width: 100%; justify-content: center; }
+}

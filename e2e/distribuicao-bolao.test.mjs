@@ -79,12 +79,16 @@ test('link geral: vários afiliados aceitam e o bolão entra no painel de cada u
   assert.ok(!JSON.stringify(preview.data).includes('@'), 'a prévia não tem dados pessoais');
   const clientJar = { cookie: '' };
   ok(await call('POST', '/auth/registrar', { nome: 'Cliente Link', cpf: randomCpf(), email: `cliente.link.${stamp}@teste.local`, telefone: '11912345678', maiorDeIdade: true, aceiteTermos: true, aceitePrivacidade: true, senha: 'Senha123', confirmarSenha: 'Senha123' }, clientJar), 'cliente');
-  assert.ok([401, 403].includes((await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo }, clientJar)).status), 'cliente só compra, não recebe para vender');
-  const first = await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo }, state.a1.jar); ok(first, 'a1 aceita');
+  assert.ok([401, 403].includes((await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo, aceiteTermo: true }, clientJar)).status), 'cliente só compra, não recebe para vender');
+  assert.ok(preview.data.termo?.texto && preview.data.termo.versao, 'a prévia traz o termo de venda');
+  const noTerm = await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo }, state.a1.jar);
+  assert.equal(noTerm.status, 400, 'sem aceitar o termo, não entra no painel');
+  assert.equal((await call('GET', '/afiliados/me/boloes-recebidos', undefined, state.a1.jar)).data.items.length, 0, 'nada entrou sem o termo');
+  const first = await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo, aceiteTermo: true }, state.a1.jar); ok(first, 'a1 aceita');
   assert.equal(first.data.jaTinha, false); assert.ok(first.data.linkVenda.includes(state.a1.codigo) && first.data.linkVenda.includes(state.pool.id));
-  const again = await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo }, state.a1.jar); ok(again, 'a1 de novo');
+  const again = await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo, aceiteTermo: true }, state.a1.jar); ok(again, 'a1 de novo');
   assert.equal(again.data.jaTinha, true, 'não duplica');
-  ok(await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo }, state.a2.jar), 'a2 aceita');
+  ok(await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo, aceiteTermo: true }, state.a2.jar), 'a2 aceita');
   const mine = await call('GET', '/afiliados/me/boloes-recebidos', undefined, state.a1.jar); ok(mine, 'painel a1');
   assert.equal(mine.data.items.length, 1);
   assert.equal(mine.data.items[0].bolaoId, state.pool.id); assert.equal(mine.data.items[0].cotasDisponiveis, 10);
@@ -99,8 +103,15 @@ test('link geral: vários afiliados aceitam e o bolão entra no painel de cada u
 
 test('link direto para um afiliado só vale para ele', async () => {
   const direct = await call('POST', `/admin/boloes/${state.pool.id}/distribuicao`, { afiliadoId: state.a3.id }); ok(direct, 'link direto');
-  assert.equal((await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: direct.data.codigo }, state.a1.jar)).status, 403, 'outro afiliado não usa');
-  ok(await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: direct.data.codigo }, state.a3.jar), 'a3 aceita o dele');
+  const waiting = await call('GET', '/afiliados/me/boloes-recebidos', undefined, state.a3.jar); ok(waiting, 'painel a3');
+  assert.ok(waiting.data.pendentes.some((item) => item.codigo === direct.data.codigo && item.bolaoId === state.pool.id), 'o bolão enviado só para ele aparece para aceitar no painel');
+  assert.ok(waiting.data.termo?.texto, 'o painel traz o termo');
+  assert.equal((await call('GET', '/afiliados/me/boloes-recebidos', undefined, state.a1.jar)).data.pendentes.length, 0, 'o link direto não aparece para outro afiliado');
+  assert.equal((await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: direct.data.codigo, aceiteTermo: true }, state.a1.jar)).status, 403, 'outro afiliado não usa');
+  ok(await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: direct.data.codigo, aceiteTermo: true }, state.a3.jar), 'a3 aceita o dele');
+  const after = await call('GET', '/afiliados/me/boloes-recebidos', undefined, state.a3.jar);
+  assert.equal(after.data.pendentes.length, 0, 'depois de aceitar, sai da lista de pendentes');
+  assert.ok(after.data.items.some((item) => item.bolaoId === state.pool.id), 'e entra nos bolões do painel');
   const notices = await call('GET', '/notificacoes', undefined, state.a3.jar); ok(notices, 'avisos');
   assert.ok(JSON.stringify(notices.data).includes('Novo bolão para você vender'), 'o afiliado foi avisado do envio direto');
 });
@@ -130,12 +141,40 @@ test('cotas compartilhadas: cada venda aparece no afiliado certo e o total acaba
 test('revogar link e tirar afiliado: o histórico das vendas fica', async () => {
   ok(await call('DELETE', `/admin/boloes/${state.pool.id}/distribuicao/${state.link.id}`), 'revogar');
   assert.equal((await call('GET', `/bolao-distribuicao/${state.link.codigo}`, undefined, { cookie: '' })).data.valido, false);
-  assert.equal((await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo }, state.a2.jar)).status, 404);
+  assert.equal((await call('POST', '/afiliados/me/boloes-recebidos/aceitar', { codigo: state.link.codigo, aceiteTermo: true }, state.a2.jar)).status, 404);
   ok(await call('DELETE', `/admin/boloes/${state.pool.id}/distribuicao/afiliados/${state.a2.id}`), 'tirar a2');
   assert.equal((await call('GET', '/afiliados/me/boloes-recebidos', undefined, state.a2.jar)).data.items.length, 0, 'saiu do painel');
   const data = await overview();
   assert.equal(data.vendas.find((row) => row.codigo === state.a2.codigo).pagas, 3, 'o que ele vendeu continua contado');
   assert.ok(data.afiliados.find((row) => row.afiliadoId === state.a2.id).removidoEm, 'registro mostra quando saiu');
+});
+
+test('transferir a venda de uma cota: a comissão vai para o afiliado escolhido', async () => {
+  const before = await overview();
+  const direct = before.cotas.find((cota) => cota.cotista.startsWith('Comprador Direto'));
+  const fromA1 = before.cotas.find((cota) => cota.cotista.startsWith('Comprador Um'));
+  assert.ok(direct && fromA1, 'cotas do teste');
+  const a3Before = (await call('GET', '/afiliados/me/comissoes', undefined, state.a3.jar)).data;
+  // Venda direta passa para a3: nasce a comissão dele.
+  const moved = await call('PATCH', `/admin/cotas/${direct.id}/afiliado`, { afiliadoId: state.a3.id, motivo: 'teste' }); ok(moved, 'transferir venda direta');
+  assert.equal(moved.data.afiliado.id, state.a3.id); assert.equal(moved.data.vendaConfirmada, true);
+  const a3After = (await call('GET', '/afiliados/me/comissoes', undefined, state.a3.jar)).data;
+  const created = a3After.find((row) => row.cotaId === direct.id);
+  assert.ok(created && created.status === 'pendente' && Number(created.valor) > 0, 'a comissão aparece para o novo afiliado');
+  assert.equal(a3After.length, a3Before.length + 1);
+  // Venda do a1 passa para a3: a comissão sai do a1 e vai para o a3.
+  ok(await call('PATCH', `/admin/cotas/${fromA1.id}/afiliado`, { afiliadoId: state.a3.id }), 'transferir venda do a1');
+  assert.ok(!(await call('GET', '/afiliados/me/comissoes', undefined, state.a1.jar)).data.some((row) => row.cotaId === fromA1.id), 'saiu do a1');
+  assert.ok((await call('GET', '/afiliados/me/comissoes', undefined, state.a3.jar)).data.some((row) => row.cotaId === fromA1.id), 'entrou no a3');
+  const after = await overview();
+  assert.equal(after.cotas.find((cota) => cota.id === fromA1.id).codigoAfiliado, state.a3.codigo, 'o relatório mostra o novo afiliado');
+  // De volta para venda direta: a comissão é cancelada.
+  ok(await call('PATCH', `/admin/cotas/${direct.id}/afiliado`, { afiliadoId: null }), 'voltar para venda direta');
+  assert.equal((await call('GET', '/afiliados/me/comissoes', undefined, state.a3.jar)).data.find((row) => row.cotaId === direct.id).status, 'cancelada');
+  // Recusas: mesmo afiliado, afiliado que não existe, e quem não é da equipe.
+  assert.equal((await call('PATCH', `/admin/cotas/${fromA1.id}/afiliado`, { afiliadoId: state.a3.id })).status, 409);
+  assert.equal((await call('PATCH', `/admin/cotas/${fromA1.id}/afiliado`, { afiliadoId: '00000000-0000-4000-8000-000000000000' })).status, 404);
+  assert.ok([401, 403].includes((await call('PATCH', `/admin/cotas/${fromA1.id}/afiliado`, { afiliadoId: state.a1.id }, state.a1.jar)).status), 'afiliado não transfere venda');
 });
 
 test('nas telas: painel da equipe envia, página do link e painel do afiliado', async () => {
@@ -146,7 +185,7 @@ test('nas telas: painel da equipe envia, página do link e painel do afiliado', 
   const contest = await call('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: number, dataSorteio: future(18) }); ok(contest, 'concurso');
   const created = await call('POST', '/admin/boloes', pool(contest.data.id, state.official)); ok(created, 'bolão');
   ok(await call('POST', `/admin/boloes/${created.data.id}/publicar`), 'publicar');
-  await newAffiliate('Web');
+  const webAffiliate = await newAffiliate('Web');
   const affiliateEmail = `afil.Web.${stamp}@teste.local`;
   const browser = await chromium.launch();
   try {
@@ -164,8 +203,8 @@ test('nas telas: painel da equipe envia, página do link e painel do afiliado', 
     await row.getByRole('button', { name: /Mais/ }).click();
     await adminPage.locator('[role=menuitem]', { hasText: /Enviar para afiliados/ }).first().click();
     await adminPage.getByText('Links enviados').waitFor({ timeout: 15000 });
-    await adminPage.getByRole('button', { name: 'Criar e copiar link' }).click();
-    await adminPage.getByText(/Link criado/).first().waitFor({ timeout: 20000 });
+    await adminPage.getByRole('button', { name: 'Criar link geral e copiar' }).click();
+    await adminPage.getByText(/Link geral criado/).first().waitFor({ timeout: 20000 });
     const link = (await call('GET', `/admin/boloes/${created.data.id}/distribuicao`)).data.links[0];
     assert.ok(link?.codigo, 'o link aparece na lista da equipe');
 
@@ -180,12 +219,32 @@ test('nas telas: painel da equipe envia, página do link e painel do afiliado', 
     await login(affContext, affiliateEmail, 'Senha123');
     const affPage = await affContext.newPage(); watch(affPage);
     await affPage.goto(`${BASE}/bolao-afiliado/${link.codigo}`, { waitUntil: 'load', timeout: 60000 });
+    // Precisa ler e aceitar o termo: o botão só libera depois de marcar.
+    const acceptButton = affPage.getByRole('button', { name: 'Aceitar e colocar no meu painel' });
+    await acceptButton.waitFor({ timeout: 20000 });
+    assert.equal(await acceptButton.isDisabled(), true, 'sem marcar o termo, não aceita');
+    await affPage.getByLabel(/Li e aceito o termo de venda/).check();
+    await acceptButton.click();
     await affPage.getByText(/Pronto! O bolão entrou no seu painel/).waitFor({ timeout: 20000 });
     await affPage.getByRole('link', { name: 'Abrir meu painel de bolões' }).click();
     await affPage.getByText('Bolões recebidos da BL').waitFor({ timeout: 30000 });
     await affPage.getByText(new RegExp(`#${number}`)).first().waitFor({ timeout: 15000 });
     assert.ok(await affPage.getByRole('button', { name: /Copiar link de venda/ }).count(), 'tem o link de venda');
     assert.equal(await affPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'sem rolagem lateral no celular');
+
+    // 3b) Bolão enviado só para ele: aparece no painel para aceitar, sem precisar do link.
+    const contest2 = await call('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: number + 1, dataSorteio: future(19) }); ok(contest2, 'concurso 2');
+    const second = await call('POST', '/admin/boloes', pool(contest2.data.id, state.official)); ok(second, 'segundo bolão');
+    ok(await call('POST', `/admin/boloes/${second.data.id}/publicar`), 'publicar o segundo');
+    ok(await call('POST', `/admin/boloes/${second.data.id}/distribuicao`, { afiliadoId: webAffiliate.id }), 'envio direto');
+    await affPage.goto(`${BASE}/afiliado`, { waitUntil: 'load', timeout: 60000 });
+    await affPage.getByText(/Você tem 1 bolão para aceitar/).waitFor({ timeout: 30000 });
+    await affPage.getByRole('button', { name: 'Ver e aceitar' }).click();
+    await affPage.getByRole('button', { name: 'Ler o termo e aceitar' }).first().click();
+    await affPage.getByLabel(/Li e aceito o termo de venda/).check();
+    await affPage.getByRole('button', { name: 'Aceitar e colocar no meu painel' }).click();
+    await affPage.getByText(/entrou no seu painel/).first().waitFor({ timeout: 20000 });
+    assert.equal(await affPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'sem rolagem lateral no celular (aceite no painel)');
 
     // 4) De volta ao painel da equipe: o afiliado e quem enviou aparecem.
     await adminPage.reload({ waitUntil: 'load' });

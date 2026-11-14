@@ -1,5 +1,6 @@
 import { PricingService } from '../pricing/pricing.service';
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { ArrayMaxSize, IsArray, IsBoolean, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -23,7 +24,7 @@ class RejectPoolDto {
 class OfferToBlDto { @IsUUID() grupoId!: string; }
 
 class CreateDistributionDto { @IsOptional() @IsUUID() afiliadoId?: string; }
-class AcceptDistributionDto { @IsString() @Length(6, 40) codigo!: string; }
+class AcceptDistributionDto { @IsString() @Length(6, 40) codigo!: string; @IsOptional() @IsBoolean() aceiteTermo?: boolean; }
 
 class TransferSharesDto {
   @IsUUID() destinoBolaoId!: string;
@@ -182,8 +183,8 @@ export class PoolsController {
   @Post('afiliados/me/boloes-recebidos/aceitar')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('afiliado')
-  acceptDistribution(@Body() dto: AcceptDistributionDto, @CurrentUser() user: AuthUser) {
-    return this.distribution.accept(dto.codigo, user);
+  acceptDistribution(@Body() dto: AcceptDistributionDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    return this.distribution.accept(dto.codigo, user, { aceiteTermo: dto.aceiteTermo, ip: req.ip ?? req.socket?.remoteAddress ?? undefined, userAgent: String(req.headers['user-agent'] ?? '') || undefined });
   }
 
   @Get('afiliados/me/boloes-recebidos')
