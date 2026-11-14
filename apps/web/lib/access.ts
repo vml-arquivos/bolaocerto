@@ -14,6 +14,7 @@ export const ACCESS_MODULES = [
   { key: 'crm', label: 'Clientes', section: 'Pessoas' },
   { key: 'afiliados', label: 'Afiliados e convites', section: 'Pessoas' },
   { key: 'grupos', label: 'Grupos', section: 'Pessoas' },
+  { key: 'depoimentos', label: 'Depoimentos dos clientes', section: 'Pessoas' },
   { key: 'financeiro', label: 'Financeiro: painel e recebimentos', section: 'Financeiro' },
   { key: 'comissoes', label: 'Comissões e pagar comissões', section: 'Financeiro' },
   { key: 'notas-fiscais', label: 'Notas fiscais', section: 'Financeiro' },
@@ -60,7 +61,7 @@ export function canOpenView(view: string, ctx: { role: string; superadmin: boole
 }
 
 /** Ordem para achar a primeira tela liberada (quando a tela pedida está bloqueada). */
-const LANDING_ORDER = ['visao-geral', 'operacao', 'boloes', 'concursos', 'cotas', 'crm', 'afiliados', 'grupos', 'financeiro', 'recebimentos', 'comissoes', 'repasses', 'notas-fiscais', 'carteira', 'cupons', 'relatorios', 'comprovantes', 'lotericas', 'comunicados', 'vitrine', 'blog', 'usuarios', 'funil', 'documentos', 'conexoes', 'auditoria', 'configuracoes'];
+const LANDING_ORDER = ['visao-geral', 'operacao', 'boloes', 'concursos', 'cotas', 'crm', 'afiliados', 'grupos', 'depoimentos', 'financeiro', 'recebimentos', 'comissoes', 'repasses', 'notas-fiscais', 'carteira', 'cupons', 'relatorios', 'comprovantes', 'lotericas', 'comunicados', 'vitrine', 'blog', 'usuarios', 'funil', 'documentos', 'conexoes', 'auditoria', 'configuracoes'];
 export function firstOpenView(ctx: { role: string; superadmin: boolean; modules: string[] | null }): string | null {
   return LANDING_ORDER.find((view) => canOpenView(view, ctx)) ?? null;
 }
