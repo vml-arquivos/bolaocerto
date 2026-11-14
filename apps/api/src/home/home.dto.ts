@@ -36,4 +36,9 @@ export class SaveHomeDto {
 export class SaveCommunityDto {
   @IsOptional() @IsString() @MaxLength(200) comunidade?: string;
   @IsOptional() @IsString() @MaxLength(200) grupo?: string;
+  @IsOptional() @IsString() @MaxLength(200) instagram?: string;
+}
+
+export class SaveGroupWhatsappDto {
+  @IsOptional() @IsString() @MaxLength(200) link?: string;
 }

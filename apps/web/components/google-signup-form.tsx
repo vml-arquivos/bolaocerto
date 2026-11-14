@@ -1,4 +1,5 @@
 'use client';
+import { withWelcome } from './welcome-join';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { rememberLogin } from './header-auth';
@@ -29,7 +30,8 @@ export function GoogleSignupForm({ convite = null }: { convite?: string | null }
       if (!response.ok) throw new Error(Array.isArray(body.message) ? body.message.join(' ') : body.message || 'Não foi possível concluir o cadastro.');
       try { sessionStorage.removeItem(GOOGLE_SIGNUP_KEY); } catch { /* ok */ }
       rememberLogin();
-      window.location.href = landingFor(body.user?.papel, null);
+      const landing = landingFor(body.user?.papel, null);
+      window.location.href = (body.user?.papel ?? 'cotista') === 'cotista' ? withWelcome(landing) : landing;
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
 

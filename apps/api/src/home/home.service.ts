@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MODALIDADES_LOTERIA } from '@bolaocerto/shared-types';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
@@ -8,7 +8,20 @@ import { HOME_CONFIG_KEY, HOME_IMAGE_PREFIX, HOME_IMAGE_URL, HomeConfig, MAX_IMA
 import { randomBytes } from 'crypto';
 
 export const COMMUNITY_KEY = 'whatsapp.comunidade';
-export type CommunityLinks = { comunidade: string; grupo: string };
+export type CommunityLinks = { comunidade: string; grupo: string; instagram: string };
+/** Link do grupo do WhatsApp de cada grupo do BL ou de afiliado (quem é do grupo vê o botão). */
+export const GROUP_WHATSAPP_PREFIX = 'grupo.whatsapp.';
+
+/** Só aceita o perfil do Instagram (instagram.com). */
+export function safeInstagramLink(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'https:' && ['instagram.com', 'www.instagram.com'].includes(url.hostname) && url.pathname.length > 1 ? url.toString() : '';
+  } catch { return ''; }
+}
 /** Só aceita convites do WhatsApp (chat.whatsapp.com ou wa.me); qualquer outro endereço é descartado. */
 export function safeWhatsappLink(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -35,19 +48,56 @@ export class HomeService {
     const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: COMMUNITY_KEY } });
     try {
       const data = JSON.parse(row?.valor ?? '{}') as Partial<CommunityLinks>;
-      return { comunidade: safeWhatsappLink(data.comunidade), grupo: safeWhatsappLink(data.grupo) };
-    } catch { return { comunidade: '', grupo: '' }; }
+      return { comunidade: safeWhatsappLink(data.comunidade), grupo: safeWhatsappLink(data.grupo), instagram: safeInstagramLink(data.instagram) };
+    } catch { return { comunidade: '', grupo: '', instagram: '' }; }
   }
 
-  async saveCommunity(input: { comunidade?: string; grupo?: string }, actorId: string): Promise<CommunityLinks> {
+  async saveCommunity(input: { comunidade?: string; grupo?: string; instagram?: string }, actorId: string): Promise<CommunityLinks> {
     const comunidade = (input.comunidade ?? '').trim();
     const grupo = (input.grupo ?? '').trim();
+    // Instagram: sem o campo, mantém o que já estava salvo (tela antiga não apaga).
+    const instagram = input.instagram === undefined ? (await this.getCommunity()).instagram : input.instagram.trim();
+    if (instagram && !safeInstagramLink(instagram)) throw new BadRequestException('O link do Instagram precisa ser o perfil (começa com https://www.instagram.com/).');
     if (comunidade && !safeWhatsappLink(comunidade)) throw new BadRequestException('O link da comunidade precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
     if (grupo && !safeWhatsappLink(grupo)) throw new BadRequestException('O link do grupo precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
-    const value: CommunityLinks = { comunidade: safeWhatsappLink(comunidade), grupo: safeWhatsappLink(grupo) };
+    const value: CommunityLinks = { comunidade: safeWhatsappLink(comunidade), grupo: safeWhatsappLink(grupo), instagram: safeInstagramLink(instagram) };
     await this.prisma.configuracaoSistema.upsert({ where: { chave: COMMUNITY_KEY }, create: { chave: COMMUNITY_KEY, valor: JSON.stringify(value) }, update: { valor: JSON.stringify(value) } });
     await this.audit.record(this.prisma, { entidade: 'configuracao', entidadeId: actorId, evento: 'whatsapp.links_alterados', atorId: actorId, payloadDepois: value as unknown as Record<string, string> });
     return value;
+  }
+
+  /** Pode mexer no link do grupo: a equipe (admin) ou o afiliado dono do grupo. */
+  private async groupForEdit(groupId: string, user: { id: string; papel: string }) {
+    const group = await this.prisma.grupo.findUnique({ where: { id: groupId }, select: { id: true, nome: true, afiliado: { select: { usuarioId: true } } } });
+    if (!group) throw new NotFoundException('Grupo não encontrado.');
+    if (user.papel !== 'admin' && group.afiliado?.usuarioId !== user.id) throw new ForbiddenException('Só o dono do grupo ou a equipe do BL muda o link do WhatsApp do grupo.');
+    return group;
+  }
+
+  async getGroupWhatsapp(groupId: string, user: { id: string; papel: string }) {
+    await this.groupForEdit(groupId, user);
+    const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: `${GROUP_WHATSAPP_PREFIX}${groupId}` } });
+    return { grupoId: groupId, link: safeWhatsappLink(row?.valor ?? '') };
+  }
+
+  async saveGroupWhatsapp(groupId: string, link: string | undefined, user: { id: string; papel: string }) {
+    const group = await this.groupForEdit(groupId, user);
+    const text = (link ?? '').trim();
+    if (text && !safeWhatsappLink(text)) throw new BadRequestException('O link precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
+    const key = `${GROUP_WHATSAPP_PREFIX}${groupId}`;
+    if (!text) await this.prisma.configuracaoSistema.deleteMany({ where: { chave: key } });
+    else await this.prisma.configuracaoSistema.upsert({ where: { chave: key }, create: { chave: key, valor: safeWhatsappLink(text) }, update: { valor: safeWhatsappLink(text) } });
+    await this.audit.record(this.prisma, { entidade: 'grupo', entidadeId: group.id, evento: 'grupo.whatsapp_alterado', atorId: user.id, payloadDepois: { link: safeWhatsappLink(text) } });
+    return { grupoId: groupId, link: safeWhatsappLink(text) };
+  }
+
+  /** Links do WhatsApp dos grupos de quem está logado (os que ele participa e, se for afiliado, os dele). */
+  async myGroupsWhatsapp(userId: string) {
+    const groups = await this.prisma.grupo.findMany({ where: { OR: [{ membros: { some: { usuarioId: userId } } }, { afiliado: { usuarioId: userId } }] }, select: { id: true, nome: true }, take: 20 });
+    if (!groups.length) return { grupos: [] };
+    const rows = await this.prisma.configuracaoSistema.findMany({ where: { chave: { in: groups.map((group) => `${GROUP_WHATSAPP_PREFIX}${group.id}`) } } });
+    const links = new Map(rows.map((row) => [row.chave.slice(GROUP_WHATSAPP_PREFIX.length), safeWhatsappLink(row.valor)]));
+    return { grupos: groups.map((group) => ({ grupoId: group.id, nome: group.nome, link: links.get(group.id) ?? '' })).filter((group) => group.link) };
   }
 
   /** Tela do painel: configuração atual e os bolões abertos que podem ser destacados. */

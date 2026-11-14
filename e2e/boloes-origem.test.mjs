@@ -131,7 +131,8 @@ test('links da comunidade e do grupo do WhatsApp', async () => {
   assert.equal(read.data.comunidade, 'https://chat.whatsapp.com/Comunidade123');
   assert.equal(read.data.grupo, 'https://chat.whatsapp.com/Grupo456');
   ok(await call('PUT', '/admin/comunidade', { comunidade: '', grupo: '' }), 'limpar links');
-  assert.deepEqual((await call('GET', '/config/comunidade', undefined, buyer)).data, { comunidade: '', grupo: '' });
+  // O Instagram entrou como campo novo (fica vazio enquanto não for configurado).
+  assert.deepEqual((await call('GET', '/config/comunidade', undefined, buyer)).data, { comunidade: '', grupo: '', instagram: '' });
 });
 
 test('termos de uso e política de privacidade oficiais', async () => {

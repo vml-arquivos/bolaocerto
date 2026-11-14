@@ -154,3 +154,15 @@
 @media (max-width: 760px) {
   .distribution-term .button, .affiliate-pending-banner .button { width: 100%; justify-content: center; }
 }
+
+/* Boas-vindas depois do cadastro e links do grupo (WhatsApp do grupo, comunidade e Instagram) */
+.welcome-join { position: relative; display: grid; gap: 10px; margin: 0 0 18px; padding: 16px 18px; border: 1px solid var(--primary); border-radius: 18px; background: var(--surface); }
+.welcome-join > div { display: grid; gap: 3px; padding-right: 64px; }
+.welcome-join > div strong { color: var(--text-primary); }
+.welcome-join > div small { color: var(--text-muted); }
+.welcome-join .whatsapp-join { margin: 0; }
+.welcome-join-close { position: absolute; top: 10px; right: 12px; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: .85rem; cursor: pointer; }
+.whatsapp-join-title { flex-basis: 100%; color: var(--text-primary); }
+.group-whatsapp { display: grid; gap: 6px; }
+.group-whatsapp label { display: grid; gap: 4px; font-size: .86rem; }
+.group-whatsapp .button { justify-self: start; }

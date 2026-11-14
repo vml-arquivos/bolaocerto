@@ -237,7 +237,7 @@ export function AccountDashboard() {
       <button type="button" role="tab" aria-selected={tab === 'conta'} className={tab === 'conta' ? 'is-on' : ''} onClick={() => selectTab('conta')}>Minha conta</button>
     </div>
     {tab === 'cotas' ? <div className="account-section">
-      <WhatsappJoin className="is-account" />
+      <WhatsappJoin className="is-account" groups />
       <NotificationsCard />
       {shares.length ? <div className="cota-list">{shares.map((share) => <ShareCard key={share.id} share={share} onPaid={() => void load()} />)}</div>
         : <div className="empty-state compact"><h3>Você ainda não tem cotas</h3><Link className="button button-primary" href="/aplicativo">Ver bolões</Link></div>}

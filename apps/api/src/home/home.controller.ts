@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Put, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { MAX_IMAGE_BYTES } from './home.config';
@@ -6,7 +6,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { AuthUser } from '../auth/auth.utils';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { SaveCommunityDto, SaveHomeDto } from './home.dto';
+import { SaveCommunityDto, SaveGroupWhatsappDto, SaveHomeDto } from './home.dto';
 import { HomeService } from './home.service';
 
 @Controller()
@@ -21,6 +21,16 @@ export class HomeController {
 
   @Put('admin/comunidade') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
   saveCommunity(@Body() dto: SaveCommunityDto, @CurrentUser() admin: AuthUser) { return this.home.saveCommunity(dto, admin.id); }
+
+  /** Links do WhatsApp dos grupos da pessoa logada (aparecem junto da comunidade e do Instagram). */
+  @Get('usuarios/me/comunidade') @UseGuards(JwtAuthGuard) @Header('Cache-Control', 'private, no-store')
+  myCommunity(@CurrentUser() user: AuthUser) { return this.home.myGroupsWhatsapp(user.id); }
+
+  @Get('grupos/:id/whatsapp') @UseGuards(JwtAuthGuard) @Header('Cache-Control', 'private, no-store')
+  groupWhatsapp(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) { return this.home.getGroupWhatsapp(id, user); }
+
+  @Put('grupos/:id/whatsapp') @UseGuards(JwtAuthGuard)
+  saveGroupWhatsapp(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SaveGroupWhatsappDto, @CurrentUser() user: AuthUser) { return this.home.saveGroupWhatsapp(id, dto.link, user); }
 
   @Get('resultados/ultimos') @Header('Cache-Control', 'public, max-age=60')
   latest(@Query('porModalidade') porModalidade?: string) { return this.home.latestResults(Number(porModalidade) || 5); }

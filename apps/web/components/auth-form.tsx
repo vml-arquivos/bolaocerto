@@ -1,4 +1,5 @@
 'use client';
+import { withWelcome } from './welcome-join';
 import Link from 'next/link';
 import { ADDRESS_KEYS, AddressFields } from './address-fields';
 import { FormEvent, useEffect, useState } from 'react';
@@ -59,7 +60,9 @@ export function AuthForm({ mode, audience = 'cliente', invite }: { mode: 'login'
         throw new Error(isStaff(authenticatedUser?.papel) ? 'Esta conta é da equipe e não entra na área do afiliado. Use o painel da equipe (BL Admin).' : 'Esta conta é de cliente e não é de afiliado. Para comprar cotas, use o aplicativo Bolão Livre.');
       }
       // Cada papel vai direto para a sua área: cliente → aplicativo, afiliado → área do afiliado, equipe/admin → painel.
-      window.location.href = landingFor(authenticatedUser?.papel, mode === 'login' ? new URLSearchParams(window.location.search).get('next') : null);
+      const landing = landingFor(authenticatedUser?.papel, mode === 'login' ? new URLSearchParams(window.location.search).get('next') : null);
+      // Cliente recém-cadastrado: a tela inicial mostra os botões do WhatsApp do grupo, da comunidade e do Instagram.
+      window.location.href = mode === 'register' && (authenticatedUser?.papel ?? 'cotista') === 'cotista' ? withWelcome(landing) : landing;
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Erro inesperado.'); } finally { setLoading(false); }
   }
   const asAffiliate = mode === 'register' && invite?.tipo === 'afiliado';
