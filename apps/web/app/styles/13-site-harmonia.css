@@ -35,7 +35,7 @@
 /* Aplicativo instalado (PWA): só o essencial — conta, comprar bolões e acompanhar. O site completo continua no navegador. */
 @media (display-mode: standalone) {
   #main-content > #resultados, #main-content > #sorteados, #main-content > #encerrados, #main-content > #concursos,
-  #main-content > #como-funciona, #main-content > #duvidas, #main-content > #blog, #main-content > .numbers-strip, #main-content > .responsible-strip { display: none; }
+  #main-content > #como-funciona, #main-content > #duvidas, #main-content > #blog, #main-content > #depoimentos, #main-content > .numbers-strip, #main-content > .responsible-strip { display: none; }
 }
 
 /* ---------------------------------- Blog ---------------------------------- */
@@ -166,3 +166,42 @@
 .group-whatsapp { display: grid; gap: 6px; }
 .group-whatsapp label { display: grid; gap: 4px; font-size: .86rem; }
 .group-whatsapp .button { justify-self: start; }
+
+/* Visitante: "Entrar" e "Criar conta" sempre à vista no site e no app do cliente (também no celular) */
+.site-header .header-actions .header-login { display: inline-flex; }
+@media (max-width: 640px) {
+  .site-header .header-actions { gap: 6px; }
+  .site-header .header-actions .header-login, .site-header .header-actions .header-signup { padding: 8px 11px; font-size: .88rem; white-space: nowrap; }
+}
+@media (max-width: 380px) {
+  .site-header .brand > span { display: none; }
+  .site-header .header-actions .header-login, .site-header .header-actions .header-signup { padding: 7px 9px; font-size: .84rem; }
+}
+
+/* Depoimentos: estrelas, cartões e formulário */
+.stars { display: inline-flex; gap: 2px; color: var(--border-strong, #cbd5e1); line-height: 1; }
+.stars .on { color: #f59e0b; }
+.stars-md { font-size: 1.15rem; }
+.stars-sm { font-size: .95rem; }
+.testimonial-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.testimonial-card { display: grid; align-content: start; gap: 10px; padding: 20px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); min-width: 0; }
+.testimonial-card p { margin: 0; color: var(--text-secondary); line-height: 1.6; overflow-wrap: anywhere; }
+.testimonial-card footer { display: grid; gap: 2px; }
+.testimonial-card footer strong { color: var(--text-primary); }
+.testimonial-card footer small { color: var(--text-muted); }
+.testimonial-summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.testimonial-summary.inline { display: inline-flex; }
+.testimonial-summary small { color: var(--text-muted); flex-basis: 100%; }
+.testimonial-form { display: grid; gap: 12px; }
+.testimonial-form label { display: grid; gap: 6px; font-weight: 600; color: var(--text-primary); }
+.testimonial-form label small { justify-self: end; color: var(--text-muted); font-weight: 400; }
+.testimonial-form select, .testimonial-form input, .testimonial-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); color: var(--text-primary); font: inherit; font-weight: 400; }
+.testimonial-form .button { justify-self: start; }
+.testimonial-stars-field { display: grid; gap: 6px; font-weight: 600; color: var(--text-primary); }
+.testimonial-status { color: var(--text-muted); }
+.star-picker { display: flex; gap: 4px; }
+.star-picker button { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--border-strong, #cbd5e1); font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.star-picker button.on { color: #f59e0b; border-color: #f59e0b; }
+.star-picker button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.testimonial-affiliate { display: grid; gap: 14px; }
+@media (max-width: 640px) { .testimonial-form .button { width: 100%; justify-content: center; } }

@@ -13,6 +13,7 @@ import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
 import { DownloadsModule } from './downloads/downloads.module';
 import { BlogModule } from './blog/blog.module';
+import { TestimonialsModule } from './testimonials/testimonials.module';
 import { AdminModule } from './admin/admin.module';
 import { CrmModule } from './crm/crm.module';
 import { StatisticsModule } from './statistics/statistics.module';
@@ -45,6 +46,7 @@ import { HealthController } from './health.controller';
     ReportsModule,
     DownloadsModule,
     BlogModule,
+    TestimonialsModule,
     AdminModule,
     CrmModule,
     StatisticsModule,

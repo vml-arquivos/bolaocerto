@@ -31,6 +31,7 @@ const groups = [
       ['crm', 'Clientes', 'CR'],
       ['afiliados', 'Afiliados', 'AF'],
       ['grupos', 'Grupos', 'GR'],
+      ['depoimentos', 'Depoimentos', 'DP'],
     ],
   },
   {

@@ -1,5 +1,6 @@
 'use client';
 import { WhatsappJoin } from './community-link';
+import { TestimonialForm } from './testimonials';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -251,6 +252,7 @@ export function AccountDashboard() {
         {address && <AddressCard address={address} onSaved={() => void load()} />}
       </Row>
       <Row title="Minha carteira" icon="receipt"><p className="muted">Saldo de {wallet ? brl(wallet.saldoCentavos) : '—'}.</p><button type="button" className="button button-secondary" onClick={() => selectTab('carteira')}>Abrir carteira e extrato</button></Row>
+      <Row title="Meu depoimento" icon="user" open={params.get('abrir') === 'depoimento'}><TestimonialForm /></Row>
       <Row title="Avisos no celular" icon="bell"><PushToggle /></Row>
       <Row title="Avise-me de novos bolões" icon="bell"><ModalityAlertsCard /></Row>
       <Row title="Limite de gastos" icon="gauge"><ResponsiblePlayCard /></Row>

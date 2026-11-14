@@ -6,7 +6,7 @@ import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { AuthUser } from '../auth/auth.utils';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { SaveCommunityDto, SaveGroupWhatsappDto, SaveHomeDto } from './home.dto';
+import { SaveAffiliateLinksDto, SaveCommunityDto, SaveGroupWhatsappDto, SaveHomeDto } from './home.dto';
 import { HomeService } from './home.service';
 
 @Controller()
@@ -25,6 +25,13 @@ export class HomeController {
   /** Links do WhatsApp dos grupos da pessoa logada (aparecem junto da comunidade e do Instagram). */
   @Get('usuarios/me/comunidade') @UseGuards(JwtAuthGuard) @Header('Cache-Control', 'private, no-store')
   myCommunity(@CurrentUser() user: AuthUser) { return this.home.myGroupsWhatsapp(user.id); }
+
+  /** Página do afiliado: links do grupo e da comunidade do WhatsApp e do Instagram dele. */
+  @Get('afiliados/me/links') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado') @Header('Cache-Control', 'private, no-store')
+  affiliateLinks(@CurrentUser() user: AuthUser) { return this.home.getAffiliateLinks(user.id); }
+
+  @Put('afiliados/me/links') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado')
+  saveAffiliateLinks(@Body() dto: SaveAffiliateLinksDto, @CurrentUser() user: AuthUser) { return this.home.saveAffiliateLinks(user.id, dto); }
 
   @Get('grupos/:id/whatsapp') @UseGuards(JwtAuthGuard) @Header('Cache-Control', 'private, no-store')
   groupWhatsapp(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) { return this.home.getGroupWhatsapp(id, user); }

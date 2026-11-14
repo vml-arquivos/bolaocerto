@@ -174,3 +174,10 @@ button.admin-footer-logout:hover { color: #fff; }
 .share-sale-form { display: grid; gap: 6px; }
 .share-sale-form select, .share-sale-form input { width: 100%; min-height: 36px; }
 .share-sale-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Depoimentos no painel */
+.admin-testimonials { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; margin-top: 12px; }
+.admin-testimonial { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border, #d6dbe6); border-radius: 14px; background: var(--surface, #fff); min-width: 0; }
+.admin-testimonial header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.admin-testimonial p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.admin-testimonial small { color: var(--text-muted, #64748b); overflow-wrap: anywhere; }

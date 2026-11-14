@@ -15,6 +15,7 @@ export const AFFILIATE_TABS = [
   ['boloes', 'Bolões', '▦'],
   ['grupos', 'Grupos', '☺'],
   ['comissoes', 'Comissões', '$'],
+  ['pagina', 'Minha página', '★'],
 ] as const;
 export type AffiliateTab = (typeof AFFILIATE_TABS)[number][0] | 'mais';
 
@@ -34,7 +35,7 @@ async function logout() {
 /** Casca do aplicativo do afiliado: barra de cima, abas (computador) e barra de baixo (celular). */
 export function AffiliateShell({ children }: { children: ReactNode }) {
   const tab = parseAffiliateTab(useSearchParams().get('aba'));
-  const bottomActive = tab === 'grupos' || tab === 'comissoes' ? 'mais' : tab;
+  const bottomActive = tab === 'grupos' || tab === 'comissoes' || tab === 'pagina' ? 'mais' : tab;
   return <div className="aff-app">
     <a className="skip-link" href="#afiliado-main">Pular para o conteúdo</a>
     <header className="aff-topbar">
@@ -54,6 +55,7 @@ export function AffiliateMore({ pending, status }: { pending: string; status?: s
     <ProfilePanel pixLabel="Chave Pix para receber comissões" />
     <div className="aff-more-links">
       <Link href="/afiliado?aba=grupos"><strong>Grupos</strong><small>Pessoas, convites e páginas dos seus grupos.</small></Link>
+      <Link href="/afiliado?aba=pagina"><strong>Minha página</strong><small>Links do WhatsApp e Instagram e depoimentos dos clientes.</small></Link>
       <Link href="/afiliado?aba=comissoes"><strong>Comissões</strong><small>Pendente: {pending}. Base, percentual e repasses.</small></Link>
       <Link href="/aplicativo"><strong>Comprar cotas</strong><small>Abre o app do cliente, com a mesma conta.</small></Link>
       <Link href="/minha-conta"><strong>Minha conta</strong><small>Dados, senha, avisos e contratos.</small></Link>

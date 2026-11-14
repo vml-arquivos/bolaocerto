@@ -11,6 +11,9 @@ export const COMMUNITY_KEY = 'whatsapp.comunidade';
 export type CommunityLinks = { comunidade: string; grupo: string; instagram: string };
 /** Link do grupo do WhatsApp de cada grupo do BL ou de afiliado (quem é do grupo vê o botão). */
 export const GROUP_WHATSAPP_PREFIX = 'grupo.whatsapp.';
+/** Links da página do afiliado (grupo e comunidade do WhatsApp, Instagram), que ele mesmo configura. */
+export const AFFILIATE_LINKS_PREFIX = 'afiliado.links.';
+export type AffiliateLinks = { grupo: string; comunidade: string; instagram: string };
 
 /** Só aceita o perfil do Instagram (instagram.com). */
 export function safeInstagramLink(value: unknown): string {
@@ -91,13 +94,64 @@ export class HomeService {
     return { grupoId: groupId, link: safeWhatsappLink(text) };
   }
 
-  /** Links do WhatsApp dos grupos de quem está logado (os que ele participa e, se for afiliado, os dele). */
+  private parseAffiliateLinks(valor: string | null | undefined): AffiliateLinks {
+    try {
+      const data = JSON.parse(valor ?? '{}') as Partial<AffiliateLinks>;
+      return { grupo: safeWhatsappLink(data.grupo), comunidade: safeWhatsappLink(data.comunidade), instagram: safeInstagramLink(data.instagram) };
+    } catch { return { grupo: '', comunidade: '', instagram: '' }; }
+  }
+
+  private async affiliateIdOf(userId: string) {
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: userId }, select: { id: true } });
+    if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
+    return affiliate.id;
+  }
+
+  /** Página do afiliado: os links que ele mostra para os clientes dele. */
+  async getAffiliateLinks(userId: string): Promise<AffiliateLinks> {
+    const id = await this.affiliateIdOf(userId);
+    const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: `${AFFILIATE_LINKS_PREFIX}${id}` } });
+    return this.parseAffiliateLinks(row?.valor);
+  }
+
+  async saveAffiliateLinks(userId: string, input: Partial<AffiliateLinks>): Promise<AffiliateLinks> {
+    const id = await this.affiliateIdOf(userId);
+    const grupo = (input.grupo ?? '').trim();
+    const comunidade = (input.comunidade ?? '').trim();
+    const instagram = (input.instagram ?? '').trim();
+    if (grupo && !safeWhatsappLink(grupo)) throw new BadRequestException('O link do grupo precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
+    if (comunidade && !safeWhatsappLink(comunidade)) throw new BadRequestException('O link da comunidade precisa ser um convite do WhatsApp (começa com https://chat.whatsapp.com/).');
+    if (instagram && !safeInstagramLink(instagram)) throw new BadRequestException('O Instagram precisa ser o link do perfil (começa com https://www.instagram.com/).');
+    const value: AffiliateLinks = { grupo: safeWhatsappLink(grupo), comunidade: safeWhatsappLink(comunidade), instagram: safeInstagramLink(instagram) };
+    const chave = `${AFFILIATE_LINKS_PREFIX}${id}`;
+    if (!value.grupo && !value.comunidade && !value.instagram) await this.prisma.configuracaoSistema.deleteMany({ where: { chave } });
+    else await this.prisma.configuracaoSistema.upsert({ where: { chave }, create: { chave, valor: JSON.stringify(value) }, update: { valor: JSON.stringify(value) } });
+    await this.audit.record(this.prisma, { entidade: 'afiliado', entidadeId: id, evento: 'afiliado.links_alterados', atorId: userId, payloadDepois: value as unknown as Record<string, string> });
+    return value;
+  }
+
+  /**
+   * Links para quem está logado: WhatsApp dos grupos que ele participa (e, se for afiliado, os dele) e os links da
+   * página do afiliado que trouxe a pessoa (ou dono do grupo dela).
+   */
   async myGroupsWhatsapp(userId: string) {
-    const groups = await this.prisma.grupo.findMany({ where: { OR: [{ membros: { some: { usuarioId: userId } } }, { afiliado: { usuarioId: userId } }] }, select: { id: true, nome: true }, take: 20 });
-    if (!groups.length) return { grupos: [] };
-    const rows = await this.prisma.configuracaoSistema.findMany({ where: { chave: { in: groups.map((group) => `${GROUP_WHATSAPP_PREFIX}${group.id}`) } } });
-    const links = new Map(rows.map((row) => [row.chave.slice(GROUP_WHATSAPP_PREFIX.length), safeWhatsappLink(row.valor)]));
-    return { grupos: groups.map((group) => ({ grupoId: group.id, nome: group.nome, link: links.get(group.id) ?? '' })).filter((group) => group.link) };
+    const [groups, user] = await Promise.all([
+      this.prisma.grupo.findMany({ where: { OR: [{ membros: { some: { usuarioId: userId } } }, { afiliado: { usuarioId: userId } }] }, select: { id: true, nome: true, afiliadoId: true }, take: 20 }),
+      this.prisma.usuario.findUnique({ where: { id: userId }, select: { indicadoPorAfiliadoId: true } }),
+    ]);
+    const affiliateId = user?.indicadoPorAfiliadoId ?? groups.find((group) => group.afiliadoId)?.afiliadoId ?? null;
+    const keys = [...groups.map((group) => `${GROUP_WHATSAPP_PREFIX}${group.id}`), ...(affiliateId ? [`${AFFILIATE_LINKS_PREFIX}${affiliateId}`] : [])];
+    const rows = keys.length ? await this.prisma.configuracaoSistema.findMany({ where: { chave: { in: keys } } }) : [];
+    const links = new Map(rows.filter((row) => row.chave.startsWith(GROUP_WHATSAPP_PREFIX)).map((row) => [row.chave.slice(GROUP_WHATSAPP_PREFIX.length), safeWhatsappLink(row.valor)]));
+    let afiliado: (AffiliateLinks & { nome: string }) | null = null;
+    const affiliateRow = affiliateId ? rows.find((row) => row.chave === `${AFFILIATE_LINKS_PREFIX}${affiliateId}`) : undefined;
+    if (affiliateId && affiliateRow) {
+      const parsed = this.parseAffiliateLinks(affiliateRow.valor);
+      const owner = await this.prisma.afiliado.findUnique({ where: { id: affiliateId }, select: { usuarioId: true, usuario: { select: { nome: true } } } });
+      // O próprio afiliado não precisa ver os links dele como "do afiliado".
+      if (owner && owner.usuarioId !== userId && (parsed.grupo || parsed.comunidade || parsed.instagram)) afiliado = { ...parsed, nome: owner.usuario.nome.split(' ')[0] ?? owner.usuario.nome };
+    }
+    return { grupos: groups.map((group) => ({ grupoId: group.id, nome: group.nome, link: links.get(group.id) ?? '' })).filter((group) => group.link), afiliado };
   }
 
   /** Tela do painel: configuração atual e os bolões abertos que podem ser destacados. */

@@ -27,5 +27,5 @@ export function HeaderAuth() {
     window.location.href = '/';
   }
   if (role) return <><Link className="button button-primary" href={role === 'cotista' ? '/minha-conta' : homeForRole(role)}>{isStaff(role) ? 'Painel' : role === 'afiliado' ? 'Minha área' : 'Minha conta'}</Link><button type="button" className="button button-ghost header-logout" onClick={() => void logout()}>Sair</button></>;
-  return <><Link className="button button-ghost" href="/login">Entrar</Link><Link className="button button-primary" href="/cadastro">Criar conta</Link></>;
+  return <><Link className="button button-ghost header-login" href="/login">Entrar</Link><Link className="button button-primary header-signup" href="/cadastro">Criar conta</Link></>;
 }

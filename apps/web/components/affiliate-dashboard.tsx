@@ -12,6 +12,7 @@ import { AffiliateMore, parseAffiliateTab, type AffiliateTab } from './affiliate
 import { PoolWizard } from './pool-wizard';
 import { AffiliatePendingPools } from './affiliate-pending-pools';
 import { GroupWhatsappField } from './community-link';
+import { AffiliatePageSettings } from './affiliate-page-settings';
 import { concursoNo } from '../lib/contest';
 import { authenticatedFetch } from '../lib/client-api';
 import { formatBRL as money } from '../lib/format';
@@ -141,6 +142,7 @@ export function AffiliateDashboard() {
     {tab === 'cotas' && <AffiliateQuotas />}
     {tab === 'vendas' && <AffiliateSales />}
     {tab === 'mais' && <AffiliateMore pending={money(data.comissaoPendente)} status={data.statusAprovacao} />}
+    {tab === 'pagina' && <AffiliatePageSettings />}
     {tab === 'comissoes' && <section className="affiliate-table-card"><div className="affiliate-card-heading"><div><h2>Minhas comissões</h2></div></div><div className="affiliate-kpis compact"><article><span>Pendente</span><strong>{money(data.comissaoPendente)}</strong></article><article><span>Pago</span><strong>{money(data.comissaoPaga)}</strong></article><article><span>Total de registros</span><strong>{commissions.length}</strong></article></div>{commissions.length ? <div className="affiliate-table-scroll"><table><thead><tr><th>Comissão</th><th>Cota</th><th>Base</th><th>Percentual</th><th>Valor</th><th>Status</th><th>Data</th></tr></thead><tbody>{commissions.map((commission) => <tr key={commission.id}><td>{commission.id.slice(0, 8)}</td><td>{commission.cotaId.slice(0, 8)}</td><td>{money(commission.baseCalculo)}</td><td>{commission.percentual ?? '—'}%</td><td><strong>{money(commission.valor)}</strong></td><td><span className="affiliate-status">{statusText(commission.status)}</span></td><td>{date(commission.repassadoEm ?? commission.criadoEm)}</td></tr>)}</tbody></table></div> : <div className="affiliate-empty"><strong>Nenhuma comissão confirmada ainda.</strong><p>Quando uma cota do seu link for paga, ela aparecerá aqui.</p></div>}</section>}
   </div>;
 }

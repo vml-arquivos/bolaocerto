@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 type Links = { comunidade: string; grupo: string; instagram: string };
 type GroupLink = { grupoId: string; nome: string; link: string };
+type AffiliateLinks = { nome: string; grupo: string; comunidade: string; instagram: string };
 
 /**
  * Botões para entrar na comunidade e no grupo do WhatsApp e seguir o BL no Instagram. Com `groups`, mostra também o
@@ -11,6 +12,7 @@ type GroupLink = { grupoId: string; nome: string; link: string };
 export function WhatsappJoin({ className = '', groups = false, title }: { className?: string; groups?: boolean; title?: string }) {
   const [links, setLinks] = useState<Links | null>(null);
   const [mine, setMine] = useState<GroupLink[]>([]);
+  const [affiliate, setAffiliate] = useState<AffiliateLinks | null>(null);
   useEffect(() => {
     let alive = true;
     void fetch('/api/v1/config/comunidade', { cache: 'no-store' })
@@ -19,16 +21,20 @@ export function WhatsappJoin({ className = '', groups = false, title }: { classN
       .catch(() => undefined);
     if (groups) void fetch('/api/v1/usuarios/me/comunidade', { cache: 'no-store', credentials: 'include' })
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => { if (alive && Array.isArray(data?.grupos)) setMine(data.grupos.filter((item: GroupLink) => item.link)); })
+      .then((data) => { if (!alive) return; if (Array.isArray(data?.grupos)) setMine(data.grupos.filter((item: GroupLink) => item.link)); if (data?.afiliado) setAffiliate(data.afiliado); })
       .catch(() => undefined);
     return () => { alive = false; };
   }, [groups]);
   const hasGlobal = Boolean(links && (links.comunidade || links.grupo || links.instagram));
-  if (!hasGlobal && !mine.length) return null;
+  const hasAffiliate = Boolean(affiliate && (affiliate.grupo || affiliate.comunidade || affiliate.instagram));
+  if (!hasGlobal && !mine.length && !hasAffiliate) return null;
   let primaryUsed = false;
   const kind = () => { const value = primaryUsed ? 'button-secondary' : 'button-primary'; primaryUsed = true; return value; };
   return <div className={`whatsapp-join ${title ? 'has-title' : ''} ${className}`.trim()}>
     {title && <strong className="whatsapp-join-title">{title}</strong>}
+    {affiliate?.grupo && !mine.some((item) => item.link === affiliate.grupo) && <a className={`button ${kind()}`} href={affiliate.grupo} target="_blank" rel="noopener noreferrer" data-testid="afiliado-grupo">Entrar no grupo do WhatsApp de {affiliate.nome}</a>}
+    {affiliate?.comunidade && <a className={`button ${kind()}`} href={affiliate.comunidade} target="_blank" rel="noopener noreferrer" data-testid="afiliado-comunidade">Entrar na comunidade de {affiliate.nome}</a>}
+    {affiliate?.instagram && <a className="button button-secondary" href={affiliate.instagram} target="_blank" rel="noopener noreferrer" data-testid="afiliado-instagram">Seguir {affiliate.nome} no Instagram</a>}
     {mine.map((item) => <a key={item.grupoId} className={`button ${kind()}`} href={item.link} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-meu-grupo">Entrar no WhatsApp do grupo {item.nome}</a>)}
     {links?.comunidade && <a className={`button ${kind()}`} href={links.comunidade} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-comunidade">Entrar na comunidade do WhatsApp</a>}
     {links?.grupo && <a className={`button ${kind()}`} href={links.grupo} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-grupo">Entrar no grupo do WhatsApp</a>}
