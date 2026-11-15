@@ -97,7 +97,7 @@ export function DocumentsView({ notify }: { notify: Notify }) {
         {detail.origem === 'painel' && <button className="admin-button admin-button-ghost" disabled={busy} onClick={() => void revert()}>Voltar ao texto padrão</button>}
       </div>
       <h3 style={{ marginTop: 24 }}>Histórico de versões</h3>
-      {detail.historico?.length ? <Table minWidth={640}><thead><tr><th>Versão</th><th>Publicado em</th><th>Por</th><th>Situação</th><th /></tr></thead><tbody>{detail.historico.map((row: Rec) => <tr key={row.id}><td>{row.versao}</td><td>{dateTime(row.publicadoEm)}</td><td>{row.publicadoPor ?? '—'}</td><td><span className={row.ativo ? chip('confirmado') : chip('')}>{row.ativo ? 'Em vigor' : 'Substituída'}</span></td><td><button className="admin-button admin-button-ghost" onClick={() => { setText(row.texto); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Usar como base</button></td></tr>)}</tbody></Table> : <p className="admin-help">Nenhuma versão foi publicada pelo painel ainda.</p>}
+      {detail.historico?.length ? <Table minWidth={640}><thead><tr><th>Versão</th><th>Publicado em</th><th>Por</th><th>Situação</th><th /></tr></thead><tbody>{detail.historico.map((row: Rec) => <tr key={row.id}><td>{row.versao}</td><td className="td-date">{dateTime(row.publicadoEm)}</td><td>{row.publicadoPor ?? '—'}</td><td><span className={row.ativo ? chip('confirmado') : chip('')}>{row.ativo ? 'Em vigor' : 'Substituída'}</span></td><td><button className="admin-button admin-button-ghost" onClick={() => { setText(row.texto); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Usar como base</button></td></tr>)}</tbody></Table> : <p className="admin-help">Nenhuma versão foi publicada pelo painel ainda.</p>}
     </Panel>}
   </>;
 }

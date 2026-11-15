@@ -70,7 +70,7 @@ const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 
 /** Abas de documentos: listam pelo período e baixam um a um ou todos num .zip. */
 const DOC_PATH: Partial<Record<Tab, string>> = { recibos: '/api/v1/admin/downloads/recibos', 'arquivos-notas': '/api/v1/admin/downloads/notas' };
 /** Ordem de cada aba quando ela abre: vendas e pagamentos separados por bolão; notas por data; o resto por nome. */
-const DEFAULT_ORDER: Partial<Record<Tab, string>> = { vendas: 'bolao', pagamentos: 'bolao', 'nao-pagos': 'nome', 'notas-fiscais': 'data_asc', boloes: 'bolao', recibos: 'nome', 'arquivos-notas': 'data_asc' };
+const DEFAULT_ORDER: Partial<Record<Tab, string>> = { vendas: 'bolao', pagamentos: 'bolao', 'nao-pagos': 'bolao', 'notas-fiscais': 'data_asc', boloes: 'bolao', recibos: 'nome', 'arquivos-notas': 'data_asc' };
 const ORDER_OPTIONS: Array<[string, string]> = [['bolao', 'Separado por bolão'], ['nome', 'Nome (A–Z)'], ['data', 'Data: mais recente primeiro'], ['data_asc', 'Data: mais antiga primeiro']];
 const POOL_FILTER_TABS: Tab[] = ['vendas', 'pagamentos', 'nao-pagos'];
 const AFFILIATE_FILTER_TABS: Tab[] = ['vendas', 'pagamentos', 'comissoes'];
@@ -91,23 +91,43 @@ function lastMonths() {
   return out;
 }
 /** Linhas com um cabeçalho por bolão (nome, quantas cotas e total) quando a lista está "separada por bolão". */
-function withPoolHeaders(rows: Rec[], grouped: boolean, columns: number, amountKey: string, render: (row: Rec, index: number) => ReactNode) {
+/** Chave de cada bolão nos relatórios separados por bolão. */
+const groupKeyOf = (row: Rec) => String(row.bolaoId ?? `${row.modalidade}-${row.concurso}-${row.grupo ?? ''}`);
+type Fold = { closed: Set<string>; toggle: (key: string) => void };
+/** Separa as linhas por bolão: cabeçalho com nome, valor da cota e subtotal; cada bolão pode ser encolhido ou aberto. */
+function withPoolHeaders(rows: Rec[], grouped: boolean, columns: number, amountKey: string, render: (row: Rec, index: number) => ReactNode, fold?: Fold) {
   if (!grouped) return rows.map(render);
   const out: ReactNode[] = [];
   let current = '';
   rows.forEach((row, index) => {
-    const key = `${row.modalidade}-${row.concurso}-${row.grupo ?? ''}`;
+    const key = groupKeyOf(row);
+    const open = !fold?.closed.has(key);
     if (key !== current) {
       current = key;
-      const same = rows.filter((item) => `${item.modalidade}-${item.concurso}-${item.grupo ?? ''}` === key);
-      out.push(<tr key={`grupo-${key}-${index}`} className="report-group-row"><td colSpan={columns}><strong>{poolName(row)}{row.grupo ? ` · ${row.grupo}` : ''}</strong><small>{same.length} {same.length === 1 ? 'registro' : 'registros'} · {same.reduce((sum, item) => sum + Number(item.quantidade ?? 0), 0)} cotas · {brl(same.reduce((sum, item) => sum + Number(item[amountKey] ?? 0), 0))}</small></td></tr>);
+      const same = rows.filter((item) => groupKeyOf(item) === key);
+      out.push(<tr key={`grupo-${key}-${index}`} className={`report-group-row${open ? '' : ' is-closed'}`}><td colSpan={columns}><div className="report-group-head">
+        <button type="button" className="report-group-toggle" aria-expanded={open} title={open ? 'Encolher este bolão' : 'Mostrar as linhas deste bolão'} onClick={() => fold?.toggle(key)}><span className="report-group-caret" aria-hidden="true">{open ? '▾' : '▸'}</span><strong>{poolName(row)}{row.grupo ? ` · ${row.grupo}` : ''}</strong></button>
+        {row.valorCota !== undefined && row.valorCota !== null && <span className="pool-price-tag">{brl(row.valorCota)} <span>/ cota</span></span>}
+        <small>{same.length} {same.length === 1 ? 'registro' : 'registros'} · {same.reduce((sum, item) => sum + Number(item.quantidade ?? 0), 0)} cotas · {brl(same.reduce((sum, item) => sum + Number(item[amountKey] ?? 0), 0))}</small>
+      </div></td></tr>);
     }
-    out.push(render(row, index));
+    if (open) out.push(render(row, index));
   });
   return out;
 }
 
+/** Botões para encolher ou abrir todos os bolões de uma vez. */
+function FoldAll({ rows, fold, grouped }: { rows: Rec[]; fold: Fold & { set: (keys: Set<string>) => void }; grouped: boolean }) {
+  if (!grouped || !rows.length) return null;
+  const keys = [...new Set(rows.map(groupKeyOf))];
+  const allClosed = keys.every((key) => fold.closed.has(key));
+  return <div className="report-fold-bar"><span>{keys.length} {keys.length === 1 ? 'bolão' : 'bolões'}</span><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => fold.set(allClosed ? new Set() : new Set(keys))}>{allClosed ? 'Abrir todos' : 'Encolher todos'}</button></div>;
+}
+
 export function ReportsView() {
+  // Bolões encolhidos nos relatórios separados por bolão (vale para a aba aberta).
+  const [closedPools, setClosedPools] = useState<Set<string>>(() => new Set());
+  const fold = { closed: closedPools, set: setClosedPools, toggle: (key: string) => setClosedPools((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }) };
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window === 'undefined') return 'resumo';
     const wanted = new URLSearchParams(window.location.search).get('aba');
@@ -208,6 +228,9 @@ export function ReportsView() {
 
   const summary = tab === 'resumo' ? data : null;
   const rows: Rec[] = tab === 'vendas' || tab === 'nao-pagos' || tab === 'comissoes' || tab === 'pagamentos' || tab === 'notas-fiscais' ? (data?.linhas ?? []) : [];
+  const grouped = ordem === 'bolao';
+  const poolRows = (columns: number, amountKey: string, render: (row: Rec, index: number) => ReactNode) => withPoolHeaders(rows, grouped, columns, amountKey, render, fold);
+  const foldBar = <FoldAll rows={rows} fold={fold} grouped={grouped} />;
 
   return <>
     <div className="admin-page-heading"><div><h1>Relatórios</h1></div></div>
@@ -246,17 +269,17 @@ export function ReportsView() {
     </>}
 
     {!loading && tab === 'vendas' && <Panel title="Vendas de cotas" action={<ExportButtons path="/api/v1/admin/relatorios/vendas" id="vendas" />}>
-      <Table minWidth={1240}><thead><tr><th>Data</th><th>Participante</th><th>CPF</th><th>Bolão</th><th>Qtd.</th><th>Total</th><th>Cota</th><th>Pagamento</th><th>Forma</th><th>Pago em</th><th>Afiliado</th><th>Comissão</th></tr></thead><tbody>{withPoolHeaders(rows, ordem === 'bolao', 12, 'valorTotal', (row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td className="td-nowrap">{row.cpf}</td><td>{label(row.modalidade)} #{row.concurso}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td><span className={chip(row.statusPagamento)}>{label(row.statusPagamento)}</span></td><td>{label(row.metodo)} <small>{row.origem}</small></td><td>{dateTime(row.pagoEm)}</td><td>{row.afiliado ? <><strong>{row.afiliadoNome ?? row.afiliado}</strong><small>{row.afiliado}</small></> : 'Venda direta'}</td><td className="td-nowrap">{row.comissao === null || row.comissao === undefined ? '—' : brl(row.comissao)}</td></tr>)}</tbody></Table>
+      {foldBar}<Table minWidth={1240}><thead><tr><th>Data</th><th>Participante</th><th>CPF</th><th>Bolão</th><th>Qtd.</th><th>Total</th><th>Cota</th><th>Pagamento</th><th>Forma</th><th>Pago em</th><th>Afiliado</th><th>Comissão</th></tr></thead><tbody>{poolRows(12, 'valorTotal', (row, index) => <tr key={index}><td className="td-date">{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td className="td-nowrap">{row.cpf}</td><td>{label(row.modalidade)} #{row.concurso}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td><span className={chip(row.statusPagamento)}>{label(row.statusPagamento)}</span></td><td>{label(row.metodo)} <small>{row.origem}</small></td><td className="td-date">{dateTime(row.pagoEm)}</td><td>{row.afiliado ? <><strong>{row.afiliadoNome ?? row.afiliado}</strong><small>{row.afiliado}</small></> : 'Venda direta'}</td><td className="td-nowrap">{row.comissao === null || row.comissao === undefined ? '—' : brl(row.comissao)}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma venda no período" />}
     </Panel>}
 
     {!loading && tab === 'nao-pagos' && <>
       <Panel title="Quem não pagou" action={<ExportButtons path="/api/v1/admin/relatorios/nao-pagos" id="nao-pagos" />}>
-        <Table minWidth={1080}><thead><tr><th>Reservada em</th><th>Participante</th><th>Contato</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th><th>Vencimento</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong></td><td>{row.email}<small>{row.telefone ?? ''}</small></td><td>{poolName(row)}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td>{dateTime(row.vencimento)}</td></tr>)}</tbody></Table>
+        {foldBar}<Table minWidth={1080}><thead><tr><th>Reservada em</th><th>Participante</th><th>Contato</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th><th>Vencimento</th></tr></thead><tbody>{poolRows(8, 'valorTotal', (row, index) => <tr key={index}><td className="td-date">{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong></td><td>{row.email}<small>{row.telefone ?? ''}</small></td><td>{poolName(row)}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td className="td-date">{dateTime(row.vencimento)}</td></tr>)}</tbody></Table>
         {!rows.length && <Empty text="Ninguém inadimplente no período" />}
       </Panel>
       {(data?.pagosSemCota ?? []).length > 0 && <Panel title="Pagos sem cota — estornar ao participante">
-        <Table minWidth={760}><thead><tr><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th></tr></thead><tbody>{(data?.pagosSemCota ?? []).map((row: Rec, index: number) => <tr key={index}><td>{row.participante}<small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td>{dateTime(row.pagoEm)}</td></tr>)}</tbody></Table>
+        <Table minWidth={760}><thead><tr><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th></tr></thead><tbody>{(data?.pagosSemCota ?? []).map((row: Rec, index: number) => <tr key={index}><td>{row.participante}<small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td className="td-date">{dateTime(row.pagoEm)}</td></tr>)}</tbody></Table>
       </Panel>}
     </>}
 
@@ -266,12 +289,12 @@ export function ReportsView() {
     </Panel>}
 
     {!loading && tab === 'pagamentos' && <Panel title="Pagamentos" action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
-      <Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{withPoolHeaders(rows, ordem === 'bolao', 12, 'valorBruto', (row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{poolName(row)}{row.afiliadoNome ? <small>por {row.afiliadoNome}</small> : <small>venda direta</small>}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td className="td-nowrap">{brl(row.valorBruto)}</td><td className="td-nowrap">{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td className="td-nowrap">{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td className="td-nowrap">{row.comissao === null ? '—' : brl(row.comissao)}</td><td className="td-nowrap">{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
+      {foldBar}<Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{poolRows(12, 'valorBruto', (row, index) => <tr key={index}><td className="td-date">{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{poolName(row)}{row.afiliadoNome ? <small>por {row.afiliadoNome}</small> : <small>venda direta</small>}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td className="td-nowrap">{brl(row.valorBruto)}</td><td className="td-nowrap">{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td className="td-nowrap">{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td className="td-nowrap">{row.comissao === null ? '—' : brl(row.comissao)}</td><td className="td-nowrap">{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhum pagamento no período" />}
     </Panel>}
 
     {!loading && tab === 'notas-fiscais' && <Panel title="Notas fiscais de serviço" action={<ExportButtons path="/api/v1/admin/relatorios/notas-fiscais" id="notas-fiscais" />}>
-      <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td className="td-nowrap">{brl(row.valorNota)}</td><td className="td-nowrap">{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td className="td-nowrap">{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
+      <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td className="td-date">{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td className="td-nowrap">{brl(row.valorNota)}</td><td className="td-nowrap">{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td className="td-nowrap">{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma nota fiscal no período" />}
     </Panel>}
 
@@ -294,7 +317,7 @@ export function ReportsView() {
     </Panel>}
 
     {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
-      <Table minWidth={1100}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Status</th><th>Cotas pagas</th><th>Aguardando</th><th>Canceladas</th><th>Receita</th><th>Ficha</th></tr></thead><tbody>{list.filter((pool) => !poolStatus || (poolStatus === 'andamento' ? ['rascunho', 'aberto'].includes(pool.status) : !['rascunho', 'aberto'].includes(pool.status))).map((pool) => <tr key={pool.id}><td><strong>{poolName(pool)}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td>{dateTime(pool.sorteio)}</td><td><span className="status-chip">{label(pool.status)}</span></td><td>{pool.cotasPagas}{pool.totalCotas ? ` / ${pool.totalCotas}` : ' (ilimitadas)'}</td><td>{pool.cotasAguardando}</td><td>{pool.cotasCanceladas}</td><td className="td-nowrap">{brl(pool.receita)}</td><td><ExportButtons path={`/api/v1/admin/relatorios/boloes/${pool.id}`} id={pool.id} /></td></tr>)}</tbody></Table>
+      <Table minWidth={1100}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Status</th><th>Cotas pagas</th><th>Aguardando</th><th>Canceladas</th><th>Receita</th><th>Ficha</th></tr></thead><tbody>{list.filter((pool) => !poolStatus || (poolStatus === 'andamento' ? ['rascunho', 'aberto'].includes(pool.status) : !['rascunho', 'aberto'].includes(pool.status))).map((pool) => <tr key={pool.id}><td><strong>{poolName(pool)}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td className="td-date">{dateTime(pool.sorteio)}</td><td><span className="status-chip">{label(pool.status)}</span></td><td>{pool.cotasPagas}{pool.totalCotas ? ` / ${pool.totalCotas}` : ' (ilimitadas)'}</td><td>{pool.cotasAguardando}</td><td>{pool.cotasCanceladas}</td><td className="td-nowrap">{brl(pool.receita)}</td><td><ExportButtons path={`/api/v1/admin/relatorios/boloes/${pool.id}`} id={pool.id} /></td></tr>)}</tbody></Table>
       {!list.length && <Empty text="Nenhum bolão no período" />}
     </Panel>}
   </>;
@@ -578,7 +601,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
 
       {!(data.semNota ?? []).length ? <p className="admin-note invoice-ok" role="status">{auto ? 'Tudo em dia: as notas saem sozinhas quando o pagamento é confirmado.' : 'Todos os pagamentos confirmados já têm nota.'}</p> : <Panel title={auto ? 'Aguardando emissão automática' : 'Pagamentos confirmados sem nota'}>
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
-          <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td className="td-nowrap">{brl(row.valor)}</td><td className="td-nowrap">{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td className="td-nowrap">{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
+          <td className="td-date">{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td className="td-nowrap">{brl(row.valor)}</td><td className="td-nowrap">{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td className="td-nowrap">{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
           <td><span className={chip(row.enderecoCompleto || (focus && !addressRequired) ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus && !addressRequired ? 'opcional' : 'faltando'}</span></td>
           <td><div className="admin-row-actions">
             {row.emitivelPelaCora && (row.enderecoCompleto || (focus && !addressRequired)) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir agora`}</button>}

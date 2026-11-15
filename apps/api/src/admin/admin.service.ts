@@ -249,11 +249,13 @@ export class AdminService {
     const poolStatus: Prisma.BolaoWhereInput = query.status === 'andamento' ? { status: { in: [StatusBolao.rascunho, StatusBolao.aberto] } }
       : query.status === 'encerrados' ? { status: { in: [StatusBolao.fechado, StatusBolao.registrado, StatusBolao.apurado, StatusBolao.cancelado] } }
       : query.status && (Object.values(StatusBolao) as string[]).includes(query.status) ? { status: query.status as StatusBolao } : {};
-    const where: Prisma.BolaoWhereInput = {
-      ...poolStatus,
+    const baseWhere: Prisma.BolaoWhereInput = {
       ...(query.busca ? (isUuidSearch ? { id: query.busca } : { OR: [{ grupo: { nome: { contains: query.busca.trim(), mode: 'insensitive' } } }, { concurso: { nomeEspecial: { contains: query.busca.trim(), mode: 'insensitive' } } }, ...(/^\d{1,9}$/.test(query.busca.trim()) ? [{ concurso: { numeroConcurso: Number(query.busca.trim()) } }] : [])] }) : {}),
       ...(query.modalidade || query.mes ? { concurso: { ...(query.modalidade ? { modalidade: query.modalidade } : {}), ...(query.mes ? this.monthRange(query.mes) : {}) } } : {}),
     };
+    const where: Prisma.BolaoWhereInput = { ...poolStatus, ...baseWhere };
+    // Quantos bolões há em cada situação (com os mesmos filtros de busca, modalidade e mês), para as abas da tela.
+    const statusCounts = this.prisma.bolao.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }).then((rows) => Object.fromEntries(rows.map((row) => [row.status, row._count._all]))).catch(() => null);
     const [items, total] = await Promise.all([
       this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: query.ordem === 'nome' ? [{ concurso: { modalidade: 'asc' } }, { concurso: { numeroConcurso: 'asc' } }, { criadoEm: 'desc' }] : { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
@@ -283,7 +285,9 @@ export class AdminService {
         distributed.set(receiver.bolaoId, row);
       }
     } catch { /* informativo */ }
+    const resumoStatus = await statusCounts;
     return {
+      resumoStatus,
       items: items.map((pool) => ({
         ...pool,
         distribuicao: distributed.get(pool.id) ?? { afiliados: 0, links: 0, enviadoPor: [] },
@@ -321,7 +325,7 @@ export class AdminService {
       ...(query.modalidade ? { bolao: { concurso: { modalidade: query.modalidade } } } : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.cota.findMany({ where, include: { comprador: { select: { id: true, nome: true, email: true } }, bolao: { include: { concurso: true } }, afiliadoReferencia: { select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } }, pagamento: true, comissao: { select: { status: true, valor: true, loteRepasseId: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.cota.findMany({ where, include: { comprador: { select: { id: true, nome: true, email: true } }, bolao: { include: { concurso: true, grupo: { select: { nome: true } } } }, afiliadoReferencia: { select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } }, pagamento: true, comissao: { select: { status: true, valor: true, loteRepasseId: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
       this.prisma.cota.count({ where }),
     ]);
     return { items: items.map((share) => ({ ...share, titularCpf: `${share.titularCpf.slice(0, 3)}.***.***-${share.titularCpf.slice(-2)}`, valorPago: share.valorPago?.toFixed(2) ?? null, pagamento: share.pagamento ? { ...share.pagamento, valorBruto: share.pagamento.valorBruto.toFixed(2), valorTaxaAdmin: share.pagamento.valorTaxaAdmin.toFixed(2), valorComissaoAfiliado: share.pagamento.valorComissaoAfiliado.toFixed(2), valorCustoBilhete: share.pagamento.valorCustoBilhete.toFixed(2) } : null, comissao: share.comissao ? { status: share.comissao.status, valor: share.comissao.valor.toFixed(2), emLote: Boolean(share.comissao.loteRepasseId) } : null })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };

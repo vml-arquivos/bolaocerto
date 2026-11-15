@@ -58,7 +58,7 @@ const time = (value: unknown) => (value instanceof Date ? value.getTime() : valu
 export function sortReportRows<T extends Row>(rows: T[], ordem: string | undefined, nameKey = 'participante', dateKey = 'criadoEm'): T[] {
   const byName = (a: T, b: T) => byText(a[nameKey], b[nameKey]) || time(b[dateKey]) - time(a[dateKey]);
   const copy = [...rows];
-  if (ordem === 'bolao') return copy.sort((a, b) => byText(a.modalidade, b.modalidade) || Number(a.concurso ?? 0) - Number(b.concurso ?? 0) || byText(a.grupo, b.grupo) || byName(a, b));
+  if (ordem === 'bolao') return copy.sort((a, b) => byText(a.modalidade, b.modalidade) || Number(a.concurso ?? 0) - Number(b.concurso ?? 0) || byText(a.grupo, b.grupo) || Number(a.valorCota ?? 0) - Number(b.valorCota ?? 0) || byText(a.bolaoId, b.bolaoId) || byName(a, b));
   if (ordem === 'nome') return copy.sort(byName);
   if (ordem === 'data_asc') return copy.sort((a, b) => time(a[dateKey]) - time(b[dateKey]) || byName(a, b));
   if (ordem === 'data') return copy.sort((a, b) => time(b[dateKey]) - time(a[dateKey]) || byName(a, b));
@@ -479,6 +479,7 @@ export class ReportsService {
         concurso: item.cota.bolao.concurso.numeroConcurso,
         bolao: item.cota.bolaoId.slice(0, 8),
         bolaoId: item.cota.bolaoId,
+        valorCota: Number(item.cota.bolao.valorCota),
         grupo: item.cota.bolao.grupo?.nome ?? null,
         afiliadoNome: item.cota.afiliadoReferencia?.usuario?.nome ?? null,
         quantidade: item.cota.quantidade,

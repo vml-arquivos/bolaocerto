@@ -151,7 +151,7 @@ export function PromotionsAdminView({ notify }: { notify: Notify }) {
         {!coupons.length && <Empty text="Nenhum cupom criado ainda" hint="Crie o primeiro acima e envie o código para quem quiser." />}
       </Panel>
       {uses && <Panel title={`Usos do cupom ${uses.codigo}`} action={<button className="admin-button admin-button-small admin-button-ghost" onClick={() => setUses(null)}>Fechar</button>}>
-        <Table minWidth={720}><thead><tr><th>Quando</th><th>Cliente</th><th>Bolão</th><th>Cotas</th><th>Desconto</th><th>Situação</th></tr></thead><tbody>{uses.items.map((row) => <tr key={row.id}><td>{dateTime(row.em)}</td><td><strong>{row.cliente}</strong><small>{row.email}</small></td><td>{row.bolao}</td><td>{row.cotas}</td><td>{cents(row.descontoCentavos)}</td><td>{row.situacao}</td></tr>)}</tbody></Table>
+        <Table minWidth={720}><thead><tr><th>Quando</th><th>Cliente</th><th>Bolão</th><th>Cotas</th><th>Desconto</th><th>Situação</th></tr></thead><tbody>{uses.items.map((row) => <tr key={row.id}><td className="td-date">{dateTime(row.em)}</td><td><strong>{row.cliente}</strong><small>{row.email}</small></td><td>{row.bolao}</td><td>{row.cotas}</td><td>{cents(row.descontoCentavos)}</td><td>{row.situacao}</td></tr>)}</tbody></Table>
         {!uses.items.length && <Empty text="Ainda não foi usado" />}
       </Panel>}
     </>}

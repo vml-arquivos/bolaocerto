@@ -196,3 +196,28 @@ button.admin-footer-logout:hover { color: #fff; }
 
 /* Valores grandes nos cartões de resumo diminuem um pouco em telas menores, sem sair do cartão. */
 .admin-kpi strong { font-size: clamp(17px, 1.45vw, 22px); }
+
+/* Título de cada bolão nos relatórios: mais contraste e botão para encolher/abrir */
+.admin-table tr.report-group-row td { padding: 12px 12px; background: color-mix(in srgb, var(--primary) 12%, var(--surface, #fff)); border-top: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); box-shadow: inset 4px 0 0 var(--primary); }
+.report-group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.report-group-toggle { display: inline-flex; align-items: center; gap: 8px; padding: 2px 4px; margin: 0; border: 0; background: none; color: var(--text-primary); font: inherit; cursor: pointer; text-align: left; }
+.report-group-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+.admin-table tr.report-group-row td .report-group-toggle strong { margin: 0; font-size: 14.5px; font-weight: 700; color: var(--text-primary); }
+.report-group-caret { display: inline-flex; width: 18px; justify-content: center; color: var(--primary); font-size: 13px; }
+.admin-table tr.report-group-row td small { color: var(--text-secondary, var(--text-muted)); }
+.admin-table tr.report-group-row.is-closed td { opacity: .92; }
+.report-fold-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0 0 10px; color: var(--text-muted); font-size: 13px; }
+
+/* Valor da cota em destaque para identificar o bolão */
+.pool-price-tag { display: inline-flex; align-items: baseline; gap: 4px; width: fit-content; margin: 4px 0 2px; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 14%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); color: var(--text-primary); font-size: 13.5px; font-weight: 700; white-space: nowrap; line-height: 1.3; }
+.pool-price-tag span { color: var(--text-muted); font-size: 12px; font-weight: 560; }
+.report-group-head .pool-price-tag { margin: 0; }
+.admin-table td .pool-price-tag { display: flex; }
+
+/* Abas de situação na página de bolões */
+.pool-status-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.pool-status-tabs .report-tab { display: inline-flex; align-items: center; gap: 8px; }
+.pool-tab-count { display: inline-flex; min-width: 22px; justify-content: center; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, currentColor 14%, transparent); font-size: 12px; font-weight: 700; }
+
+/* Datas nas tabelas: só quebram depois da vírgula ("14/11/2026," / "19:42"), nunca no meio do número */
+.admin-table td.td-date, td.td-date { overflow-wrap: normal; word-break: normal; }

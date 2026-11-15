@@ -32,6 +32,7 @@ export type AdminCtx = {
   affiliateOptions: RecordValue[];
   selectedCommissions: string[]; setSelectedCommissions: (value: string[] | ((current: string[]) => string[])) => void;
   roleTab: 'equipe' | 'afiliado' | 'cotista' | 'todos'; setRoleTab: (value: 'equipe' | 'afiliado' | 'cotista' | 'todos') => void;
+  statusFilter?: string; setStatusFilter?: (value: string) => void;
   groupMembers: { id: string; nome: string; total: number; membros: RecordValue[] } | null;
   setGroupMembers: (value: { id: string; nome: string; total: number; membros: RecordValue[] } | null) => void;
   gamesTab: 'bolaos' | 'banco'; setGamesTab: (value: 'bolaos' | 'banco') => void;
