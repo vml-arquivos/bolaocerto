@@ -331,3 +331,38 @@
 .pool-result-hits { color: var(--text-secondary); font-size: .88rem; }
 .pool-result-hits b { color: var(--text-primary); }
 @media (max-width: 760px) { .apr-row { grid-template-columns: 1fr auto; } .apr-balls { grid-column: 1 / -1; } .apr-hits { text-align: left; } }
+
+/* Resumo do painel: blocos em ordem (resultados, ranking + fecham em breve, gráfico, números) */
+.admin-panel-results, .admin-panel-chart-wide { margin-bottom: 18px; }
+.admin-dashboard-grid.admin-dashboard-grid-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .admin-dashboard-grid.admin-dashboard-grid-even { grid-template-columns: 1fr; } }
+.admin-panel-results .admin-pool-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+.apr-card { display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-muted, transparent); min-width: 0; }
+.apr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.apr-head > div { display: grid; gap: 2px; min-width: 0; }
+.apr-head strong { color: var(--text-primary); }
+.apr-head small { color: var(--text-muted); }
+
+/* Resultado de um bolão: sorteados + jogos com X nos números acertados */
+.pgr { display: grid; gap: 10px; min-width: 0; }
+.pgr-drawn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.pgr-drawn > small { color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; }
+.pgr-balls { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+.pgr-best { margin-left: auto; color: var(--text-secondary); font-size: .88rem; white-space: nowrap; }
+.pgr-best b { color: var(--text-primary); }
+.pgr-games { display: grid; gap: 6px; }
+.pgr-game { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.pgr-label { color: var(--text-muted); font-size: .78rem; font-weight: 700; white-space: nowrap; }
+.pgr-nums { display: flex; flex-wrap: wrap; gap: 6px; }
+.pgr-num { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-primary); font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pgr-num.is-official-hit { border-color: var(--hit-x); text-shadow: 0 0 3px var(--surface), 0 0 2px var(--surface), 0 0 1px var(--surface); }
+.pgr-num.is-official-hit::before, .pgr-num.is-official-hit::after { width: 112%; height: 2.5px; }
+.pgr-count { color: var(--text-muted); font-size: .82rem; font-weight: 700; white-space: nowrap; }
+.pgr-count.has-hits { color: var(--hit-x); }
+.pgr-more { color: var(--text-muted); }
+.pool-result-line { display: grid; gap: 8px; }
+.pool-result-title { color: var(--text-primary); font-size: .9rem; }
+.ball.is-official-hit { position: relative; isolation: isolate; }
+@media (max-width: 560px) { .pgr-game { grid-template-columns: 1fr auto; } .pgr-nums { grid-column: 1 / -1; grid-row: 2; } .pgr-best { margin-left: 0; } }
+.admin-panel-results .admin-pool-results { align-items: start; }
+.apr-card { align-content: start; }

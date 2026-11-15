@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import { PoolWizard as SimplePoolWizard } from '../pool-wizard';
 import { RowMenu } from '../admin-row-menu';
+import { PoolGamesResult } from '../pool-games-result';
 import { modalityNames } from '../../lib/domain';
 import { money, dateTime, statusLabel, statusClass, poolForAttachments, fetchAdmin, SectionHeading, Panel, Empty, Table } from './shared';
 import { PoolTransferPanel } from './pool-transfer-panel';
@@ -127,11 +128,8 @@ export function PoolsView({ ctx }: { ctx: AdminCtx }) {
       </div></td>
     </tr>{item.resultado?.numerosSorteados?.length > 0 && <tr className="pool-result-row"><td colSpan={7} data-label="Resultado">
       <div className="pool-result-line">
-        <strong>Resultado do concurso {item.concurso?.numeroConcurso}</strong>
-        <span className="apr-balls">{item.resultado.numerosSorteados.map((n: number, i: number) => <span className="apr-ball" key={`${n}-${i}`}>{String(n).padStart(2, '0')}</span>)}</span>
-        {item.resultado.numerosSegundoSorteio?.length > 0 && <span className="apr-balls"><small>2º sorteio</small>{item.resultado.numerosSegundoSorteio.map((n: number, i: number) => <span className="apr-ball" key={`s${n}-${i}`}>{String(n).padStart(2, '0')}</span>)}</span>}
-        {item.resultado.acertos?.length > 0 && <span className="pool-result-hits">Melhor jogo: <b>{item.resultado.melhorJogo} {item.resultado.melhorJogo === 1 ? 'acerto' : 'acertos'}</b>{item.resultado.acertos.length > 1 && <small> · {item.resultado.acertos.slice(0, 12).map((game: { ordem: number; acertos: number }) => `J${game.ordem}: ${game.acertos}`).join(' · ')}{item.resultado.acertos.length > 12 ? ' …' : ''}</small>}</span>}
-        <a className="admin-text-link" href={`/boloes/${item.id}`} target="_blank" rel="noreferrer">Ver jogos marcados</a>
+        <strong className="pool-result-title">Resultado do concurso {item.concurso?.numeroConcurso} · CAIXA</strong>
+        <PoolGamesResult drawn={item.resultado.numerosSorteados} second={item.resultado.numerosSegundoSorteio ?? []} games={(item.jogos?.length ? item.jogos : item.numerosApostados?.length ? [{ ordem: 1, numeros: item.numerosApostados }] : []).map((game: { ordem: number; numeros: number[] }) => ({ ordem: game.ordem, numeros: game.numeros }))} moreHref={`/boloes/${item.id}`} />
       </div>
     </td></tr>}</Fragment>;
   };

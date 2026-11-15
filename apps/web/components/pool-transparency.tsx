@@ -33,7 +33,7 @@ export function PoolTransparency({ pool }: { pool: PublicPool }) {
       {result.segundoSorteio.length > 0 && <div className="draw-line" aria-label="Dezenas do segundo sorteio"><small>2º sorteio:</small>{result.segundoSorteio.map((n) => <span key={n} className="ball ball-drawn">{pad(n)}</span>)}</div>}
       <div className="game-results">{result.jogos.map((game) => <article key={game.ordem}>
         <header><strong>Jogo {pad(game.ordem)}</strong><span>{game.acertos} acerto(s){game.acertosSegundoSorteio !== null ? ` · 2º sorteio: ${game.acertosSegundoSorteio}` : ''}</span></header>
-        <div className="draw-line">{game.numeros.map((n) => <span key={n} className={`ball ${drawn.has(n) || drawnSecond.has(n) ? 'ball-hit' : ''}`}>{pad(n)}</span>)}</div>
+        <div className="draw-line">{game.numeros.map((n) => <span key={n} className={`ball ${drawn.has(n) || drawnSecond.has(n) ? 'ball-hit is-official-hit' : ''}`}>{pad(n)}</span>)}</div>
         {game.total > 0 && <small className="muted">{game.premios.map((prize) => prize.faixa).join(' + ')} · {money(game.total)}</small>}
       </article>)}</div>
       {pool.teveGanhador && info.prazoResgateAte && <p className="muted small-print"><strong>Atenção ao prazo:</strong> o prêmio pode ser resgatado na CAIXA até {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long', timeZone: 'America/Sao_Paulo' }).format(new Date(info.prazoResgateAte))} (90 dias após o sorteio). Depois disso ele prescreve.</p>}
