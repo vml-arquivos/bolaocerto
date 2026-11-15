@@ -21,3 +21,12 @@ describe('ranking de vendas dos afiliados', () => {
     expect(rankingStart('total', now)).toBeNull();
   });
 });
+
+import { publicName } from './affiliate-rules.controller';
+describe('nome no ranking do site', () => {
+  it('mostra só o primeiro nome e a inicial do sobrenome', () => {
+    expect(publicName('maria souza lima')).toBe('Maria L.');
+    expect(publicName('Ana')).toBe('Ana');
+    expect(publicName('  ')).toBe('Afiliado');
+  });
+});

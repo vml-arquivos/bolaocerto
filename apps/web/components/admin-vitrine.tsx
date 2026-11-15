@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { api, authFetch, modalityNames, Notify, Panel, Rec } from './admin-ui';
 
 type Slide = { id: string; tipo: 'bolao' | 'livre'; ativo: boolean; bolaoId?: string; modalidade?: string; etiqueta?: string; imagem?: string; titulo: string; subtitulo?: string; botao?: string; link?: string };
-type Secoes = { numeros: boolean; modalidades: boolean; resultados: boolean; sorteados: boolean; encerrados: boolean; concursos: boolean; comoFunciona: boolean; duvidas: boolean };
+type Secoes = { numeros: boolean; modalidades: boolean; resultados: boolean; sorteados: boolean; encerrados: boolean; concursos: boolean; comoFunciona: boolean; duvidas: boolean; ranking: boolean };
 type PoolOption = { id: string; modalidade: string; grupo: string | null; concurso: string | number | null; valorCota: string | number; cotasDisponiveis: number | null };
 
 const MAX_SLIDES = 8;
@@ -19,6 +19,7 @@ const SECTION_LABELS: Array<[keyof Secoes, string, string]> = [
   ['numeros', 'Faixa de números', 'Resumo: concursos abertos, bolões com cotas.'],
   ['comoFunciona', 'Como funciona', 'Os quatro passos, do concurso ao comprovante.'],
   ['duvidas', 'Perguntas frequentes', 'Respostas rápidas sobre cota, comprovante e prêmio.'],
+  ['ranking', 'Ranking dos afiliados', 'Os 5 que mais venderam no mês, com botão para ver todos.'],
 ];
 
 /** Reduz a foto no navegador (máx. 1600 px, JPG) para o envio ser rápido e leve. */

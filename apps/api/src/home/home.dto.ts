@@ -26,6 +26,7 @@ export class HomeSecoesDto {
   @IsBoolean() concursos!: boolean;
   @IsBoolean() comoFunciona!: boolean;
   @IsBoolean() duvidas!: boolean;
+  @IsOptional() @IsBoolean() ranking?: boolean;
 }
 export class SaveHomeDto {
   @IsArray() @ArrayMaxSize(MAX_SLIDES) @ValidateNested({ each: true }) @Type(() => HomeSlideDto) slides!: HomeSlideDto[];

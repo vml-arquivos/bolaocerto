@@ -1,13 +1,13 @@
 /** Tipos e funções da página inicial (configurada no painel). */
 export type HomeSlide = { id: string; tipo: 'bolao' | 'livre'; ativo: boolean; bolaoId?: string; modalidade?: string; etiqueta?: string; imagem?: string; titulo: string; subtitulo?: string; botao?: string; link?: string };
-export type HomeSecoes = { numeros: boolean; modalidades: boolean; resultados: boolean; sorteados: boolean; encerrados: boolean; concursos: boolean; comoFunciona: boolean; duvidas: boolean };
+export type HomeSecoes = { numeros: boolean; modalidades: boolean; resultados: boolean; sorteados: boolean; encerrados: boolean; concursos: boolean; comoFunciona: boolean; duvidas: boolean; ranking: boolean };
 export type HomeConfig = { slides: HomeSlide[]; destaques: string[]; secoes: HomeSecoes };
 export type ResultDraw = { numeroConcurso: number; dataSorteio: string; numeros: number[]; segundoSorteio: number[]; acumulado: boolean; ganhadores: number | null; premio: number | null; festa: string | null };
 export type ResultGroup = { modalidade: string; sorteios: ResultDraw[] };
 
 export const DEFAULT_HOME: HomeConfig = {
   slides: [], destaques: [],
-  secoes: { numeros: false, modalidades: true, resultados: true, sorteados: true, encerrados: true, concursos: true, comoFunciona: false, duvidas: true },
+  secoes: { numeros: false, modalidades: true, resultados: true, sorteados: true, encerrados: true, concursos: true, comoFunciona: false, duvidas: true, ranking: true },
 };
 
 /** Junta o que veio da API com o padrão (campo que faltar fica no padrão). */

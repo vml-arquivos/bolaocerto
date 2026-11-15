@@ -93,30 +93,7 @@ export class AffiliateRulesController {
    */
   @Get('admin/afiliados-ranking') @Roles('admin')
   async ranking(@Query('periodo') periodo: string | undefined, @CurrentUser() user: AuthUser) {
-    const period: RankingPeriod = (RANKING_PERIODS as readonly string[]).includes(periodo ?? '') ? periodo as RankingPeriod : 'mes';
-    const start = rankingStart(period);
-    const scope = isSuperAdmin(user) ? {} : { aprovadoPor: user.id };
-    const payments = await this.prisma.pagamento.findMany({
-      where: {
-        status: 'confirmado',
-        ...(start ? { confirmadoEm: { gte: start } } : {}),
-        cota: { afiliadoReferenciaId: { not: null }, status: { in: ['paga', 'registrada', 'apurada', 'premiada'] }, afiliadoReferencia: scope },
-      },
-      select: { valorBruto: true, confirmadoEm: true, cota: { select: { quantidade: true, afiliadoReferenciaId: true, compradorId: true, bolaoId: true } } },
-    });
-    const sales = payments.filter((row) => row.cota?.afiliadoReferenciaId).map((row) => ({ afiliadoId: row.cota!.afiliadoReferenciaId!, quantidade: row.cota!.quantidade, valor: Number(row.valorBruto), compradorId: row.cota!.compradorId, bolaoId: row.cota!.bolaoId, confirmadoEm: row.confirmadoEm }));
-    const ids = [...new Set(sales.map((sale) => sale.afiliadoId))];
-    const affiliates = ids.length ? await this.prisma.afiliado.findMany({ where: { id: { in: ids } }, select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } }) : [];
-    const rows = buildRanking(sales, affiliates.map((item) => ({ id: item.id, nome: item.usuario.nome, codigo: item.codigoAfiliado })));
-    const levels = await Promise.all(rows.map((row) => readLevel(this.prisma, row.afiliadoId)));
-    const totalAffiliates = await this.prisma.afiliado.count({ where: { statusAprovacao: 'aprovado', ...scope } });
-    return {
-      periodo: period,
-      desde: start ? start.toISOString() : null,
-      atualizadoEm: new Date().toISOString(),
-      totais: { cotas: rows.reduce((sum, row) => sum + row.cotas, 0), valor: Math.round(rows.reduce((sum, row) => sum + row.valor, 0) * 100) / 100, vendas: rows.reduce((sum, row) => sum + row.vendas, 0), afiliadosComVenda: rows.length, afiliados: totalAffiliates },
-      itens: rows.map((row, index) => ({ ...row, nivel: levels[index]!.nivel, nomeNivel: LEVEL_NAMES[levels[index]!.nivel] })),
-    };
+    return computeRanking(this.prisma, periodo, isSuperAdmin(user) ? {} : { aprovadoPor: user.id });
   }
 
   /** O próprio afiliado vê o nível e os limites para criar bolões. */
@@ -125,5 +102,51 @@ export class AffiliateRulesController {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true } });
     if (!affiliate) throw new NotFoundException('Usuário ainda não possui cadastro de afiliado.');
     return affiliateLimits(this.prisma, affiliate.id);
+  }
+}
+
+/** Calcula o ranking de vendas (cotas pagas pelo link de cada afiliado) no período. */
+export async function computeRanking(prisma: PrismaService, periodo: string | undefined, scope: { aprovadoPor?: string }) {
+  const period: RankingPeriod = (RANKING_PERIODS as readonly string[]).includes(periodo ?? '') ? periodo as RankingPeriod : 'mes';
+  const start = rankingStart(period);
+  const payments = await prisma.pagamento.findMany({
+    where: {
+      status: 'confirmado',
+      ...(start ? { confirmadoEm: { gte: start } } : {}),
+      cota: { afiliadoReferenciaId: { not: null }, status: { in: ['paga', 'registrada', 'apurada', 'premiada'] }, afiliadoReferencia: scope },
+    },
+    select: { valorBruto: true, confirmadoEm: true, cota: { select: { quantidade: true, afiliadoReferenciaId: true, compradorId: true, bolaoId: true } } },
+  });
+  const sales = payments.filter((row) => row.cota?.afiliadoReferenciaId).map((row) => ({ afiliadoId: row.cota!.afiliadoReferenciaId!, quantidade: row.cota!.quantidade, valor: Number(row.valorBruto), compradorId: row.cota!.compradorId, bolaoId: row.cota!.bolaoId, confirmadoEm: row.confirmadoEm }));
+  const ids = [...new Set(sales.map((sale) => sale.afiliadoId))];
+  const affiliates = ids.length ? await prisma.afiliado.findMany({ where: { id: { in: ids } }, select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } }) : [];
+  const rows = buildRanking(sales, affiliates.map((item) => ({ id: item.id, nome: item.usuario.nome, codigo: item.codigoAfiliado })));
+  const levels = await Promise.all(rows.map((row) => readLevel(prisma, row.afiliadoId)));
+  const totalAffiliates = await prisma.afiliado.count({ where: { statusAprovacao: 'aprovado', ...scope } });
+  return {
+    periodo: period,
+    desde: start ? start.toISOString() : null,
+    atualizadoEm: new Date().toISOString(),
+    totais: { cotas: rows.reduce((sum, row) => sum + row.cotas, 0), valor: Math.round(rows.reduce((sum, row) => sum + row.valor, 0) * 100) / 100, vendas: rows.reduce((sum, row) => sum + row.vendas, 0), afiliadosComVenda: rows.length, afiliados: totalAffiliates },
+    itens: rows.map((row, index) => ({ ...row, nivel: levels[index]!.nivel, nomeNivel: LEVEL_NAMES[levels[index]!.nivel] })),
+  };
+}
+
+/** "Maria Souza Lima" -> "Maria S." (no site o ranking não expõe o nome completo). */
+export function publicName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'Afiliado';
+  const first = parts[0]!.charAt(0).toUpperCase() + parts[0]!.slice(1).toLowerCase();
+  return parts.length > 1 ? `${first} ${parts[parts.length - 1]!.charAt(0).toUpperCase()}.` : first;
+}
+
+/** Ranking no site: só posição, primeiro nome com a inicial do sobrenome, nível e cotas (sem valores nem códigos). */
+@Controller()
+export class PublicRankingController {
+  constructor(private readonly prisma: PrismaService) {}
+  @Get('afiliados/ranking')
+  async ranking(@Query('periodo') periodo: string | undefined) {
+    const data = await computeRanking(this.prisma, periodo, {});
+    return { periodo: data.periodo, atualizadoEm: data.atualizadoEm, totalAfiliados: data.itens.length, itens: data.itens.slice(0, 100).map((row) => ({ posicao: row.posicao, nome: publicName(row.nome), nivel: row.nivel, nomeNivel: row.nomeNivel, cotas: row.cotas })) };
   }
 }

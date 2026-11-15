@@ -258,7 +258,7 @@ export class AdminService {
     // Quantos bolões há em cada situação (com os mesmos filtros de busca, modalidade e mês), para as abas da tela.
     const statusCounts = this.prisma.bolao.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }).then((rows) => Object.fromEntries(rows.map((row) => [row.status, row._count._all]))).catch(() => null);
     const [items, total] = await Promise.all([
-      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: query.ordem === 'nome' ? [{ concurso: { modalidade: 'asc' } }, { concurso: { numeroConcurso: 'asc' } }, { criadoEm: 'desc' }] : { criadoEm: 'desc' }, skip, take }),
+      this.prisma.bolao.findMany({ where, include: { concurso: { include: { resultado: { select: { numerosSorteados: true, numerosSegundoSorteio: true, apuradoEm: true } } } }, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: query.ordem === 'nome' ? [{ concurso: { modalidade: 'asc' } }, { concurso: { numeroConcurso: 'asc' } }, { criadoEm: 'desc' }] : { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
     ]);
     const interested = new Map<string, number>();
@@ -292,6 +292,13 @@ export class AdminService {
       items: items.map((pool) => ({
         ...pool,
         distribuicao: distributed.get(pool.id) ?? { afiliados: 0, links: 0, enviadoPor: [] },
+        // Resultado oficial do concurso (sincronizado da CAIXA) com os acertos de cada jogo deste bolão.
+        resultado: pool.concurso.resultado?.numerosSorteados?.length ? (() => {
+          const drawn = new Set([...pool.concurso.resultado!.numerosSorteados, ...(pool.concurso.resultado!.numerosSegundoSorteio ?? [])]);
+          const games = pool.jogos.length ? pool.jogos.map((game) => ({ ordem: game.ordem, numeros: game.numeros })) : pool.numerosApostados.length ? [{ ordem: 1, numeros: pool.numerosApostados }] : [];
+          const acertos = games.map((game) => ({ ordem: game.ordem, acertos: game.numeros.filter((n) => drawn.has(n)).length }));
+          return { numerosSorteados: pool.concurso.resultado!.numerosSorteados, numerosSegundoSorteio: pool.concurso.resultado!.numerosSegundoSorteio ?? [], apuradoEm: pool.concurso.resultado!.apuradoEm, melhorJogo: acertos.reduce((best, item) => Math.max(best, item.acertos), 0), acertos };
+        })() : null,
         valorCota: pool.valorCota.toFixed(2),
         taxaAdministracaoPct: pool.taxaAdministracaoPct.toFixed(2),
         cotas: undefined,

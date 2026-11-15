@@ -28,11 +28,13 @@ export interface HomeSecoes {
   concursos: boolean;
   comoFunciona: boolean;
   duvidas: boolean;
+  /** Ranking de vendas dos afiliados (top 5 discreto, com "ver todos"). */
+  ranking: boolean;
 }
 export interface HomeConfig { slides: HomeSlide[]; destaques: string[]; secoes: HomeSecoes }
 
 /** Página inicial enxuta por padrão; o administrador liga o que quiser. */
-export const DEFAULT_SECOES: HomeSecoes = { numeros: false, modalidades: true, resultados: true, sorteados: true, encerrados: true, concursos: true, comoFunciona: false, duvidas: true };
+export const DEFAULT_SECOES: HomeSecoes = { numeros: false, modalidades: true, resultados: true, sorteados: true, encerrados: true, concursos: true, comoFunciona: false, duvidas: true, ranking: true };
 export const DEFAULT_HOME: HomeConfig = { slides: [], destaques: [], secoes: { ...DEFAULT_SECOES } };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
