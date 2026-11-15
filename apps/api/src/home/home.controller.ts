@@ -24,7 +24,7 @@ export class HomeController {
 
   /** Links do WhatsApp dos grupos da pessoa logada (aparecem junto da comunidade e do Instagram). */
   @Get('usuarios/me/comunidade') @UseGuards(JwtAuthGuard) @Header('Cache-Control', 'private, no-store')
-  myCommunity(@CurrentUser() user: AuthUser) { return this.home.myGroupsWhatsapp(user.id); }
+  myCommunity(@CurrentUser() user: AuthUser, @Query('cota') shareId?: string) { return this.home.myGroupsWhatsapp(user.id, shareId && /^[0-9a-f-]{36}$/i.test(shareId) ? shareId : undefined); }
 
   /** Página do afiliado: links do grupo e da comunidade do WhatsApp e do Instagram dele. */
   @Get('afiliados/me/links') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado') @Header('Cache-Control', 'private, no-store')

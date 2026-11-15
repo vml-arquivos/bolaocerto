@@ -14,6 +14,7 @@ function setup(store: Record<string, string> = {}) {
       findMany: jest.fn(async () => [{ id: 'g1', nome: 'Grupo do Ana', afiliadoId: 'af-ana' }, { id: 'g2', nome: 'BL Oficial', afiliadoId: null }]),
     },
     usuario: { findUnique: jest.fn(async ({ where }: any) => (where.id === 'cliente' ? { indicadoPorAfiliadoId: 'af-ana' } : null)) },
+    cota: { findFirst: jest.fn(async ({ where }: any) => (where.compradorId !== 'cliente' ? null : where.id === 'cota-afiliado' ? { afiliadoReferenciaId: 'af-ana' } : where.id === 'cota-direta' ? { afiliadoReferenciaId: null } : null)) },
     afiliado: { findUnique: jest.fn(async ({ where }: any) => (where.usuarioId === 'ana' || where.id === 'af-ana' ? { id: 'af-ana', usuarioId: 'ana', usuario: { nome: 'Ana Souza' } } : null)) },
   };
   return { service: new HomeService(prisma, { record: jest.fn() } as any), store };
@@ -57,5 +58,16 @@ describe('Comunidade: WhatsApp do grupo e Instagram', () => {
     expect((await service.myGroupsWhatsapp('ana')).afiliado).toBeNull();
     await service.saveAffiliateLinks('ana', {});
     expect(Object.keys(store).some((key) => key.startsWith('afiliado.links.'))).toBe(false);
+  });
+
+  it('depois da compra: links de quem vendeu a cota; venda direta mostra os do Bolão Livre', async () => {
+    const { service } = setup();
+    await service.saveAffiliateLinks('ana', { grupo: 'https://chat.whatsapp.com/GrupoAna', comunidade: 'https://chat.whatsapp.com/ComunidadeAna' });
+    const sold = await service.myGroupsWhatsapp('cliente', 'cota-afiliado');
+    expect(sold.origem).toBe('afiliado');
+    expect(sold.afiliado).toEqual({ nome: 'Ana', grupo: 'https://chat.whatsapp.com/GrupoAna', comunidade: 'https://chat.whatsapp.com/ComunidadeAna', instagram: '' });
+    expect(await service.myGroupsWhatsapp('cliente', 'cota-direta')).toEqual({ grupos: [], afiliado: null, origem: 'bl' });
+    // Cota de outra pessoa não revela nada: volta para a regra normal da conta.
+    expect((await service.myGroupsWhatsapp('outro', 'cota-afiliado') as any).origem).toBeUndefined();
   });
 });

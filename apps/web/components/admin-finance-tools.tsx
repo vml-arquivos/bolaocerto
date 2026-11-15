@@ -1,11 +1,12 @@
 'use client';
 
-import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { FormEvent, Fragment, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { concursoNo } from '../lib/contest';
 import { authenticatedFetch as authFetch } from '../lib/client-api';
 import { useIsSuperAdmin } from './staff-gate';
 import { AddressFields } from './address-fields';
 import { DocActions, Pager, SearchBox, usePagedSearch } from './doc-actions';
+import { modalityNames } from '../lib/domain';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Rec = Record<string, any>;
@@ -68,6 +69,43 @@ type Tab = 'resumo' | 'vendas' | 'pagamentos' | 'nao-pagos' | 'comissoes' | 'not
 const TABS: Array<[Tab, string]> = [['resumo', 'Resumo financeiro'], ['vendas', 'Vendas de cotas'], ['pagamentos', 'Pagamentos'], ['nao-pagos', 'Quem não pagou'], ['comissoes', 'Comissões'], ['notas-fiscais', 'Notas fiscais'], ['boloes', 'Por bolão'], ['recibos', 'Recibos (baixar)'], ['arquivos-notas', 'Notas em PDF/XML (baixar)']];
 /** Abas de documentos: listam pelo período e baixam um a um ou todos num .zip. */
 const DOC_PATH: Partial<Record<Tab, string>> = { recibos: '/api/v1/admin/downloads/recibos', 'arquivos-notas': '/api/v1/admin/downloads/notas' };
+/** Ordem de cada aba quando ela abre: vendas e pagamentos separados por bolão; notas por data; o resto por nome. */
+const DEFAULT_ORDER: Partial<Record<Tab, string>> = { vendas: 'bolao', pagamentos: 'bolao', 'nao-pagos': 'nome', 'notas-fiscais': 'data_asc', boloes: 'bolao', recibos: 'nome', 'arquivos-notas': 'data_asc' };
+const ORDER_OPTIONS: Array<[string, string]> = [['bolao', 'Separado por bolão'], ['nome', 'Nome (A–Z)'], ['data', 'Data: mais recente primeiro'], ['data_asc', 'Data: mais antiga primeiro']];
+const POOL_FILTER_TABS: Tab[] = ['vendas', 'pagamentos', 'nao-pagos'];
+const AFFILIATE_FILTER_TABS: Tab[] = ['vendas', 'pagamentos', 'comissoes'];
+const poolName = (row: Rec) => `${modalityNames[String(row.modalidade)] ?? label(row.modalidade)} #${row.concurso}`;
+const textOrder = (a: unknown, b: unknown) => String(a ?? '').localeCompare(String(b ?? ''), 'pt-BR', { sensitivity: 'base' });
+const when = (value: unknown) => (value ? new Date(String(value)).getTime() : 0);
+const monthKey = (value: unknown) => { if (!value) return ''; const date = new Date(String(value)); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; };
+const monthTitle = (value: unknown) => (value ? new Date(String(value)).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : 'Sem data');
+/** Últimos 12 meses para escolher o período de uma vez. */
+function lastMonths() {
+  const out: Array<[string, string]> = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    out.push([key, date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })]);
+  }
+  return out;
+}
+/** Linhas com um cabeçalho por bolão (nome, quantas cotas e total) quando a lista está "separada por bolão". */
+function withPoolHeaders(rows: Rec[], grouped: boolean, columns: number, amountKey: string, render: (row: Rec, index: number) => ReactNode) {
+  if (!grouped) return rows.map(render);
+  const out: ReactNode[] = [];
+  let current = '';
+  rows.forEach((row, index) => {
+    const key = `${row.modalidade}-${row.concurso}-${row.grupo ?? ''}`;
+    if (key !== current) {
+      current = key;
+      const same = rows.filter((item) => `${item.modalidade}-${item.concurso}-${item.grupo ?? ''}` === key);
+      out.push(<tr key={`grupo-${key}-${index}`} className="report-group-row"><td colSpan={columns}><strong>{poolName(row)}{row.grupo ? ` · ${row.grupo}` : ''}</strong><small>{same.length} {same.length === 1 ? 'registro' : 'registros'} · {same.reduce((sum, item) => sum + Number(item.quantidade ?? 0), 0)} cotas · {brl(same.reduce((sum, item) => sum + Number(item[amountKey] ?? 0), 0))}</small></td></tr>);
+    }
+    out.push(render(row, index));
+  });
+  return out;
+}
 
 export function ReportsView() {
   const [tab, setTab] = useState<Tab>(() => {
@@ -78,11 +116,40 @@ export function ReportsView() {
   const [de, setDe] = useState('');
   const [ate, setAte] = useState('');
   const [status, setStatus] = useState('');
+  const [bolaoId, setBolaoId] = useState('');
+  const [afiliadoId, setAfiliadoId] = useState('');
+  const [month, setMonth] = useState('');
+  const [ordem, setOrdem] = useState(() => DEFAULT_ORDER[tab] ?? 'nome');
+  const [poolStatus, setPoolStatus] = useState('');
+  const [pools, setPools] = useState<Rec[]>([]);
+  const [affiliates, setAffiliates] = useState<Rec[]>([]);
+  // Cada aba abre na própria ordem (vendas por bolão, notas por data…).
+  useEffect(() => { setOrdem(DEFAULT_ORDER[tab] ?? 'nome'); }, [tab]);
+  // Listas para os filtros: bolões e afiliados em ordem alfabética.
+  useEffect(() => {
+    void api('/api/v1/admin/boloes?pageSize=100').then((result) => setPools((Array.isArray(result.items) ? result.items : []).slice().sort((a: Rec, b: Rec) => textOrder(modalityNames[a.concurso?.modalidade] ?? a.concurso?.modalidade, modalityNames[b.concurso?.modalidade] ?? b.concurso?.modalidade) || (Number(a.concurso?.numeroConcurso) || 0) - (Number(b.concurso?.numeroConcurso) || 0) || textOrder(a.grupo?.nome, b.grupo?.nome)))).catch(() => undefined);
+    void api('/api/v1/admin/afiliados?pageSize=100').then((result) => setAffiliates(Array.isArray(result.items) ? result.items : [])).catch(() => undefined);
+  }, []);
+  function chooseMonth(value: string) {
+    setMonth(value);
+    if (!value) { setDe(''); setAte(''); return; }
+    const [year, mon] = value.split('-').map(Number) as [number, number];
+    const last = new Date(year, mon, 0).getDate();
+    setDe(`${value}-01`); setAte(`${value}-${String(last).padStart(2, '0')}`);
+  }
   const [data, setData] = useState<Rec | null>(null);
   const [list, setList] = useState<Rec[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState('');
-  const docsPage = usePagedSearch<Rec>(list, docText, 25);
+  // Recibos por nome (A-Z); notas em arquivo por data (ou a ordem escolhida).
+  const sortedList = DOC_PATH[tab] ? [...list].sort((a, b) => {
+    const name = (row: Rec) => row.participante ?? row.tomador;
+    const date = (row: Rec) => when(row.pagoEm ?? row.emitidaEm ?? row.criadoEm);
+    if (ordem === 'data') return date(b) - date(a) || textOrder(name(a), name(b));
+    if (ordem === 'data_asc') return date(a) - date(b) || textOrder(name(a), name(b));
+    return textOrder(name(a), name(b)) || date(b) - date(a);
+  }) : list;
+  const docsPage = usePagedSearch<Rec>(sortedList, docText, 25);
   const [error, setError] = useState('');
 
   const query = useCallback((extra: Record<string, string> = {}) => {
@@ -90,8 +157,11 @@ export function ReportsView() {
     if (de) params.set('de', de);
     if (ate) params.set('ate', ate);
     if (status && tab === 'vendas') params.set('status', status);
+    if (bolaoId && POOL_FILTER_TABS.includes(tab)) params.set('bolaoId', bolaoId);
+    if (afiliadoId && AFFILIATE_FILTER_TABS.includes(tab)) params.set('afiliadoId', afiliadoId);
+    if (ordem && tab !== 'resumo' && tab !== 'comissoes' && !DOC_PATH[tab]) params.set('ordem', ordem);
     return params.toString();
-  }, [de, ate, status, tab]);
+  }, [de, ate, status, tab, bolaoId, afiliadoId, ordem]);
 
   const sequence = useRef(0);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -145,7 +215,12 @@ export function ReportsView() {
       <label className="admin-field"><span>De</span><input type="date" value={de} onChange={(event) => setDe(event.target.value)} /></label>
       <label className="admin-field"><span>Até</span><input type="date" value={ate} onChange={(event) => setAte(event.target.value)} /></label>
       {tab === 'vendas' && <label className="admin-field"><span>Status da cota</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos</option>{['reservada', 'paga', 'registrada', 'apurada', 'premiada', 'cancelada', 'estornada'].map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>}
-      <button className="admin-button" onClick={() => { setDe(''); setAte(''); setStatus(''); }}>Limpar</button>
+      <label className="admin-field"><span>Mês</span><select value={month} onChange={(event) => chooseMonth(event.target.value)}><option value="">Período livre</option>{lastMonths().map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>
+      {POOL_FILTER_TABS.includes(tab) && <label className="admin-field"><span>Bolão</span><select value={bolaoId} onChange={(event) => setBolaoId(event.target.value)}><option value="">Todos os bolões</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{modalityNames[pool.concurso?.modalidade] ?? pool.concurso?.modalidade} #{pool.concurso?.numeroConcurso}{pool.grupo?.nome ? ` · ${pool.grupo.nome}` : ''}</option>)}</select></label>}
+      {AFFILIATE_FILTER_TABS.includes(tab) && <label className="admin-field"><span>Afiliado</span><select value={afiliadoId} onChange={(event) => setAfiliadoId(event.target.value)}><option value="">Todos (e venda direta)</option>{affiliates.map((item) => <option key={item.id} value={item.id}>{item.usuario?.nome ?? item.codigoAfiliado}</option>)}</select></label>}
+      {tab === 'boloes' && <label className="admin-field"><span>Situação do bolão</span><select value={poolStatus} onChange={(event) => setPoolStatus(event.target.value)}><option value="">Todos</option><option value="andamento">Em andamento (abertos)</option><option value="encerrados">Encerrados</option></select></label>}
+      {tab !== 'resumo' && tab !== 'comissoes' && <label className="admin-field"><span>Ordem</span><select value={ordem} onChange={(event) => setOrdem(event.target.value)}>{ORDER_OPTIONS.filter(([value]) => value !== 'bolao' || POOL_FILTER_TABS.includes(tab) || tab === 'boloes').map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label>}
+      <button className="admin-button" onClick={() => { setDe(''); setAte(''); setStatus(''); setMonth(''); setBolaoId(''); setAfiliadoId(''); setPoolStatus(''); setOrdem(DEFAULT_ORDER[tab] ?? 'nome'); }}>Limpar</button>
     </div></div>
     <div className="report-tabs" role="tablist" aria-label="Relatórios">{TABS.map(([key, title]) => <button key={key} role="tab" aria-selected={tab === key} className={`report-tab ${tab === key ? 'is-current' : ''}`} onClick={() => setTab(key)}>{title}</button>)}</div>
     {error && <div className="admin-toast admin-toast-error" role="alert">{error}</div>}
@@ -165,38 +240,38 @@ export function ReportsView() {
         <Kpi label="Vencido sem pagar" value={brl(summary.aReceber?.valorVencido)} tone="rose" />
       </div>
       <div className="admin-dashboard-grid">
-        <Panel title="Recebimentos por forma de pagamento"><Table minWidth={420}><thead><tr><th>Forma</th><th>Pagamentos</th><th>Valor</th></tr></thead><tbody>{(summary.porMetodo ?? []).map((row: Rec) => <tr key={row.metodo}><td>{label(row.metodo)}</td><td>{row.pagamentos}</td><td>{brl(row.valor)}</td></tr>)}</tbody></Table>{!(summary.porMetodo ?? []).length && <Empty text="Nenhum pagamento confirmado no período" />}</Panel>
+        <Panel title="Recebimentos por forma de pagamento"><Table minWidth={420}><thead><tr><th>Forma</th><th>Pagamentos</th><th>Valor</th></tr></thead><tbody>{(summary.porMetodo ?? []).map((row: Rec) => <tr key={row.metodo}><td>{label(row.metodo)}</td><td>{row.pagamentos}</td><td className="td-nowrap">{brl(row.valor)}</td></tr>)}</tbody></Table>{!(summary.porMetodo ?? []).length && <Empty text="Nenhum pagamento confirmado no período" />}</Panel>
         <Panel title="Cotas por situação"><Table minWidth={420}><thead><tr><th>Status</th><th>Registros</th><th>Cotas</th></tr></thead><tbody>{(summary.cotasPorStatus ?? []).map((row: Rec) => <tr key={row.status}><td><span className={chip(row.status)}>{label(row.status)}</span></td><td>{row.registros}</td><td>{row.cotas}</td></tr>)}</tbody></Table>{!(summary.cotasPorStatus ?? []).length && <Empty text="Nenhuma cota no período" />}</Panel>
       </div>
     </>}
 
     {!loading && tab === 'vendas' && <Panel title="Vendas de cotas" action={<ExportButtons path="/api/v1/admin/relatorios/vendas" id="vendas" />}>
-      <Table minWidth={1240}><thead><tr><th>Data</th><th>Participante</th><th>CPF</th><th>Bolão</th><th>Qtd.</th><th>Total</th><th>Cota</th><th>Pagamento</th><th>Forma</th><th>Pago em</th><th>Afiliado</th><th>Comissão</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{row.cpf}</td><td>{label(row.modalidade)} #{row.concurso}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td>{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td><span className={chip(row.statusPagamento)}>{label(row.statusPagamento)}</span></td><td>{label(row.metodo)} <small>{row.origem}</small></td><td>{dateTime(row.pagoEm)}</td><td>{row.afiliado ?? 'Orgânico'}</td><td>{row.comissao === null || row.comissao === undefined ? '—' : brl(row.comissao)}</td></tr>)}</tbody></Table>
+      <Table minWidth={1240}><thead><tr><th>Data</th><th>Participante</th><th>CPF</th><th>Bolão</th><th>Qtd.</th><th>Total</th><th>Cota</th><th>Pagamento</th><th>Forma</th><th>Pago em</th><th>Afiliado</th><th>Comissão</th></tr></thead><tbody>{withPoolHeaders(rows, ordem === 'bolao', 12, 'valorTotal', (row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td className="td-nowrap">{row.cpf}</td><td>{label(row.modalidade)} #{row.concurso}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td><span className={chip(row.statusPagamento)}>{label(row.statusPagamento)}</span></td><td>{label(row.metodo)} <small>{row.origem}</small></td><td>{dateTime(row.pagoEm)}</td><td>{row.afiliado ? <><strong>{row.afiliadoNome ?? row.afiliado}</strong><small>{row.afiliado}</small></> : 'Venda direta'}</td><td className="td-nowrap">{row.comissao === null || row.comissao === undefined ? '—' : brl(row.comissao)}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma venda no período" />}
     </Panel>}
 
     {!loading && tab === 'nao-pagos' && <>
       <Panel title="Quem não pagou" action={<ExportButtons path="/api/v1/admin/relatorios/nao-pagos" id="nao-pagos" />}>
-        <Table minWidth={1080}><thead><tr><th>Reservada em</th><th>Participante</th><th>Contato</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th><th>Vencimento</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong></td><td>{row.email}<small>{row.telefone ?? ''}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{row.quantidade}</td><td>{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td>{dateTime(row.vencimento)}</td></tr>)}</tbody></Table>
+        <Table minWidth={1080}><thead><tr><th>Reservada em</th><th>Participante</th><th>Contato</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th><th>Vencimento</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong></td><td>{row.email}<small>{row.telefone ?? ''}</small></td><td>{poolName(row)}<small>{row.grupo}</small></td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td><span className={chip(row.statusCota)}>{label(row.statusCota)}</span></td><td>{dateTime(row.vencimento)}</td></tr>)}</tbody></Table>
         {!rows.length && <Empty text="Ninguém inadimplente no período" />}
       </Panel>
       {(data?.pagosSemCota ?? []).length > 0 && <Panel title="Pagos sem cota — estornar ao participante">
-        <Table minWidth={760}><thead><tr><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th></tr></thead><tbody>{(data?.pagosSemCota ?? []).map((row: Rec, index: number) => <tr key={index}><td>{row.participante}<small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{brl(row.valorTotal)}</td><td>{dateTime(row.pagoEm)}</td></tr>)}</tbody></Table>
+        <Table minWidth={760}><thead><tr><th>Participante</th><th>Bolão</th><th>Valor pago</th><th>Pago em</th></tr></thead><tbody>{(data?.pagosSemCota ?? []).map((row: Rec, index: number) => <tr key={index}><td>{row.participante}<small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td className="td-nowrap">{brl(row.valorTotal)}</td><td>{dateTime(row.pagoEm)}</td></tr>)}</tbody></Table>
       </Panel>}
     </>}
 
     {!loading && tab === 'comissoes' && <Panel title="Comissões por afiliado" action={<ExportButtons path="/api/v1/admin/relatorios/comissoes" id="comissoes" />}>
-      <Table minWidth={960}><thead><tr><th>Afiliado</th><th>Código</th><th>Chave Pix</th><th>%</th><th>Vendas</th><th>Base</th><th>A pagar</th><th>Paga</th><th>Cancelada</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td><strong>{row.afiliado}</strong></td><td>{row.codigo}</td><td>{row.chavePix ?? '—'}</td><td>{row.percentual}%</td><td>{row.vendas}</td><td>{brl(row.base)}</td><td>{brl(row.pendente)}</td><td>{brl(row.paga)}</td><td>{brl(row.cancelada)}</td></tr>)}</tbody></Table>
+      <Table minWidth={960}><thead><tr><th>Afiliado</th><th>Código</th><th>Chave Pix</th><th>%</th><th>Vendas</th><th>Base</th><th>A pagar</th><th>Paga</th><th>Cancelada</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td><strong>{row.afiliado}</strong></td><td>{row.codigo}</td><td>{row.chavePix ?? '—'}</td><td>{row.percentual}%</td><td>{row.vendas}</td><td className="td-nowrap">{brl(row.base)}</td><td className="td-nowrap">{brl(row.pendente)}</td><td className="td-nowrap">{brl(row.paga)}</td><td className="td-nowrap">{brl(row.cancelada)}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma comissão no período" />}
     </Panel>}
 
     {!loading && tab === 'pagamentos' && <Panel title="Pagamentos" action={<ExportButtons path="/api/v1/admin/relatorios/pagamentos" id="pagamentos" />}>
-      <Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.modalidade)} #{row.concurso}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td>{brl(row.valorBruto)}</td><td>{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td>{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td>{row.comissao === null ? '—' : brl(row.comissao)}</td><td>{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
+      <Table minWidth={1320}><thead><tr><th>Criado</th><th>Participante</th><th>Bolão</th><th>Forma</th><th>Cobrança</th><th>Pagamento</th><th>Bruto</th><th>Custo</th><th>Taxa adm.</th><th>Comissão</th><th>Resultado</th><th>Nota fiscal</th></tr></thead><tbody>{withPoolHeaders(rows, ordem === 'bolao', 12, 'valorBruto', (row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{poolName(row)}{row.afiliadoNome ? <small>por {row.afiliadoNome}</small> : <small>venda direta</small>}</td><td>{label(row.metodo)}<small>{row.provedor}</small></td><td><small>{row.cobranca ?? '—'}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span></td><td className="td-nowrap">{brl(row.valorBruto)}</td><td className="td-nowrap">{row.custoBilhete === null ? '—' : brl(row.custoBilhete)}</td><td className="td-nowrap">{row.taxaAdmin === null ? '—' : brl(row.taxaAdmin)}</td><td className="td-nowrap">{row.comissao === null ? '—' : brl(row.comissao)}</td><td className="td-nowrap">{row.resultadoPlataforma === null ? '—' : brl(row.resultadoPlataforma)}</td><td>{row.notaFiscal ? <span className={chip(row.notaFiscal)}>{label(row.notaFiscal)}</span> : '—'}{row.numeroNota ? <small>nº {row.numeroNota}</small> : null}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhum pagamento no período" />}
     </Panel>}
 
     {!loading && tab === 'notas-fiscais' && <Panel title="Notas fiscais de serviço" action={<ExportButtons path="/api/v1/admin/relatorios/notas-fiscais" id="notas-fiscais" />}>
-      <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td>{brl(row.valorNota)}</td><td>{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td>{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
+      <Table minWidth={1080}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor da nota</th><th>ISS estimado</th><th>Taxa adm. do pagamento</th><th>PDF</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index}><td>{dateTime(row.criadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td><span className={chip(row.status)}>{label(row.status)}</span>{row.erro ? <small>{row.erro}</small> : null}</td><td>{label(row.origem)}</td><td>{row.numero ?? '—'}</td><td className="td-nowrap">{brl(row.valorNota)}</td><td className="td-nowrap">{row.issEstimado === null ? '—' : brl(row.issEstimado)}</td><td className="td-nowrap">{brl(row.taxaAdmin)}</td><td>{row.pdf ? <a className="text-link" href={row.pdf} target="_blank" rel="noreferrer">Abrir</a> : '—'}</td></tr>)}</tbody></Table>
       {!rows.length && <Empty text="Nenhuma nota fiscal no período" />}
     </Panel>}
 
@@ -219,7 +294,7 @@ export function ReportsView() {
     </Panel>}
 
     {!loading && tab === 'boloes' && <Panel title="Resultado por bolão" action={<ExportButtons path="/api/v1/admin/relatorios/boloes" id="controle-cotas" />}>
-      <Table minWidth={1100}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Status</th><th>Cotas pagas</th><th>Aguardando</th><th>Canceladas</th><th>Receita</th><th>Ficha</th></tr></thead><tbody>{list.map((pool) => <tr key={pool.id}><td><strong>{label(pool.modalidade)} #{pool.concurso}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td>{dateTime(pool.sorteio)}</td><td><span className="status-chip">{label(pool.status)}</span></td><td>{pool.cotasPagas}{pool.totalCotas ? ` / ${pool.totalCotas}` : ' (ilimitadas)'}</td><td>{pool.cotasAguardando}</td><td>{pool.cotasCanceladas}</td><td>{brl(pool.receita)}</td><td><ExportButtons path={`/api/v1/admin/relatorios/boloes/${pool.id}`} id={pool.id} /></td></tr>)}</tbody></Table>
+      <Table minWidth={1100}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Status</th><th>Cotas pagas</th><th>Aguardando</th><th>Canceladas</th><th>Receita</th><th>Ficha</th></tr></thead><tbody>{list.filter((pool) => !poolStatus || (poolStatus === 'andamento' ? ['rascunho', 'aberto'].includes(pool.status) : !['rascunho', 'aberto'].includes(pool.status))).map((pool) => <tr key={pool.id}><td><strong>{poolName(pool)}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td>{dateTime(pool.sorteio)}</td><td><span className="status-chip">{label(pool.status)}</span></td><td>{pool.cotasPagas}{pool.totalCotas ? ` / ${pool.totalCotas}` : ' (ilimitadas)'}</td><td>{pool.cotasAguardando}</td><td>{pool.cotasCanceladas}</td><td className="td-nowrap">{brl(pool.receita)}</td><td><ExportButtons path={`/api/v1/admin/relatorios/boloes/${pool.id}`} id={pool.id} /></td></tr>)}</tbody></Table>
       {!list.length && <Empty text="Nenhum bolão no período" />}
     </Panel>}
   </>;
@@ -429,7 +504,9 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
   const [form, setForm] = useState<{ kind: 'emitir' | 'manual' | 'cancelar'; id: string } | null>(null);
   const [viewing, setViewing] = useState<Rec | null>(null);
   const [noteStatus, setNoteStatus] = useState('');
-  const notesFiltered = (data.notas ?? []).filter((note: Rec) => !noteStatus || note.status === noteStatus);
+  const [noteMonth, setNoteMonth] = useState('');
+  // Notas organizadas por mês e, dentro do mês, por data (mais recentes primeiro).
+  const notesFiltered = (data.notas ?? []).filter((note: Rec) => (!noteStatus || note.status === noteStatus) && (!noteMonth || monthKey(note.criadoEm) === noteMonth)).slice().sort((a: Rec, b: Rec) => when(b.criadoEm) - when(a.criadoEm));
   const notesPage = usePagedSearch<Rec>(notesFiltered, noteText, 25);
 
   const load = useCallback(async () => {
@@ -501,7 +578,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
 
       {!(data.semNota ?? []).length ? <p className="admin-note invoice-ok" role="status">{auto ? 'Tudo em dia: as notas saem sozinhas quando o pagamento é confirmado.' : 'Todos os pagamentos confirmados já têm nota.'}</p> : <Panel title={auto ? 'Aguardando emissão automática' : 'Pagamentos confirmados sem nota'}>
         <Table minWidth={1180}><thead><tr><th>Confirmado</th><th>Participante</th><th>Forma</th><th>Pago</th><th>Jogos (fora da nota)</th><th>Serviço (valor da nota)</th><th>ISS estimado</th><th>Endereço</th><th>Ações</th></tr></thead><tbody>{(data.semNota ?? []).map((row: Rec) => <tr key={row.pagamentoId}>
-          <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td>{brl(row.valor)}</td><td>{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td>{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
+          <td>{dateTime(row.confirmadoEm)}</td><td><strong>{row.participante}</strong><small>{row.email}</small></td><td>{label(row.metodo)}</td><td className="td-nowrap">{brl(row.valor)}</td><td className="td-nowrap">{brl(row.valorRegistro)}</td><td><strong>{brl(row.valorServico)}</strong></td><td className="td-nowrap">{settings.aliquotaIssPct ? brl(row.issEstimado) : '—'}</td>
           <td><span className={chip(row.enderecoCompleto || (focus && !addressRequired) ? 'confirmado' : 'pendente')}>{row.enderecoCompleto ? 'completo' : focus && !addressRequired ? 'opcional' : 'faltando'}</span></td>
           <td><div className="admin-row-actions">
             {row.emitivelPelaCora && (row.enderecoCompleto || (focus && !addressRequired)) && <button className="admin-button admin-button-small" disabled={Boolean(busy) || off} onClick={() => void run(`emit-${row.pagamentoId}`, `/api/v1/admin/notas-fiscais/pagamento/${row.pagamentoId}/emitir`, {}, () => `Nota solicitada à ${emissor}.`)}>{busy === `emit-${row.pagamentoId}` ? 'Emitindo…' : `Emitir agora`}</button>}
@@ -532,10 +609,10 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
       </Panel>}
 
       <Panel title="Notas emitidas e em andamento">
-        <div className="doc-filters"><SearchBox value={notesPage.query} onChange={notesPage.setQuery} placeholder="Buscar por nome, e-mail ou número da nota" /><select className="admin-inline-select" value={noteStatus} onChange={(event) => { setNoteStatus(event.target.value); notesPage.setPage(1); }} aria-label="Situação"><option value="">Todas as situações</option><option value="emitida">Emitidas</option><option value="aguardando">Aguardando</option><option value="erro">Com erro</option><option value="cancelada">Canceladas</option></select><a className="admin-button admin-button-small admin-button-secondary" href="/admin?view=relatorios&aba=arquivos-notas">Baixar todas de um período (ZIP)</a></div>
-        <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Documento</th><th>Ações</th></tr></thead><tbody>{notesPage.visible.map((note: Rec) => <tr key={note.id}>
-          <td>{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
-          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{splitNoteError(note.erro).resumo}{splitNoteError(note.erro).tecnico ? <details><summary>Texto técnico da Focus</summary>{splitNoteError(note.erro).tecnico}</details> : null}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td>{brl(note.valor)}</td>
+        <div className="doc-filters"><SearchBox value={notesPage.query} onChange={notesPage.setQuery} placeholder="Buscar por nome, e-mail ou número da nota" /><select className="admin-inline-select" value={noteStatus} onChange={(event) => { setNoteStatus(event.target.value); notesPage.setPage(1); }} aria-label="Situação"><option value="">Todas as situações</option><option value="emitida">Emitidas</option><option value="aguardando">Aguardando</option><option value="erro">Com erro</option><option value="cancelada">Canceladas</option></select><select className="admin-inline-select" value={noteMonth} onChange={(event) => { setNoteMonth(event.target.value); notesPage.setPage(1); }} aria-label="Mês"><option value="">Todos os meses</option>{lastMonths().map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select><a className="admin-button admin-button-small admin-button-secondary" href="/admin?view=relatorios&aba=arquivos-notas">Baixar todas de um período (ZIP)</a></div>
+        <Table minWidth={1040}><thead><tr><th>Solicitada</th><th>Tomador</th><th>Situação</th><th>Origem</th><th>Nº</th><th>Valor</th><th>Documento</th><th>Ações</th></tr></thead><tbody>{notesPage.visible.map((note: Rec, index: number) => <Fragment key={note.id}>{(index === 0 || monthKey(notesPage.visible[index - 1]?.criadoEm) !== monthKey(note.criadoEm)) && <tr className="report-group-row"><td colSpan={8}><strong>{monthTitle(note.criadoEm)}</strong></td></tr>}<tr>
+          <td className="td-nowrap">{dateTime(note.criadoEm)}</td><td><strong>{note.participante}</strong><small>{note.email}</small></td>
+          <td><span className={chip(note.status)}>{label(note.status)}</span>{note.erro ? <small>{splitNoteError(note.erro).resumo}{splitNoteError(note.erro).tecnico ? <details><summary>Texto técnico da Focus</summary>{splitNoteError(note.erro).tecnico}</details> : null}</small> : null}</td><td>{label(note.origem)}</td><td>{note.numero ?? '—'}</td><td className="td-nowrap">{brl(note.valor)}</td>
           <td>{note.pdfUrl ? <DocActions path={`/api/v1/admin/downloads/notas/${note.id}/arquivo?tipo=pdf`} name={`nota-fiscal-${note.numero ?? note.id.slice(0, 8)}.pdf`} extra={note.xmlUrl ? { label: 'XML', path: `/api/v1/admin/downloads/notas/${note.id}/arquivo?tipo=xml`, name: `nota-fiscal-${note.numero ?? note.id.slice(0, 8)}.xml` } : undefined} onError={(message) => notify('error', message)} /> : <span className="admin-muted-note">sem arquivo</span>}</td>
           <td><div className="admin-row-actions">
             <button className="admin-button admin-button-small admin-button-primary" disabled={Boolean(busy)} onClick={() => void viewNote(note)}>{busy === `view-${note.id}` ? 'Abrindo…' : 'Ver nota'}</button>
@@ -546,7 +623,7 @@ export function InvoicesView({ notify }: { notify: (type: 'success' | 'error', t
           </div>
           {form && form.kind === 'emitir' && form.id === note.pagamentoId && <NoteForm kind="emitir" busy={busy.endsWith(note.pagamentoId)} onCancel={() => setForm(null)} onSubmit={(values) => void submitPaymentForm('emitir', note.pagamentoId, values)} />}
           {form && form.kind === 'cancelar' && form.id === note.id && <NoteForm kind="cancelar" busy={busy === `cancel-${note.id}`} onCancel={() => setForm(null)} onSubmit={(values) => void run(`cancel-${note.id}`, `/api/v1/admin/notas-fiscais/${note.id}/cancelar`, values, () => 'Nota cancelada.')} />}
-          </td></tr>)}</tbody></Table>
+          </td></tr></Fragment>)}</tbody></Table>
         {!(data.notas ?? []).length ? <Empty text="Nenhuma nota fiscal registrada ainda" /> : !notesPage.total ? <Empty text="Nenhuma nota com esse filtro" /> : null}
         <Pager page={notesPage.page} pages={notesPage.pages} total={notesPage.total} all={notesPage.all} onPage={notesPage.setPage} />
       </Panel>

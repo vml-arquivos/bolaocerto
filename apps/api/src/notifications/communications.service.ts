@@ -1,3 +1,4 @@
+import { MODALITY_NAMES } from '../reports/pdf.util';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthUser } from '../auth/auth.utils';
@@ -68,6 +69,27 @@ export class CommunicationsService {
   }
 
   async list() {
-    return this.prisma.comunicado.findMany({ orderBy: { criadoEm: 'desc' }, take: 30 });
+    const rows = await this.prisma.comunicado.findMany({ orderBy: { criadoEm: 'desc' }, take: 30 });
+    // Mostra para qual bolão ou grupo foi e quem enviou, sem precisar abrir outra tela.
+    const poolIds = [...new Set(rows.map((row) => row.bolaoId).filter((id): id is string => Boolean(id)))];
+    const groupIds = [...new Set(rows.map((row) => row.grupoId).filter((id): id is string => Boolean(id)))];
+    const senderIds = [...new Set(rows.map((row) => row.criadoPor).filter(Boolean))];
+    const [pools, groups, senders] = await Promise.all([
+      poolIds.length ? this.prisma.bolao.findMany({ where: { id: { in: poolIds } }, select: { id: true, grupo: { select: { nome: true } }, concurso: { select: { modalidade: true, numeroConcurso: true, nomeEspecial: true } } } }) : [],
+      groupIds.length ? this.prisma.grupo.findMany({ where: { id: { in: groupIds } }, select: { id: true, nome: true } }) : [],
+      senderIds.length ? this.prisma.usuario.findMany({ where: { id: { in: senderIds } }, select: { id: true, nome: true } }) : [],
+    ]).catch(() => [[], [], []] as const);
+    const poolName = (id: string) => {
+      const pool = (pools as Array<{ id: string; grupo: { nome: string } | null; concurso: { modalidade: string; numeroConcurso: number; nomeEspecial: string | null } | null }>).find((item) => item.id === id);
+      if (!pool) return null;
+      const contest = pool.concurso;
+      const name = contest ? `${MODALITY_NAMES[contest.modalidade] ?? contest.modalidade} ${contest.nomeEspecial ? `${contest.nomeEspecial} ` : ''}${contest.numeroConcurso > 0 ? `#${contest.numeroConcurso}` : '(concurso a definir)'}` : 'Bolão';
+      return pool.grupo?.nome ? `${name} · ${pool.grupo.nome}` : name;
+    };
+    return rows.map((row) => ({
+      ...row,
+      destino: row.bolaoId ? poolName(row.bolaoId) : row.grupoId ? (groups as Array<{ id: string; nome: string }>).find((item) => item.id === row.grupoId)?.nome ?? null : null,
+      enviadoPor: (senders as Array<{ id: string; nome: string }>).find((item) => item.id === row.criadoPor)?.nome ?? null,
+    }));
   }
 }

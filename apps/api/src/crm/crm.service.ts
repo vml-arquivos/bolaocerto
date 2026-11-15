@@ -112,12 +112,13 @@ export class CrmService {
       if (term && !(row.nome.toLowerCase().includes(term) || row.email.toLowerCase().includes(term) || (digits && row.cpf.replace(/\D/g, '').includes(digits)) || row.etiquetas.some((tag) => tag.toLowerCase().includes(term)))) return false;
       return true;
     });
-    const order = query.ordenar ?? 'gasto';
+    // Padrão: nome em ordem alfabética (A-Z). As outras ordens continuam no seletor.
+    const order = query.ordenar ?? 'nome';
     const compare: Record<string, (a: BettorRow, b: BettorRow) => number> = {
       gasto: (a, b) => b.totalGasto - a.totalGasto, cotas: (a, b) => b.cotasPagas - a.cotasPagas, boloes: (a, b) => b.boloesDistintos - a.boloesDistintos,
       ultima: (a, b) => (b.ultimaCompraEm?.getTime() ?? 0) - (a.ultimaCompraEm?.getTime() ?? 0), nome: (a, b) => a.nome.localeCompare(b.nome, 'pt-BR'),
     };
-    result = result.sort(compare[order] ?? compare.gasto!);
+    result = result.sort(compare[order] ?? compare.nome!);
     return result;
   }
 

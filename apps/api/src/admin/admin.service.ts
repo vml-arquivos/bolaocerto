@@ -245,13 +245,17 @@ export class AdminService {
   async listPools(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const isUuidSearch = Boolean(query.busca && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query.busca));
+    // "andamento" = rascunho e abertos (a página de bolões abre assim); "encerrados" = vendas fechadas, registrados, apurados e cancelados.
+    const poolStatus: Prisma.BolaoWhereInput = query.status === 'andamento' ? { status: { in: [StatusBolao.rascunho, StatusBolao.aberto] } }
+      : query.status === 'encerrados' ? { status: { in: [StatusBolao.fechado, StatusBolao.registrado, StatusBolao.apurado, StatusBolao.cancelado] } }
+      : query.status && (Object.values(StatusBolao) as string[]).includes(query.status) ? { status: query.status as StatusBolao } : {};
     const where: Prisma.BolaoWhereInput = {
-      ...(query.status ? { status: query.status as StatusBolao } : {}),
+      ...poolStatus,
       ...(query.busca ? (isUuidSearch ? { id: query.busca } : { OR: [{ grupo: { nome: { contains: query.busca.trim(), mode: 'insensitive' } } }, { concurso: { nomeEspecial: { contains: query.busca.trim(), mode: 'insensitive' } } }, ...(/^\d{1,9}$/.test(query.busca.trim()) ? [{ concurso: { numeroConcurso: Number(query.busca.trim()) } }] : [])] }) : {}),
       ...(query.modalidade || query.mes ? { concurso: { ...(query.modalidade ? { modalidade: query.modalidade } : {}), ...(query.mes ? this.monthRange(query.mes) : {}) } } : {}),
     };
     const [items, total] = await Promise.all([
-      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.bolao.findMany({ where, include: { concurso: true, grupo: true, criador: { select: { id: true, nome: true, email: true } }, ofertaBlGrupo: { select: { id: true, nome: true } }, jogos: { orderBy: { ordem: 'asc' } }, cotas: { select: { status: true, quantidade: true, valorPago: true, expiraReservaEm: true } }, _count: { select: { anexos: { where: { removidoEm: null, tipo: { in: ['comprovante_aposta', 'jogos_registrados'] } } } } } }, orderBy: query.ordem === 'nome' ? [{ concurso: { modalidade: 'asc' } }, { concurso: { numeroConcurso: 'asc' } }, { criadoEm: 'desc' }] : { criadoEm: 'desc' }, skip, take }),
       this.prisma.bolao.count({ where }),
     ]);
     const interested = new Map<string, number>();
@@ -325,9 +329,22 @@ export class AdminService {
 
   async listPayments(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
-    const where: Prisma.PagamentoWhereInput = { ...(query.status ? { status: query.status as StatusPagamento } : {}), ...(Object.keys(this.dateRange({ de: query.de, ate: query.ate })).length ? { criadoEm: this.dateRange({ de: query.de, ate: query.ate }) } : {}) };
+    // Busca por quem comprou (nome, e-mail ou CPF), pelo afiliado que vendeu ou pelo código da transação.
+    const term = query.busca?.trim();
+    const digits = term?.replace(/\D/g, '') ?? '';
+    const search: Prisma.PagamentoWhereInput = term ? { OR: [
+      { cota: { comprador: { nome: { contains: term, mode: 'insensitive' } } } },
+      { cota: { comprador: { email: { contains: term, mode: 'insensitive' } } } },
+      { cota: { titularNome: { contains: term, mode: 'insensitive' } } },
+      ...(digits.length >= 3 ? [{ cota: { comprador: { cpf: { contains: digits } } } }] : []),
+      { cota: { afiliadoReferencia: { usuario: { nome: { contains: term, mode: 'insensitive' } } } } },
+      { cota: { afiliadoReferencia: { codigoAfiliado: { contains: term, mode: 'insensitive' } } } },
+      { pspTransactionId: { contains: term } },
+    ] } : {};
+    const where: Prisma.PagamentoWhereInput = { ...(query.status ? { status: query.status as StatusPagamento } : {}), ...(Object.keys(this.dateRange({ de: query.de, ate: query.ate })).length ? { criadoEm: this.dateRange({ de: query.de, ate: query.ate }) } : {}), ...search };
+    const orderBy: Prisma.PagamentoOrderByWithRelationInput[] = query.ordem === 'nome' ? [{ cota: { comprador: { nome: 'asc' } } }, { criadoEm: 'desc' }] : [{ criadoEm: 'desc' }];
     const [items, total] = await Promise.all([
-      this.prisma.pagamento.findMany({ where, include: { cota: { include: { bolao: { include: { concurso: true } }, comprador: { select: { nome: true, email: true } } } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.pagamento.findMany({ where, include: { cota: { include: { bolao: { include: { concurso: true, grupo: { select: { nome: true } } } }, comprador: { select: { nome: true, email: true } }, afiliadoReferencia: { select: { codigoAfiliado: true, usuario: { select: { nome: true } } } } } } }, orderBy, skip, take }),
       this.prisma.pagamento.count({ where }),
     ]);
     return { items: items.map((payment) => ({ ...payment, valorBruto: payment.valorBruto.toFixed(2), valorTaxaAdmin: payment.valorTaxaAdmin.toFixed(2), valorComissaoAfiliado: payment.valorComissaoAfiliado.toFixed(2), valorCustoBilhete: payment.valorCustoBilhete.toFixed(2) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
@@ -339,7 +356,7 @@ export class AdminService {
     // Administrador comum só vê os afiliados que ele trouxe (cadastrou, aprovou ou mandou o link); o superadmin vê todos.
     const where: Prisma.AfiliadoWhereInput = { ...(actor && actor.papel === 'admin' && !isSuperAdmin(actor) ? { aprovadoPor: actor.id } : {}), ...(query.status ? { statusAprovacao: query.status } : { statusAprovacao: { not: 'inativo' } }), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }, { usuario: { email: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
     const [items, total] = await Promise.all([
-      this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: [{ usuario: { nome: 'asc' } }, { criadoEm: 'desc' }], skip, take }),
       this.prisma.afiliado.count({ where }),
     ]);
     // Contrato vigente de cada afiliado (depende do percentual): mostra quem já aceitou e quando.
@@ -351,9 +368,10 @@ export class AdminService {
 
   async listCommissions(query: AdminListQueryDto = {}) {
     const { page, pageSize, skip, take } = this.pagination(query);
-    const where: Prisma.ComissaoWhereInput = { ...(query.status ? { status: query.status as StatusComissao } : {}), ...(query.busca ? { afiliado: { codigoAfiliado: { contains: query.busca, mode: 'insensitive' } } } : {}), ...(Object.keys(this.dateRange({ de: query.de, ate: query.ate })).length ? { criadoEm: this.dateRange({ de: query.de, ate: query.ate }) } : {}) };
+    const where: Prisma.ComissaoWhereInput = { ...(query.status ? { status: query.status as StatusComissao } : {}), ...(query.busca ? { OR: [{ afiliado: { codigoAfiliado: { contains: query.busca, mode: 'insensitive' } } }, { afiliado: { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } } }, { cota: { comprador: { nome: { contains: query.busca, mode: 'insensitive' } } } }] } : {}), ...(Object.keys(this.dateRange({ de: query.de, ate: query.ate })).length ? { criadoEm: this.dateRange({ de: query.de, ate: query.ate }) } : {}) };
+    // Organizada por afiliado (A-Z) e, dentro de cada um, das mais recentes para as mais antigas.
     const [items, total] = await Promise.all([
-      this.prisma.comissao.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true, email: true } } } }, cota: { include: { bolao: { include: { concurso: true } } } }, loteRepasse: true }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.comissao.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true, email: true } } } }, cota: { include: { bolao: { include: { concurso: true, grupo: { select: { nome: true } } } }, comprador: { select: { nome: true } } } }, loteRepasse: true }, orderBy: [{ afiliado: { usuario: { nome: 'asc' } } }, { criadoEm: 'desc' }], skip, take }),
       this.prisma.comissao.count({ where }),
     ]);
     return { items: items.map((commission) => ({ ...commission, valor: commission.valor.toFixed(2), baseCalculo: commission.baseCalculo?.toFixed(2) ?? null, percentual: commission.percentual?.toFixed(2) ?? null, loteRepasse: commission.loteRepasse ? { id: commission.loteRepasse.id, codigo: commission.loteRepasse.codigo, status: commission.loteRepasse.status } : null })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
@@ -580,7 +598,7 @@ export class AdminService {
   async listGroups(query: AdminListQueryDto = {}, actor: AuthUser) {
     const { page, pageSize, skip, take } = this.pagination(query);
     const where: Prisma.GrupoWhereInput = actor.papel === 'afiliado' ? { afiliadoId: (await this.requireApprovedAffiliate(actor)).id } : { ...(query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { slug: { contains: query.busca, mode: 'insensitive' } }] } : {}) };
-    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, criador: { select: { nome: true } }, _count: { select: { boloes: true, membros: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }), this.prisma.grupo.count({ where })]);
+    const [items, total] = await Promise.all([this.prisma.grupo.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, criador: { select: { nome: true } }, _count: { select: { boloes: true, membros: true } } }, orderBy: [{ nome: 'asc' }, { criadoEm: 'desc' }], skip, take }), this.prisma.grupo.count({ where })]);
     return { items: items.map((group) => ({ ...group, totalMembros: group._count.membros, capacidade: group._count.membros + group.capacidadeExtra })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
@@ -657,7 +675,7 @@ export class AdminService {
     const visibility: Prisma.UsuarioWhereInput = isSuperAdmin(actor) ? {} : { OR: [{ id: actor.id }, { papel: { in: ['cotista', 'operacao'] } }, { papel: 'afiliado', afiliado: { aprovadoPor: actor.id } }] };
     const where: Prisma.UsuarioWhereInput = { AND: [visibility], ...search, ...roleFilter, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
     const [items, total] = await Promise.all([
-      this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: { criadoEm: 'desc' }, skip, take }),
+      this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: [{ nome: 'asc' }, { criadoEm: 'desc' }], skip, take }),
       this.prisma.usuario.count({ where }),
     ]);
     return { items: items.map((item) => ({ ...item, cpf: formatCpf(item.cpf) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };

@@ -13,4 +13,6 @@ export class ReportQueryDto {
   @IsOptional() @IsUUID() bolaoId?: string;
   @IsOptional() @IsUUID() afiliadoId?: string;
   @IsOptional() @IsIn(['json', 'csv', 'xlsx', 'pdf']) formato?: 'json' | 'csv' | 'xlsx' | 'pdf';
+  /** Ordem das linhas (tela e arquivos): por bolão e nome, por nome (A-Z), data mais recente ou data mais antiga. */
+  @IsOptional() @IsIn(['bolao', 'nome', 'data', 'data_asc']) ordem?: 'bolao' | 'nome' | 'data' | 'data_asc';
 }

@@ -9,7 +9,7 @@ type AffiliateLinks = { nome: string; grupo: string; comunidade: string; instagr
  * Botões para entrar na comunidade e no grupo do WhatsApp e seguir o BL no Instagram. Com `groups`, mostra também o
  * WhatsApp dos grupos de quem está logado (ex.: o grupo do afiliado que trouxe a pessoa). Nada aparece sem link configurado.
  */
-export function WhatsappJoin({ className = '', groups = false, title }: { className?: string; groups?: boolean; title?: string }) {
+export function WhatsappJoin({ className = '', groups = false, title, shareId }: { className?: string; groups?: boolean; title?: string; shareId?: string }) {
   const [links, setLinks] = useState<Links | null>(null);
   const [mine, setMine] = useState<GroupLink[]>([]);
   const [affiliate, setAffiliate] = useState<AffiliateLinks | null>(null);
@@ -19,13 +19,17 @@ export function WhatsappJoin({ className = '', groups = false, title }: { classN
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => { if (alive && data) setLinks({ comunidade: String(data.comunidade ?? ''), grupo: String(data.grupo ?? ''), instagram: String(data.instagram ?? '') }); })
       .catch(() => undefined);
-    if (groups) void fetch('/api/v1/usuarios/me/comunidade', { cache: 'no-store', credentials: 'include' })
+    if (groups) void fetch(`/api/v1/usuarios/me/comunidade${shareId ? `?cota=${encodeURIComponent(shareId)}` : ''}`, { cache: 'no-store', credentials: 'include' })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => { if (!alive) return; if (Array.isArray(data?.grupos)) setMine(data.grupos.filter((item: GroupLink) => item.link)); if (data?.afiliado) setAffiliate(data.afiliado); })
       .catch(() => undefined);
     return () => { alive = false; };
-  }, [groups]);
-  const hasGlobal = Boolean(links && (links.comunidade || links.grupo || links.instagram));
+  }, [groups, shareId]);
+  // Quem veio por um afiliado entra no WhatsApp dele (grupo e comunidade); sem afiliado, nos do Bolão Livre.
+  const affiliateWhatsapp = Boolean(affiliate && (affiliate.grupo || affiliate.comunidade));
+  const blComunidade = affiliateWhatsapp ? '' : links?.comunidade ?? '';
+  const blGrupo = affiliateWhatsapp ? '' : links?.grupo ?? '';
+  const hasGlobal = Boolean(blComunidade || blGrupo || links?.instagram);
   const hasAffiliate = Boolean(affiliate && (affiliate.grupo || affiliate.comunidade || affiliate.instagram));
   if (!hasGlobal && !mine.length && !hasAffiliate) return null;
   let primaryUsed = false;
@@ -36,8 +40,8 @@ export function WhatsappJoin({ className = '', groups = false, title }: { classN
     {affiliate?.comunidade && <a className={`button ${kind()}`} href={affiliate.comunidade} target="_blank" rel="noopener noreferrer" data-testid="afiliado-comunidade">Entrar na comunidade de {affiliate.nome}</a>}
     {affiliate?.instagram && <a className="button button-secondary" href={affiliate.instagram} target="_blank" rel="noopener noreferrer" data-testid="afiliado-instagram">Seguir {affiliate.nome} no Instagram</a>}
     {mine.map((item) => <a key={item.grupoId} className={`button ${kind()}`} href={item.link} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-meu-grupo">Entrar no WhatsApp do grupo {item.nome}</a>)}
-    {links?.comunidade && <a className={`button ${kind()}`} href={links.comunidade} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-comunidade">Entrar na comunidade do WhatsApp</a>}
-    {links?.grupo && <a className={`button ${kind()}`} href={links.grupo} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-grupo">Entrar no grupo do WhatsApp</a>}
+    {blComunidade && <a className={`button ${kind()}`} href={blComunidade} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-comunidade">Entrar na comunidade do WhatsApp</a>}
+    {blGrupo && <a className={`button ${kind()}`} href={blGrupo} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-grupo">Entrar no grupo do WhatsApp</a>}
     {links?.instagram && <a className="button button-secondary" href={links.instagram} target="_blank" rel="noopener noreferrer" data-testid="instagram">Seguir o Bolão Livre no Instagram</a>}
   </div>;
 }

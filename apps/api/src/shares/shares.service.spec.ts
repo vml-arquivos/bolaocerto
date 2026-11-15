@@ -127,6 +127,12 @@ describe('SharesService stock safety', () => {
       await reserve(1);
       expect(tx.grupoMembro.create).not.toHaveBeenCalled();
     });
+    it('compra direta num bolão do grupo oficial: a pessoa entra no grupo do Bolão Livre', async () => {
+      const { reserve, tx } = setup({ grupo: { id: 'group-bl', tipo: 'oficial', afiliado: null } });
+      tx.grupo.findUnique.mockResolvedValue({ id: 'group-bl', nome: 'Bolão Livre', afiliado: null });
+      await reserve(1);
+      expect(tx.grupoMembro.create).toHaveBeenCalledWith({ data: { grupoId: 'group-bl', usuarioId: 'user-1' } });
+    });
     it('pré-venda (sem comprovante prévio) permite reservar', async () => {
       const { reserve, tx } = setup({ vendaAntecipada: true });
       await expect(reserve(1)).resolves.toBeDefined();

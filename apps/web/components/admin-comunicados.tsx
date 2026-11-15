@@ -1,5 +1,6 @@
 'use client';
 
+import { modalityNames } from '../lib/domain';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { api, dateTime, Empty, Notify, Panel, Rec, Table } from './admin-ui';
 
@@ -33,8 +34,8 @@ export function ComunicadosView({ notify }: { notify: Notify }) {
 
   const load = useCallback(async () => {
     try {
-      const [list, poolList, groupList] = await Promise.all([api('/api/v1/admin/comunicados'), api('/api/v1/admin/boloes?page=1&pageSize=50'), api('/api/v1/admin/grupos?page=1&pageSize=100')]);
-      setHistory(list.comunicados ?? []); setDevices(list.aparelhos ?? null); setPools(poolList.items ?? []); setGroups(groupList.items ?? []);
+      const [list, poolList, groupList] = await Promise.all([api('/api/v1/admin/comunicados'), api('/api/v1/admin/boloes?page=1&pageSize=100'), api('/api/v1/admin/grupos?page=1&pageSize=100')]);
+      setHistory(list.comunicados ?? []); setDevices(list.aparelhos ?? null); setPools([...(poolList.items ?? [])].sort((a: Rec, b: Rec) => `${modalityNames[a.concurso?.modalidade] ?? ''} ${a.grupo?.nome ?? ''}`.localeCompare(`${modalityNames[b.concurso?.modalidade] ?? ''} ${b.grupo?.nome ?? ''}`, 'pt-BR', { sensitivity: 'base' }) || (a.concurso?.numeroConcurso ?? 0) - (b.concurso?.numeroConcurso ?? 0))); setGroups(groupList.items ?? []);
     } catch (error) { notifyRef.current('error', error instanceof Error ? error.message : 'Não foi possível carregar.'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -68,7 +69,7 @@ export function ComunicadosView({ notify }: { notify: Notify }) {
     <Panel title="Nova mensagem">
       <form className="admin-form-grid" onSubmit={submit}>
         <label className="admin-field"><span>Quem recebe</span><select value={audience} onChange={(event) => setAudience(event.target.value)}>{AUDIENCES.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
-        {audience === 'bolao' && <label className="admin-field"><span>Bolão</span><select value={poolId} onChange={(event) => setPoolId(event.target.value)}><option value="">Escolha…</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{(pool.grupo?.nome ?? 'Bolão')} · {pool.concurso?.nomeEspecial ? `${pool.concurso.nomeEspecial} · ` : ''}{pool.concurso?.numeroConcurso > 0 ? `concurso ${pool.concurso.numeroConcurso}` : 'concurso a definir'}</option>)}</select></label>}
+        {audience === 'bolao' && <label className="admin-field"><span>Bolão</span><select value={poolId} onChange={(event) => setPoolId(event.target.value)}><option value="">Escolha…</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{modalityNames[pool.concurso?.modalidade] ?? 'Bolão'} · {pool.grupo?.nome ?? 'Bolão'} · {pool.concurso?.nomeEspecial ? `${pool.concurso.nomeEspecial} · ` : ''}{pool.concurso?.numeroConcurso > 0 ? `concurso ${pool.concurso.numeroConcurso}` : 'concurso a definir'}</option>)}</select></label>}
         {audience === 'grupo' && <label className="admin-field"><span>Grupo</span><select value={groupId} onChange={(event) => setGroupId(event.target.value)}><option value="">Escolha…</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.nome} ({group.totalMembros ?? 0} pessoas)</option>)}</select></label>}
         <label className="admin-field admin-field-wide"><span>Título (aparece em destaque)</span><input required minLength={3} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: Seu jogo foi registrado!" /></label>
         <label className="admin-field admin-field-wide"><span>Mensagem</span><textarea required minLength={3} maxLength={600} rows={4} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ex.: O comprovante do bolão já está na sua conta. Boa sorte!" /><small>{message.length}/600</small></label>
@@ -79,7 +80,7 @@ export function ComunicadosView({ notify }: { notify: Notify }) {
       </form>
     </Panel>
     <Panel title="Mensagens enviadas">
-      {history.length ? <Table minWidth={760}><thead><tr><th>Quando</th><th>Título</th><th>Para</th><th>Pessoas</th><th>E-mail</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td>{dateTime(item.criadoEm)}</td><td><strong>{item.titulo}</strong><small>{item.mensagem}</small></td><td>{LABEL[item.publico] ?? item.publico}</td><td>{item.totalDestinatarios}</td><td>{item.enviarEmail ? 'Sim' : 'Não'}</td></tr>)}</tbody></Table> : <Empty text="Nenhuma mensagem enviada ainda." />}
+      {history.length ? <Table minWidth={760}><thead><tr><th>Quando</th><th>Título</th><th>Para</th><th>Pessoas</th><th>E-mail</th></tr></thead><tbody>{history.map((item) => <tr key={item.id}><td className="td-nowrap">{dateTime(item.criadoEm)}</td><td><strong>{item.titulo}</strong><small>{item.mensagem}</small></td><td>{LABEL[item.publico] ?? item.publico}{item.destino && <small>{item.destino}</small>}{item.enviadoPor && <small>Enviada por {item.enviadoPor}</small>}</td><td>{item.totalDestinatarios}</td><td>{item.enviarEmail ? 'Sim' : 'Não'}</td></tr>)}</tbody></Table> : <Empty text="Nenhuma mensagem enviada ainda." />}
     </Panel>
   </>;
 }

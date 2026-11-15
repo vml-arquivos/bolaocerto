@@ -128,3 +128,23 @@ describe('ReportsService.invoices (notas fiscais)', () => {
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'erro' }) }));
   });
 });
+
+describe('Ordem dos relatórios', () => {
+  const { sortReportRows } = jest.requireActual('./reports.service');
+  const rows = [
+    { participante: 'Bruno', modalidade: 'quina', concurso: 10, grupo: 'BL', criadoEm: new Date('2026-11-02') },
+    { participante: 'ana', modalidade: 'megasena', concurso: 3100, grupo: 'BL', criadoEm: new Date('2026-11-03') },
+    { participante: 'Álvaro', modalidade: 'megasena', concurso: 3100, grupo: 'BL', criadoEm: new Date('2026-11-01') },
+    { participante: 'Carla', modalidade: 'megasena', concurso: 3085, grupo: 'BL', criadoEm: new Date('2026-11-04') },
+  ];
+  const names = (list: any[]) => list.map((row) => row.participante);
+  it('por bolão (modalidade e concurso) e nome A-Z dentro dele, sem diferenciar acento e maiúscula', () => {
+    expect(names(sortReportRows(rows, 'bolao'))).toEqual(['Carla', 'Álvaro', 'ana', 'Bruno']);
+  });
+  it('por nome, data mais recente e mais antiga; sem ordem mantém a da consulta', () => {
+    expect(names(sortReportRows(rows, 'nome'))).toEqual(['Álvaro', 'ana', 'Bruno', 'Carla']);
+    expect(names(sortReportRows(rows, 'data'))).toEqual(['Carla', 'ana', 'Bruno', 'Álvaro']);
+    expect(names(sortReportRows(rows, 'data_asc'))).toEqual(['Álvaro', 'Bruno', 'ana', 'Carla']);
+    expect(names(sortReportRows(rows, undefined))).toEqual(names(rows));
+  });
+});

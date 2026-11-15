@@ -47,7 +47,7 @@ export function PoolCompare({ pools }: { pools: PublicPool[] }) {
           <td><strong>{modalityNames[pool.concurso?.modalidade ?? ''] ?? pool.concurso?.modalidade ?? 'Bolão'}</strong><small className="muted"> · concurso {pool.concurso ? concursoNo(pool.concurso.numeroConcurso) : '—'}{pool.grupo?.nome ? ` · ${pool.grupo.nome}` : ''}</small></td>
           <td>{shortDate(pool.concurso?.dataSorteio)}</td>
           <td>{games > 0 ? `${games} ${games === 1 ? 'jogo' : 'jogos'} de ${size} números` : 'a definir'}</td>
-          <td>{money(pool.valorCota)}</td>
+          <td className="td-nowrap">{money(pool.valorCota)}</td>
           <td>{pct === null ? '—' : `${String(pct).replace('.', ',')}%`}{pool.precificacao?.feePerShare !== undefined ? <small className="muted"> ({money(Number(pool.precificacao.feePerShare) / 100)})</small> : null}</td>
           <td>{pool.cotasDisponiveis === null ? 'sem limite' : pool.cotasDisponiveis}</td>
           <td><Link className="button button-primary button-small" href={`/boloes/${pool.id}`}>Ver bolão</Link></td>

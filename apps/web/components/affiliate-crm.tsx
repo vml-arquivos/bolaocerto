@@ -40,7 +40,7 @@ export function AffiliateCrm() {
 
   const load = useCallback(async () => {
     try {
-      const query = new URLSearchParams({ pagina: String(page), porPagina: '20', ordenar: 'ultima' });
+      const query = new URLSearchParams({ pagina: String(page), porPagina: '20', ordenar: 'nome' });
       if (stage) query.set('etapa', stage);
       if (term) query.set('busca', term);
       const [summary, rows] = await Promise.all([call('/api/v1/afiliados/me/crm/resumo'), call(`/api/v1/afiliados/me/crm/clientes?${query.toString()}`)]);
@@ -101,7 +101,7 @@ export function AffiliateCrm() {
           {(list?.items ?? []).map((row: Rec) => { const link = whatsapp(row.telefone, suggestedText(row)); return <tr key={row.id}>
             <td><strong>{row.nome}</strong><br /><small>{row.cidade ? `${row.cidade}${row.uf ? `/${row.uf}` : ''}` : row.email}</small>{(row.etiquetas ?? []).length > 0 && <><br /><small>#{row.etiquetas.join(' #')}</small></>}</td>
             <td><Stage etapa={row.etapa} nome={row.etapaNome} /></td>
-            <td>{row.totalGasto > 0 ? money(row.totalGasto) : '—'}{row.valorPendente > 0 && <><br /><small>falta {money(row.valorPendente)}</small></>}</td>
+            <td className="td-nowrap">{row.totalGasto > 0 ? money(row.totalGasto) : '—'}{row.valorPendente > 0 && <><br /><small>falta {money(row.valorPendente)}</small></>}</td>
             <td>{row.cotasPagas}</td>
             <td>{row.ultimaCompraEm ? day(row.ultimaCompraEm) : '—'}</td>
             <td>{row.proximoContatoEm ? day(row.proximoContatoEm) : '—'}</td>
@@ -163,7 +163,7 @@ function ClientSheet({ id, onClose, onChanged }: { id: string; onClose: () => vo
     </form>
     <h3>Histórico nos seus bolões</h3>
     {history.length === 0 ? <p className="muted">Sem cotas nos seus bolões ainda.</p> : <div className="affiliate-table-scroll"><table><thead><tr><th>Bolão</th><th>Cotas</th><th>Valor</th><th>Situação</th><th>Data</th></tr></thead><tbody>
-      {history.map((item) => <tr key={item.id}><td>{modalityNames[item.modalidade] ?? item.modalidade}{item.concurso > 0 ? ` #${item.concurso}` : ''}</td><td>{item.quantidade}</td><td>{money(item.valor)}</td><td>{item.pago ? 'Pago' : item.status === 'reservada' ? `Aguardando pagamento${item.reservaExpiraEm ? ` até ${day(item.reservaExpiraEm)}` : ''}` : String(item.status).replaceAll('_', ' ')}</td><td>{day(item.criadoEm)}</td></tr>)}
+      {history.map((item) => <tr key={item.id}><td>{modalityNames[item.modalidade] ?? item.modalidade}{item.concurso > 0 ? ` #${item.concurso}` : ''}</td><td>{item.quantidade}</td><td className="td-nowrap">{money(item.valor)}</td><td>{item.pago ? 'Pago' : item.status === 'reservada' ? `Aguardando pagamento${item.reservaExpiraEm ? ` até ${day(item.reservaExpiraEm)}` : ''}` : String(item.status).replaceAll('_', ' ')}</td><td>{day(item.criadoEm)}</td></tr>)}
     </tbody></table></div>}
   </section>;
 }

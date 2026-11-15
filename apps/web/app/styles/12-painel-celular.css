@@ -181,3 +181,18 @@ button.admin-footer-logout:hover { color: #fff; }
 .admin-testimonial header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .admin-testimonial p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .admin-testimonial small { color: var(--text-muted, #64748b); overflow-wrap: anywhere; }
+
+/* Valores, datas e códigos não se partem no meio (antes saía "R$ 0,0" numa linha e "0" na outra). */
+.admin-table td.td-nowrap, .admin-table td .nowrap, td.td-nowrap { white-space: nowrap; overflow-wrap: normal; }
+
+/* Relatórios separados por bolão: uma linha de título para cada bolão */
+.admin-table tr.report-group-row td { padding-top: 16px; background: var(--surface-muted, rgba(37, 99, 235, .06)); border-bottom: 1px solid var(--border, #d6dbe6); }
+.admin-table tr.report-group-row td strong { display: inline; margin-right: 10px; color: var(--text-primary); }
+.admin-table tr.report-group-row td small { display: inline; color: var(--text-muted); }
+@media (max-width: 760px) {
+  .admin-app .admin-table tr.report-group-row { display: block; }
+  .admin-app .admin-table tr.report-group-row td { display: block; }
+}
+
+/* Valores grandes nos cartões de resumo diminuem um pouco em telas menores, sem sair do cartão. */
+.admin-kpi strong { font-size: clamp(17px, 1.45vw, 22px); }

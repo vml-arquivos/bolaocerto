@@ -40,13 +40,30 @@ const SALES_COLUMNS: Column[] = [
   { key: 'custoBilhete', header: 'Custo dos jogos', type: 'money' },
   { key: 'taxaAdmin', header: 'Taxa de administração', type: 'money' },
   { key: 'afiliado', header: 'Afiliado (código)', width: 16 },
+  { key: 'afiliadoNome', header: 'Afiliado (nome)', width: 26 },
   { key: 'comissao', header: 'Comissão', type: 'money' },
   { key: 'statusComissao', header: 'Status da comissão' },
   { key: 'observacao', header: 'Observação', width: 30 },
 ];
 
-type ShareFull = Prisma.CotaGetPayload<{ include: { bolao: { include: { concurso: true; grupo: true } }; comprador: true; pagamento: true; afiliadoReferencia: true; comissao: true } }>;
-const SHARE_INCLUDE = { bolao: { include: { concurso: true, grupo: true } }, comprador: true, pagamento: true, afiliadoReferencia: true, comissao: true } as const;
+type ShareFull = Prisma.CotaGetPayload<{ include: { bolao: { include: { concurso: true; grupo: true } }; comprador: true; pagamento: true; afiliadoReferencia: { include: { usuario: { select: { nome: true } } } }; comissao: true } }>;
+const SHARE_INCLUDE = { bolao: { include: { concurso: true, grupo: true } }, comprador: true, pagamento: true, afiliadoReferencia: { include: { usuario: { select: { nome: true } } } }, comissao: true } as const;
+
+const byText = (a: unknown, b: unknown) => String(a ?? '').localeCompare(String(b ?? ''), 'pt-BR', { sensitivity: 'base' });
+const time = (value: unknown) => (value instanceof Date ? value.getTime() : value ? new Date(String(value)).getTime() : 0);
+/**
+ * Ordem das linhas na tela e nos arquivos. "bolao": separado por bolão (modalidade e concurso) e, dentro dele, nome A-Z.
+ * "nome": nome A-Z. "data": mais recente primeiro. "data_asc": mais antiga primeiro.
+ */
+export function sortReportRows<T extends Row>(rows: T[], ordem: string | undefined, nameKey = 'participante', dateKey = 'criadoEm'): T[] {
+  const byName = (a: T, b: T) => byText(a[nameKey], b[nameKey]) || time(b[dateKey]) - time(a[dateKey]);
+  const copy = [...rows];
+  if (ordem === 'bolao') return copy.sort((a, b) => byText(a.modalidade, b.modalidade) || Number(a.concurso ?? 0) - Number(b.concurso ?? 0) || byText(a.grupo, b.grupo) || byName(a, b));
+  if (ordem === 'nome') return copy.sort(byName);
+  if (ordem === 'data_asc') return copy.sort((a, b) => time(a[dateKey]) - time(b[dateKey]) || byName(a, b));
+  if (ordem === 'data') return copy.sort((a, b) => time(b[dateKey]) - time(a[dateKey]) || byName(a, b));
+  return copy;
+}
 
 @Injectable()
 export class ReportsService {
@@ -85,6 +102,7 @@ export class ReportsService {
       sorteio: share.bolao.concurso.dataSorteio,
       grupo: share.bolao.grupo.nome,
       bolao: share.bolaoId.slice(0, 8),
+      bolaoId: share.bolaoId,
       participante: share.titularNome,
       cpf: full ? formatCpf(share.titularCpf) : maskCpf(share.titularCpf),
       email: share.comprador.email,
@@ -101,6 +119,7 @@ export class ReportsService {
       custoBilhete: payment && payment.status === StatusPagamento.confirmado ? Number(payment.valorCustoBilhete) : null,
       taxaAdmin: payment && payment.status === StatusPagamento.confirmado ? Number(payment.valorTaxaAdmin) : null,
       afiliado: share.afiliadoReferencia?.codigoAfiliado ?? null,
+      afiliadoNome: share.afiliadoReferencia?.usuario?.nome ?? null,
       comissao: share.comissao ? Number(share.comissao.valor) : null,
       statusComissao: share.comissao?.status ?? null,
       observacao: payment?.observacao ?? null,
@@ -249,6 +268,7 @@ export class ReportsService {
         liberado: pool.premioMinimoLiberacao === null ? null : Boolean(pool.liberadoEm) || Number(pool.concurso.valorEstimadoPremio ?? 0) >= Number(pool.premioMinimoLiberacao),
       };
     });
+    if (query.ordem) rows.splice(0, rows.length, ...sortReportRows(rows, query.ordem === 'nome' ? 'bolao' : query.ordem, 'grupo', 'sorteio'));
     if (!admin || !query.formato || query.formato === 'json') return rows;
     const columns: Column[] = [
       { key: 'modalidade', header: 'Modalidade' }, { key: 'concurso', header: 'Concurso', type: 'int', width: 11 }, { key: 'sorteio', header: 'Sorteio', type: 'date' }, { key: 'grupo', header: 'Grupo', width: 22 },
@@ -277,7 +297,7 @@ export class ReportsService {
   async sales(query: ReportQueryDto, admin: AuthUser) {
     const full = true; // painel exclusivo do administrador: CPF completo, sem máscara
     const shares = await this.prisma.cota.findMany({ where: this.salesWhere(query), include: SHARE_INCLUDE, orderBy: { criadoEm: 'desc' }, take: this.limit(query) });
-    const rows = shares.map((share) => this.shareRow(share, full));
+    const rows = sortReportRows(shares.map((share) => this.shareRow(share, full)), query.ordem);
     const paidRows = rows.filter((row) => row.statusPagamento === 'confirmado');
     const pdf: PdfSpec = {
       title: 'Relatório de vendas de cotas',
@@ -306,7 +326,7 @@ export class ReportsService {
       take: this.limit(query),
     });
     const orphans = await this.prisma.cota.findMany({ where: { status: { in: [StatusCota.cancelada, StatusCota.estornada] }, pagamento: { status: StatusPagamento.confirmado } }, include: SHARE_INCLUDE, orderBy: { criadoEm: 'desc' }, take: 500 });
-    const rows = shares.map((share) => this.shareRow(share, full));
+    const rows = sortReportRows(shares.map((share) => this.shareRow(share, full)), query.ordem);
     const orphanRows = orphans.map((share) => ({ ...this.shareRow(share, full), situacao: 'Pago sem cota — estornar ao participante' }));
     const columns: Column[] = [...SALES_COLUMNS.slice(0, 25)];
     const pdf: PdfSpec = {
@@ -409,7 +429,8 @@ export class ReportsService {
       current.total = round2(current.pendente + current.paga);
       byAffiliate.set(item.afiliadoId, current);
     }
-    const rows = [...byAffiliate.values()].sort((a, b) => Number(b.total) - Number(a.total));
+    // Afiliados em ordem alfabética (o seletor da tela também permite ordenar por data, que aqui não se aplica).
+    const rows = [...byAffiliate.values()].sort((a, b) => byText(a.afiliado, b.afiliado));
     const columns: Column[] = [
       { key: 'afiliado', header: 'Afiliado', width: 30 }, { key: 'codigo', header: 'Código', width: 14 }, { key: 'chavePix', header: 'Chave Pix de repasse', width: 30 },
       { key: 'percentual', header: '% padrão', width: 10 }, { key: 'vendas', header: 'Vendas', type: 'int', width: 10 }, { key: 'base', header: 'Base (taxa adm.)', type: 'money' },
@@ -441,7 +462,7 @@ export class ReportsService {
         ...(query.metodo ? { metodo: query.metodo as MetodoPagamento } : {}),
         ...(query.bolaoId || query.afiliadoId ? { cota: { ...(query.bolaoId ? { bolaoId: query.bolaoId } : {}), ...(query.afiliadoId ? { afiliadoReferenciaId: query.afiliadoId } : {}) } } : {}),
       },
-      include: { notaFiscal: true, cota: { include: { comprador: true, bolao: { include: { concurso: true } }, afiliadoReferencia: true, comissao: true } } },
+      include: { notaFiscal: true, cota: { include: { comprador: true, bolao: { include: { concurso: true, grupo: { select: { nome: true } } } }, afiliadoReferencia: { include: { usuario: { select: { nome: true } } } }, comissao: true } } },
       orderBy: { criadoEm: 'desc' },
       take: this.limit(query),
     });
@@ -457,6 +478,9 @@ export class ReportsService {
         modalidade: item.cota.bolao.concurso.modalidade,
         concurso: item.cota.bolao.concurso.numeroConcurso,
         bolao: item.cota.bolaoId.slice(0, 8),
+        bolaoId: item.cota.bolaoId,
+        grupo: item.cota.bolao.grupo?.nome ?? null,
+        afiliadoNome: item.cota.afiliadoReferencia?.usuario?.nome ?? null,
         quantidade: item.cota.quantidade,
         metodo: item.metodo,
         provedor: item.pspProvedor,
@@ -476,6 +500,7 @@ export class ReportsService {
         observacao: item.observacao,
       };
     });
+    if (query.ordem) rows.splice(0, rows.length, ...sortReportRows(rows, query.ordem));
     const columns: Column[] = [
       { key: 'criadoEm', header: 'Criado em', type: 'date' }, { key: 'confirmadoEm', header: 'Confirmado em', type: 'date' },
       { key: 'participante', header: 'Participante', width: 30 }, { key: 'cpf', header: 'CPF', width: 16 }, { key: 'email', header: 'E-mail', width: 30 },
@@ -524,6 +549,8 @@ export class ReportsService {
         cobranca: note.pagamento.pspTransactionId, notaId: note.provedorId, pdf: note.pdfUrl, erro: note.erro, observacao: note.observacao,
       };
     });
+    // Notas: por data (a mais antiga primeiro dentro do período), ou a ordem escolhida.
+    rows.splice(0, rows.length, ...sortReportRows(rows, query.ordem ?? 'data_asc'));
     const columns: Column[] = [
       { key: 'criadoEm', header: 'Solicitada em', type: 'date' }, { key: 'emitidaEm', header: 'Emitida em', type: 'date' }, { key: 'status', header: 'Situação' }, { key: 'origem', header: 'Origem' }, { key: 'numero', header: 'Nº da nota', width: 14 },
       { key: 'participante', header: 'Tomador', width: 30 }, { key: 'cpf', header: 'CPF', width: 16 }, { key: 'email', header: 'E-mail', width: 30 },

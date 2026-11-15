@@ -166,6 +166,11 @@ export class AdminListQueryDto {
   @IsString()
   status?: string;
 
+  /** Ordem da lista: "nome" (A-Z). Sem o campo, mantém a ordem de cada tela. */
+  @IsOptional()
+  @IsIn(['nome', 'recentes'])
+  ordem?: 'nome' | 'recentes';
+
   @IsOptional()
   @IsDateString()
   de?: string;

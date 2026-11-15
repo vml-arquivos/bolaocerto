@@ -134,7 +134,19 @@ export class HomeService {
    * Links para quem está logado: WhatsApp dos grupos que ele participa (e, se for afiliado, os dele) e os links da
    * página do afiliado que trouxe a pessoa (ou dono do grupo dela).
    */
-  async myGroupsWhatsapp(userId: string) {
+  async myGroupsWhatsapp(userId: string, shareId?: string) {
+    // Depois de uma compra: os links seguem quem vendeu aquela cota (afiliado) ou, sem afiliado, os do Bolão Livre.
+    if (shareId) {
+      const share = await this.prisma.cota.findFirst({ where: { id: shareId, compradorId: userId }, select: { afiliadoReferenciaId: true } });
+      if (share) {
+        if (!share.afiliadoReferenciaId) return { grupos: [], afiliado: null, origem: 'bl' as const };
+        const row = await this.prisma.configuracaoSistema.findUnique({ where: { chave: `${AFFILIATE_LINKS_PREFIX}${share.afiliadoReferenciaId}` } });
+        const owner = await this.prisma.afiliado.findUnique({ where: { id: share.afiliadoReferenciaId }, select: { usuario: { select: { nome: true } } } });
+        const parsed = this.parseAffiliateLinks(row?.valor);
+        const has = parsed.grupo || parsed.comunidade || parsed.instagram;
+        return { grupos: [], afiliado: has && owner ? { ...parsed, nome: owner.usuario.nome.split(' ')[0] ?? owner.usuario.nome } : null, origem: 'afiliado' as const };
+      }
+    }
     const [groups, user] = await Promise.all([
       this.prisma.grupo.findMany({ where: { OR: [{ membros: { some: { usuarioId: userId } } }, { afiliado: { usuarioId: userId } }] }, select: { id: true, nome: true, afiliadoId: true }, take: 20 }),
       this.prisma.usuario.findUnique({ where: { id: userId }, select: { indicadoPorAfiliadoId: true } }),

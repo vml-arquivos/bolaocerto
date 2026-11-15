@@ -43,7 +43,7 @@ export function AffiliatePanelBoard() {
             <td>{pool.cotasVendidas}{pool.totalCotas ? ` de ${pool.totalCotas}` : ''}</td>
             <td>{pool.cotasReservadas}</td>
             <td>{pool.cotasRestantes ?? '∞'}</td>
-            <td>{money(pool.valorVendido)}</td>
+            <td className="td-nowrap">{money(pool.valorVendido)}</td>
             <td><button type="button" className="text-link" onClick={() => setOpen(open === pool.bolaoId ? null : pool.bolaoId)} aria-expanded={open === pool.bolaoId}>{pool.pagantes} pagaram / {pool.compradores}</button></td>
           </tr>
           {open === pool.bolaoId && <tr><td colSpan={7}>{pool.quemComprou.length === 0 ? <small>Ninguém comprou este bolão ainda.</small> : <ul className="group-members">{pool.quemComprou.map((buyer: Rec, index: number) => <li key={`${buyer.nome}-${index}`}><span>{buyer.nome}</span><small>{buyer.pagou ? `Pagou ${buyer.cotasPagas} cota(s) · ${money(buyer.valorPago)}` : 'Ainda não pagou'}{buyer.cotasReservadas > 0 ? ` · ${buyer.cotasReservadas} reservada(s)` : ''}</small></li>)}</ul>}</td></tr>}
