@@ -212,27 +212,44 @@
 .affiliate-shortcuts .affiliate-action-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
 
 /* ============================================================
-   Resultado oficial da CAIXA em destaque (vermelho)
+   Resultado oficial da CAIXA (cor normal do site) e X vermelho
+   nos números acertados de cada jogo do bolão
    ============================================================ */
-:root { --result-red: #c81e1e; --result-red-strong: #9b1c1c; --result-red-soft: rgba(200, 30, 30, .08); --result-red-border: rgba(200, 30, 30, .35); --result-red-text: #9b1c1c; }
-:root[data-theme="dark"] { --result-red: #e02424; --result-red-strong: #b91c1c; --result-red-soft: rgba(239, 68, 68, .12); --result-red-border: rgba(248, 113, 113, .45); --result-red-text: #fca5a5; }
-.official-result { display: grid; gap: 10px; margin: 0 0 18px; padding: 16px 18px; border: 1px solid var(--result-red-border); border-left: 5px solid var(--result-red); border-radius: 16px; background: var(--result-red-soft); min-width: 0; }
+:root { --hit-x: #e11d2e; }
+:root[data-theme="dark"] { --hit-x: #ff3b4e; }
+.official-result { display: grid; gap: 10px; margin: 0 0 18px; padding: 16px 18px; border: 1px solid var(--border-strong); border-left: 5px solid var(--primary); border-radius: 16px; background: var(--primary-soft); min-width: 0; }
 .official-result.is-compact { margin: 6px 0 10px; padding: 12px 14px; gap: 8px; }
 .official-result-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
-.official-result-head strong { color: var(--result-red-text); font-size: 1rem; font-weight: 800; letter-spacing: .01em; text-transform: uppercase; }
+.official-result-head strong { color: var(--text-primary); font-size: 1rem; font-weight: 800; letter-spacing: .01em; text-transform: uppercase; }
 .official-result.is-compact .official-result-head strong { font-size: .86rem; }
 .official-result-head small, .official-result-sub { color: var(--text-secondary); font-size: .8rem; font-weight: 600; }
 .official-result-balls { display: flex; flex-wrap: wrap; gap: 8px; }
-.official-ball { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #ff6b6b 0%, var(--result-red) 55%, var(--result-red-strong) 100%); color: #fff; font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; box-shadow: 0 6px 14px rgba(200, 30, 30, .35), inset 0 -2px 0 rgba(0, 0, 0, .18); }
+.official-ball { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(145deg, var(--primary-solid), var(--accent-solid)); color: #fff; font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; box-shadow: 0 6px 12px rgba(0, 40, 180, .25); }
 .official-result.is-compact .official-ball { width: 34px; height: 34px; font-size: .86rem; }
 @media (max-width: 480px) { .official-ball { width: 36px; height: 36px; font-size: .9rem; } .official-result-balls { gap: 6px; } }
-/* Números do bolão que saíram no sorteio */
-.number-ball.is-official-hit { background: radial-gradient(circle at 32% 28%, #ff6b6b 0%, var(--result-red) 55%, var(--result-red-strong) 100%) !important; color: #fff !important; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--result-red) !important; }
-.official-hit { color: var(--result-red-text); font-weight: 800; }
-/* Últimos resultados na página principal e em Resultados: dezenas em vermelho */
-.rs-ball { background: radial-gradient(circle at 32% 28%, #ff6b6b 0%, var(--result-red) 55%, var(--result-red-strong) 100%) !important; color: #fff !important; font-weight: 800; box-shadow: 0 4px 10px rgba(200, 30, 30, .3); }
-.rs-second .rs-ball { opacity: 1; }
-.drawn-game .number-ball.is-hit { background: var(--result-red); color: #fff; border-color: var(--result-red); }
+
+/* X vermelho em cima do número acertado (mantém a cor da bola; o X fica por cima) */
+.is-official-hit { position: relative; isolation: isolate; text-shadow: 0 0 3px rgba(0, 0, 0, .55), 0 0 1px rgba(0, 0, 0, .8); }
+.is-official-hit::before, .is-official-hit::after { content: ""; position: absolute; left: 50%; top: 50%; width: 118%; height: 3px; border-radius: 3px; background: var(--hit-x); box-shadow: 0 0 0 1px rgba(255, 255, 255, .7); pointer-events: none; z-index: -1; }
+.is-official-hit::before { transform: translate(-50%, -50%) rotate(45deg); }
+.is-official-hit::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.number-ball.is-official-hit { outline: 2px solid var(--hit-x); outline-offset: 2px; }
+.drawn-game .number-ball.is-official-hit { color: var(--text-primary); }
+/* Jogos no histórico do cotista */
+.cota-game-numbers { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
+.cota-num { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface-raised); color: var(--text-primary); font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cota-num.is-official-hit::before, .cota-num.is-official-hit::after { width: 112%; height: 2.5px; }
+.cota-num.is-official-hit, .drawn-game .number-ball.is-official-hit { text-shadow: 0 0 3px var(--surface), 0 0 2px var(--surface), 0 0 1px var(--surface); }
+.cota-more li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+/* Resumo de acertos na página do bolão */
+.pool-hits-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; color: var(--text-secondary); font-size: .9rem; }
+.pool-hits-summary strong { color: var(--text-primary); }
+.hit-x-sample { position: relative; display: inline-block; width: 16px; height: 16px; }
+.hit-x-sample::before, .hit-x-sample::after { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 3px; border-radius: 3px; background: var(--hit-x); }
+.hit-x-sample::before { transform: translate(-50%, -50%) rotate(45deg); }
+.hit-x-sample::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.game-hits { color: var(--text-muted); font-weight: 600; }
+.game-hits.has-hits { color: var(--hit-x); }
 
 /* ============================================================
    Contraste: botões bem definidos, sem "azul em cima de azul"
@@ -258,3 +275,12 @@
 /* Catálogo: mais bolões sob demanda */
 .catalog-more { display: flex; justify-content: center; margin-top: 22px; }
 .catalog-more .button small { opacity: .8; font-weight: 500; margin-left: 4px; }
+
+/* Cartões de bolão com a cor oficial de cada modalidade das Loterias CAIXA */
+.pool-card { border-top: 4px solid var(--card-accent); }
+.pool-card .pool-art-shade { background: linear-gradient(90deg, color-mix(in srgb, var(--card-accent) 72%, #000 28%) 10%, color-mix(in srgb, var(--card-accent) 30%, transparent) 70%, transparent 105%); opacity: .95; }
+.pool-card .pool-art-copy strong, .pool-card .pool-art-copy span { text-shadow: 0 1px 3px rgba(0, 0, 0, .45); }
+.pool-card .pool-heading .overline { color: color-mix(in srgb, var(--card-accent) 60%, var(--text-primary)); }
+.pool-card .progress-head strong { color: color-mix(in srgb, var(--card-accent) 55%, var(--text-primary)); }
+.pool-card .progress-block:is(.is-low, .is-mid) .progress i { background: var(--card-accent); }
+.pool-card .pool-prize { border-left: 3px solid var(--card-accent); }

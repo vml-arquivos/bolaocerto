@@ -21,7 +21,7 @@ export function DrawnPools({ pools }: { pools: PublicPool[] }) {
       <details className="drawn-games"><summary>{games.length === 1 ? 'Ver o jogo do bolão' : `Ver os ${games.length} jogos do bolão`}</summary>
         {games.slice(0, 20).map((game) => {
           const count = game.numeros.filter((n) => hits.has(n)).length;
-          return <div className="drawn-game" key={game.id}><div className="result-balls">{game.numeros.map((n, i) => <span className={`number-ball ${hits.has(n) ? 'is-hit' : ''}`} key={i}>{String(n).padStart(2, '0')}</span>)}</div><small>{count} {count === 1 ? 'acerto' : 'acertos'}</small></div>;
+          return <div className="drawn-game" key={game.id}><div className="result-balls">{game.numeros.map((n, i) => <span className={`number-ball${hits.has(n) ? ' is-official-hit' : ''}`} title={hits.has(n) ? 'acertou' : undefined} key={i}>{String(n).padStart(2, '0')}</span>)}</div><small>{count} {count === 1 ? 'acerto' : 'acertos'}</small></div>;
         })}
         {games.length > 20 && <small>Mostrando 20 de {games.length} jogos. Veja todos na página do bolão.</small>}
       </details>

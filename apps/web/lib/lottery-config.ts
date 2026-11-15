@@ -9,44 +9,46 @@ export type LotteryVisual = {
   accent: string;
   soft: string;
   icon: string;
+  /** Cor oficial da modalidade nas Loterias CAIXA (usada nos cartões de bolão). */
+  caixa?: string;
 };
 
 const visualByModality: Record<string, LotteryVisual> = {
   megasena: {
     key: 'megasena', name: 'Mega-Sena', eyebrow: 'O grande destaque', description: 'Prêmios que fazem planos grandes começarem agora.',
-    art: '/brand/lottery/mega-sena-hero.jpg', accent: '#3157ee', soft: '#e8edff', icon: 'MS',
+    art: '/brand/lottery/mega-sena-hero.jpg', accent: '#3157ee', soft: '#e8edff', icon: 'MS', caixa: '#209869',
   },
   lotofacil: {
     key: 'lotofacil', name: 'Lotofácil', eyebrow: 'Mais acessível', description: 'Uma participação simples para jogar em grupo.',
-    art: '/brand/lottery/lotofacil-hero.jpg', accent: '#9f28bd', soft: '#f4e8ff', icon: 'LF',
+    art: '/brand/lottery/lotofacil-hero.jpg', accent: '#9f28bd', soft: '#f4e8ff', icon: 'LF', caixa: '#930089',
   },
   quina: {
     key: 'quina', name: 'Quina', eyebrow: 'Foco no próximo', description: 'Escolha sua estratégia e acompanhe o concurso.',
-    art: '/brand/lottery/quina-hero.jpg', accent: '#245fe2', soft: '#e7efff', icon: 'QN',
+    art: '/brand/lottery/quina-hero.jpg', accent: '#245fe2', soft: '#e7efff', icon: 'QN', caixa: '#260085',
   },
   lotomania: {
     key: 'lotomania', name: 'Lotomania', eyebrow: 'Jogo de atitude', description: 'Mais possibilidades para montar sua participação.',
-    art: '/brand/lottery/lotomania-hero.jpg', accent: '#d06b16', soft: '#fff1df', icon: 'LM',
+    art: '/brand/lottery/lotomania-hero.jpg', accent: '#d06b16', soft: '#fff1df', icon: 'LM', caixa: '#f78100',
   },
   timemania: {
     key: 'timemania', name: 'Timemania', eyebrow: 'Paixão em grupo', description: 'A energia do jogo com uma experiência BL.',
-    art: '/brand/lottery/timemania-hero.jpg', accent: '#128c99', soft: '#e3f8f8', icon: 'TM',
+    art: '/brand/lottery/timemania-hero.jpg', accent: '#128c99', soft: '#e3f8f8', icon: 'TM', caixa: '#00a650',
   },
   diadesorte: {
     key: 'diadesorte', name: 'Dia de Sorte', eyebrow: 'Um ritual leve', description: 'Organize sua participação com clareza e confiança.',
-    art: '/brand/lottery/dia-de-sorte-hero.jpg', accent: '#8560cf', soft: '#efeaff', icon: 'DS',
+    art: '/brand/lottery/dia-de-sorte-hero.jpg', accent: '#8560cf', soft: '#efeaff', icon: 'DS', caixa: '#cb852b',
   },
   duplasena: {
     key: 'duplasena', name: 'Dupla Sena', eyebrow: 'Duas chances no mesmo jogo', description: 'Um único bilhete, dois sorteios para torcer.',
-    art: '/brand/lottery/dupla-sena-hero.jpg', accent: '#d5457a', soft: '#ffe9f1', icon: 'DU',
+    art: '/brand/lottery/dupla-sena-hero.jpg', accent: '#d5457a', soft: '#ffe9f1', icon: 'DU', caixa: '#a61324',
   },
   supersete: {
     key: 'supersete', name: 'Super Sete', eyebrow: 'Simples e direto', description: 'Sete colunas, sete decisões rápidas de jogo.',
-    art: '/brand/lottery/super-sete-hero.jpg', accent: '#0f9d8a', soft: '#e2fbf5', icon: 'S7',
+    art: '/brand/lottery/super-sete-hero.jpg', accent: '#0f9d8a', soft: '#e2fbf5', icon: 'S7', caixa: '#a8cf45',
   },
   loteca: {
     key: 'loteca', name: 'Loteca', eyebrow: 'Paixão pelo esporte', description: 'Aposte nos resultados da rodada com o grupo.',
-    art: '/brand/lottery/loteca-hero.jpg', accent: '#c2670f', soft: '#fff0df', icon: 'LT',
+    art: '/brand/lottery/loteca-hero.jpg', accent: '#c2670f', soft: '#fff0df', icon: 'LT', caixa: '#fb1f00',
   },
 };
 

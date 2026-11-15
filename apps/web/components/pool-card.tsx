@@ -15,7 +15,7 @@ export function PoolCard({ pool, now }: { pool: PublicPool; now: number }) {
   const isOpen = canPurchase(pool, now);
   const ruleState = saleRuleState(pool, now);
   const progressState = unlimited ? '' : progress >= 100 ? 'is-full' : progress >= 85 ? 'is-high' : progress >= 40 ? 'is-mid' : 'is-low';
-  return <article className="pool-card" style={{ '--pool-accent': visual.accent, '--pool-soft': visual.soft } as CSSProperties}>
+  return <article className="pool-card" data-modality={pool.concurso?.modalidade ?? undefined} style={{ '--pool-accent': visual.caixa ?? visual.accent, '--pool-soft': visual.soft } as CSSProperties}>
     <div className="pool-art"><img src={visual.art} alt="" loading="lazy" /><div className="pool-art-shade" /><div className="pool-art-copy"><span>{visual.eyebrow}</span><strong>{modalityNames[pool.concurso?.modalidade ?? ''] ?? visual.name}</strong></div><span className={`pool-status ${isOpen ? 'is-open' : 'is-closed'}`}>{isOpen ? 'Cotas abertas' : locked ? 'Aguardando prêmio' : withinSaleWindow(pool, now) && ruleState === 'em_breve' ? 'Venda em breve' : 'Encerrado'}</span></div>
     <div className="pool-card-body"><div className="pool-heading"><div><p className="overline">{pool.grupo?.nome ?? 'Bolão BL'}</p><h3>{pool.grupo?.descricao || contestLabel(pool.concurso)}</h3></div></div>
       {Number(pool.concurso?.valorEstimadoPremio ?? 0) > 0 && <div className="pool-prize"><span>Prêmio estimado</span><strong>{money(pool.concurso?.valorEstimadoPremio)}</strong><small>{pool.concurso?.acumulado ? 'Acumulado para o próximo concurso' : 'Atualizado pelo concurso oficial'}</small></div>}

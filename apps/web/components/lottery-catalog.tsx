@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { withinSaleWindow, hasShares } from '../lib/pool-availability';
 import { useSaleClock } from './live-storefront';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { modalityNames, PublicPool } from '../lib/domain';
 import { PoolCard } from './pool-card';
 
@@ -16,6 +16,15 @@ export function LotteryCatalog({ pools, serverNow }: { pools: PublicPool[]; serv
   const [order, setOrder] = useState('sorteio');
   // Mostra poucos de cada vez para a página não ficar enorme; "Ver mais bolões" abre os próximos.
   const [limit, setLimit] = useState(PAGE);
+  // Computador e tablet: cada bolão é um cartão, lado a lado na grade. Celular: bolões do mesmo grupo e concurso ficam agrupados numa lista.
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)');
+    const update = () => setNarrow(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
   const modalities = Array.from(new Set(pools.map((pool) => pool.concurso?.modalidade).filter(Boolean))) as string[];
   const filtered = useMemo(() => pools.filter((pool) => {
     if (!withinSaleWindow(pool, now) || !hasShares(pool)) return false;
@@ -44,6 +53,6 @@ export function LotteryCatalog({ pools, serverNow }: { pools: PublicPool[]; serv
       <label className="filter-control"><span>Ordem</span><select value={order} onChange={(event) => { setOrder(event.target.value); setLimit(PAGE); }}><option value="sorteio">Sorteio mais próximo</option><option value="menor">Menor valor da cota</option><option value="maior">Maior valor da cota</option></select></label>
       <span className="catalog-count">{filtered.length} {filtered.length === 1 ? 'opção encontrada' : 'opções encontradas'}</span>
     </div>
-    {filtered.length ? <><div className="pool-grid">{Array.from(grouped).slice(0, limit).map(([key, lots]) => <div className="pool-lots" key={key}><PoolCard now={now} pool={lots[0]!} />{lots.length > 1 && <details><summary>Ver outros {lots.length - 1} bolões deste grupo no concurso</summary><p>Cada lote tem seus próprios jogos, cotas e comprovantes. Confira antes de comprar.</p>{lots.slice(1).map(pool => <PoolCard now={now} pool={pool} key={pool.id} />)}</details>}</div>)}</div>{grouped.size > limit && <div className="catalog-more"><button type="button" className="button button-secondary" onClick={() => setLimit((value) => value + PAGE)}>Ver mais bolões <small>({grouped.size - limit} {grouped.size - limit === 1 ? 'restante' : 'restantes'})</small></button></div>}</> : <div className="empty-state"><span>BL</span><h3>Nenhum bolão combina com seus filtros</h3><p>Não há bolões disponíveis com estes filtros. Novos bolões aparecem assim que forem publicados para os próximos concursos.</p><button type="button" className="button button-ghost" onClick={() => { setModality('todas'); setPrice('todos'); }}>Limpar filtros</button><Link className="text-link" href="/resultados">Consultar resultados e histórico</Link></div>}
+    {filtered.length ? !narrow ? <><div className="pool-grid">{sorted.slice(0, limit).map((pool) => <PoolCard now={now} pool={pool} key={pool.id} />)}</div>{sorted.length > limit && <div className="catalog-more"><button type="button" className="button button-secondary" onClick={() => setLimit((value) => value + PAGE)}>Ver mais bolões <small>({sorted.length - limit} {sorted.length - limit === 1 ? 'restante' : 'restantes'})</small></button></div>}</> : <><div className="pool-grid">{Array.from(grouped).slice(0, limit).map(([key, lots]) => <div className="pool-lots" key={key}><PoolCard now={now} pool={lots[0]!} />{lots.length > 1 && <details><summary>Ver outros {lots.length - 1} bolões deste grupo no concurso</summary><p>Cada lote tem seus próprios jogos, cotas e comprovantes. Confira antes de comprar.</p>{lots.slice(1).map(pool => <PoolCard now={now} pool={pool} key={pool.id} />)}</details>}</div>)}</div>{grouped.size > limit && <div className="catalog-more"><button type="button" className="button button-secondary" onClick={() => setLimit((value) => value + PAGE)}>Ver mais bolões <small>({grouped.size - limit} {grouped.size - limit === 1 ? 'restante' : 'restantes'})</small></button></div>}</> : <div className="empty-state"><span>BL</span><h3>Nenhum bolão combina com seus filtros</h3><p>Não há bolões disponíveis com estes filtros. Novos bolões aparecem assim que forem publicados para os próximos concursos.</p><button type="button" className="button button-ghost" onClick={() => { setModality('todas'); setPrice('todos'); }}>Limpar filtros</button><Link className="text-link" href="/resultados">Consultar resultados e histórico</Link></div>}
   </div>;
 }
