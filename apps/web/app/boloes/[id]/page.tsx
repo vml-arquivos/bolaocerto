@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation';
 import { LotteryArtwork } from '../../../components/lottery-artwork';
 import { PoolTransparency } from '../../../components/pool-transparency';
 import { PoolNumbers } from '../../../components/pool-numbers';
+import { OfficialResult } from '../../../components/official-result';
 import { PoolExtraInfo } from '../../../components/pool-extra-info';
 import { PurchaseForm } from '../../../components/purchase-form';
 import { FunnelBeacon } from '../../../components/funnel-beacon';
@@ -50,21 +51,25 @@ export default async function PoolPage({ params }: { params: Promise<{ id: strin
   const quota = priced ?? splitQuota(pool.valorCota, pool.taxaAdministracaoPct);
   const games = (pool.jogos?.length ? pool.jogos : [{ id: 'unico', ordem: 1, numeros: pool.numerosApostados }]).filter((game) => game.numeros.length > 0);
   const settled = Boolean(pool.transparencia?.apuradoEm && pool.transparencia?.apuracao);
+  // Resultado oficial do concurso (depois do sorteio): fica em destaque no topo do bolão.
+  const drawn = pool.resultado?.numerosSorteados ?? pool.transparencia?.apuracao?.sorteados ?? [];
+  const drawnSecond = pool.resultado?.numerosSegundoSorteio ?? pool.transparencia?.apuracao?.segundoSorteio ?? [];
   const progressState = progress >= 100 ? 'is-full' : progress >= 85 ? 'is-high' : progress >= 40 ? 'is-mid' : 'is-low';
 
   return <><LiveStorefront /><FunnelBeacon name="bolao_visto" /><SiteHeader/><main className="app-page" id="main-content">
 <div className="shell"><div className="breadcrumb"><Link href="/">Início</Link><span>/</span><Link href="/#boloes">Bolões</Link><span>/</span><strong>{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Detalhes'}</strong></div>
 <section className="detail-hero"><LotteryArtwork modality={pool.concurso?.modalidade} compact /><div className="detail-hero-copy"><div className="detail-kicker"><span className="overline">{visual.eyebrow}</span><span className={`tag ${isOpen ? 'tag-open' : 'tag-closed'}`}>{isOpen ? 'Cotas abertas' : locked ? 'Aguardando prêmio' : withinSaleWindow(pool, now) && ruleState === 'em_breve' ? 'Venda em breve' : 'Encerrado'}</span></div><h1>{pool.grupo?.nome ?? 'Bolão BL'}</h1><p className="detail-subtitle">{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Concurso oficial'} <span>•</span> {contestLabel(pool.concurso)} <span>•</span> sorteio {shortDate(pool.concurso?.dataSorteio)}</p>{pool.grupo?.descricao && <p>{pool.grupo.descricao}</p>}<SharePool poolId={pool.id} title={`${modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Bolão'} · ${pool.grupo?.nome ?? 'BL'}`} detail={`${contestLabel(pool.concurso)}, sorteio ${shortDate(pool.concurso?.dataSorteio)}`} price={money(pool.valorCota)} /></div></section>
 <div className="detail-grid"><section className="detail-main">
+{drawn.length > 0 && <OfficialResult numbers={drawn} second={drawnSecond} contest={pool.concurso?.numeroConcurso} title="Resultado oficial do sorteio" />}
 {pool.concurso?.valorEstimadoPremio && <div className="detail-prize-banner"><span>Prêmio estimado</span><strong>{money(pool.concurso?.valorEstimadoPremio)}</strong>{pool.concurso?.acumulado && <small>Acumulado para o próximo concurso</small>}</div>}
 <div className="detail-quick"><div><small>Valor por cota</small><strong>{money(pool.valorCota)}</strong></div><div><small>Cotas livres</small><strong>{unlimited ? 'Ilimitadas' : `${pool.cotasDisponiveis} de ${pool.totalCotas}`}</strong></div></div>
 {!unlimited && <div className={`detail-progress progress-block ${progressState}`}><div className="progress" aria-label={`${progress}% das cotas preenchidas`}><i style={{ width: `${progress}%` }} /></div></div>}
 {games.length === 0
   ? <div className="detail-numbers-later" role="note"><strong>Os números deste bolão ainda não foram definidos</strong><p>{pool.precificacao?.jogosPrevistos ? `Serão ${pool.precificacao.jogosPrevistos} ${pool.precificacao.jogosPrevistos === 1 ? 'jogo' : 'jogos'}${pool.precificacao.dezenasPrevistas ? ` de ${pool.precificacao.dezenasPrevistas} números` : ''}. ` : ''}Os jogos são informados aqui antes do fechamento das apostas, e quem comprou cota é avisado. O comprovante do registro é enviado depois.</p></div>
-  : <PoolNumbers games={games.map((game) => ({ ordem: game.ordem, numeros: game.numeros }))} name={pool.grupo?.nome ?? 'Bolão BL'} />}
+  : <PoolNumbers games={games.map((game) => ({ ordem: game.ordem, numeros: game.numeros }))} name={pool.grupo?.nome ?? 'Bolão BL'} hits={[...drawn, ...drawnSecond]} />}
 {!['loteca', 'supersete'].includes(pool.concurso?.modalidade ?? '') && pool.concurso?.modalidade && <p className="muted"><Link className="text-link" href={`/estatisticas/${pool.concurso.modalidade}`}>Ver estatísticas de {modalityNames[pool.concurso.modalidade] ?? 'esta modalidade'}</Link></p>}
 {pool.transparencia && <details className="pool-follow" open={settled}><summary>Acompanhar este bolão</summary><PoolTransparency pool={pool} /></details>}
-{!withinSaleWindow(pool, now) && <PoolHistory pools={[pool]} />}
+{!withinSaleWindow(pool, now) && drawn.length === 0 && <PoolHistory pools={[pool]} />}
 <PoolExtraInfo unitPrice={pool.valorCota} ticket={quota ? quota.bilhete : null} fee={quota ? quota.taxa : null} feePct={quota ? quota.pct : null} operation={pool.modeloOperacional} />
 </section>
 <PurchaseForm serverNow={now} cutoffAt={pool.concurso?.cutoffAt} contestStatus={pool.concurso?.status} hasResult={Boolean(pool.resultado)} poolId={pool.id} available={pool.cotasDisponiveis} unitPrice={pool.valorCota} status={pool.status} paymentsEnabled={paymentsEnabled} release={pool.liberacao} rules={pool.regrasVenda}/>

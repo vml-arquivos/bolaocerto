@@ -21,7 +21,7 @@ export class JwtAuthGuard implements CanActivate {
       // Revoke every account immediately, including cotistas and affiliates.
       if (this.prisma) {
         const row = await this.prisma.usuario.findUnique({ where: { id: payload.id }, select: { tokenVersion: true, papel: true, desativadoEm: true } });
-        if (!row || row.desativadoEm || row.tokenVersion !== (payload.tv ?? 0)) throw new UnauthorizedException('Sessão encerrada. Entre novamente.');
+        if (!row || row.desativadoEm || row.tokenVersion !== (payload.tv ?? 0)) throw new UnauthorizedException('Sessão encerrada. Faça login novamente.');
         papel = row.papel;
       }
       request.user = { id: payload.id, email: payload.email, papel };

@@ -32,7 +32,7 @@ export function GroupJoin({ slug }: { slug: string }) {
 
   if (state === 'loading') return null;
   return <div className="group-page-actions">
-    {state === 'anonymous' && <a className="button button-primary" href={`/login?next=/grupos/${slug}`}>Entrar para participar do grupo</a>}
+    {state === 'anonymous' && <a className="button button-primary" href={`/login?next=/grupos/${slug}`}>Logar para participar do grupo</a>}
     {state === 'out' && <button className="button button-primary" disabled={busy} onClick={() => void change(true)}>Participar do grupo</button>}
     {state === 'in' && <button className="button button-secondary" disabled={busy} onClick={() => void change(false)}>Sair do grupo</button>}
     {message && <span role="status" className="muted">{message}</span>}

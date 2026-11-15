@@ -69,7 +69,7 @@ export function DistributionAccept({ codigo, preview }: { codigo: string; previe
     {state === 'loading' && preview.aberto && <p className="muted">Conferindo o seu acesso…</p>}
     {state === 'anonymous' && <div className="group-page-actions" style={{ flexWrap: 'wrap', gap: 10 }}>
       <p style={{ width: '100%' }}>Se você é afiliado do BL, entre para colocar este bolão no seu painel e vender para os seus clientes.</p>
-      <a className="button button-primary" href={`/afiliado/entrar?next=${encodeURIComponent(`/bolao-afiliado/${codigo}`)}`}>Entrar como afiliado</a>{buy}
+      <a className="button button-primary" href={`/afiliado/entrar?next=${encodeURIComponent(`/bolao-afiliado/${codigo}`)}`}>Logar como afiliado</a>{buy}
     </div>}
     {state === 'affiliate' && <div className="distribution-accept-box">
       <p>Para vender este bolão pelo seu link, leia e aceite o termo. Depois disso ele entra no seu painel de afiliado e as vendas feitas pelo seu link aparecem lá.</p>

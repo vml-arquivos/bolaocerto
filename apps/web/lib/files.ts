@@ -12,7 +12,7 @@ export const ATTACHMENT_LABELS: Record<string, string> = {
 
 export async function openProtectedFile(id: string): Promise<string | null> {
   const response = await authenticatedFetch(`/api/v1/anexos/${id}/arquivo`);
-  if (response.status === 401) return 'Entre na sua conta para abrir este arquivo.';
+  if (response.status === 401) return 'Faça login para abrir este arquivo.';
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     return (Array.isArray(payload?.message) ? payload.message.join(' ') : payload?.message) || 'Não foi possível abrir o arquivo.';

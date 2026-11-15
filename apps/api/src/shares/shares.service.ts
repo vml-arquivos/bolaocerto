@@ -124,7 +124,7 @@ export class SharesService {
     const shares = await this.prisma.cota.findMany({
       where: { compradorId: user.id, ...(onlyPrize ? { status: StatusCota.premiada } : {}) },
       orderBy: { criadoEm: 'desc' },
-      include: { pagamento: { include: { notaFiscal: true } }, bolao: { include: { concurso: true, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
+      include: { pagamento: { include: { notaFiscal: true } }, bolao: { include: { concurso: { include: { resultado: { select: { numerosSorteados: true, numerosSegundoSorteio: true, apuradoEm: true } } } }, grupo: { select: { nome: true } }, jogos: { orderBy: { ordem: 'asc' } } } } },
     });
     const requests = await this.prisma.pedidoCancelamento.findMany({ where: { cotaId: { in: shares.map((share) => share.id) } }, orderBy: { criadoEm: 'desc' }, select: { cotaId: true, status: true, devolucao: true, resposta: true, criadoEm: true } });
     const latest = new Map<string, (typeof requests)[number]>();
@@ -145,6 +145,8 @@ export class SharesService {
         dataSorteio: share.bolao.concurso.dataSorteio,
         teveGanhador: share.bolao.teveGanhador,
         jogos: share.bolao.jogos.map((jogo) => ({ ordem: jogo.ordem, numeros: jogo.numeros })),
+        // Resultado oficial do concurso, para o cotista ver os números sorteados no histórico.
+        resultado: share.bolao.concurso.resultado ? { numerosSorteados: share.bolao.concurso.resultado.numerosSorteados, numerosSegundoSorteio: share.bolao.concurso.resultado.numerosSegundoSorteio ?? [], apuradoEm: share.bolao.concurso.resultado.apuradoEm } : null,
       },
       pagamento: share.pagamento ? {
         id: share.pagamento.id,

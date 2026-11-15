@@ -23,4 +23,4 @@ export function isProtectedPath(pathname: string): boolean {
   return ['/admin', '/afiliado', '/aplicativo', '/minha-conta', '/checkout'].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export const IDLE_NOTICE = 'Por segurança, sua sessão terminou depois de um tempo sem uso. Entre de novo para continuar.';
+export const IDLE_NOTICE = 'Por segurança, sua sessão terminou depois de um tempo sem uso. Faça login de novo para continuar.';

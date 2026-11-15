@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { PublicPool, modalityNames, money, shortDate } from '../lib/domain';
 import { concursoNo, festaPrefix } from '../lib/contest';
+import { OfficialResult } from './official-result';
 
 /** Bolões de concursos que já foram sorteados: números oficiais e quantos acertos cada jogo teve. */
 export function DrawnPools({ pools }: { pools: PublicPool[] }) {
@@ -16,9 +17,7 @@ export function DrawnPools({ pools }: { pools: PublicPool[] }) {
       <span className="overline">{modalityNames[pool.concurso?.modalidade ?? ''] ?? 'Bolão'} · {festaPrefix(pool.concurso)}concurso {concursoNo(pool.concurso?.numeroConcurso)}</span>
       <h3>{pool.grupo?.nome ?? 'Bolão BL'}</h3>
       <p className="muted">Sorteio em {shortDate(pool.concurso?.dataSorteio)}</p>
-      <strong>Números sorteados</strong>
-      <div className="result-balls" aria-label="Números sorteados">{drawn.map((n, i) => <span className="number-ball is-drawn" key={i}>{String(n).padStart(2, '0')}</span>)}</div>
-      {second.length > 0 && <><p>Segundo sorteio</p><div className="result-balls" aria-label="Segundo sorteio">{second.map((n, i) => <span className="number-ball is-drawn" key={i}>{String(n).padStart(2, '0')}</span>)}</div></>}
+      <OfficialResult numbers={drawn} second={second} contest={pool.concurso?.numeroConcurso} title="Números sorteados" compact />
       <details className="drawn-games"><summary>{games.length === 1 ? 'Ver o jogo do bolão' : `Ver os ${games.length} jogos do bolão`}</summary>
         {games.slice(0, 20).map((game) => {
           const count = game.numeros.filter((n) => hits.has(n)).length;

@@ -57,6 +57,6 @@ export function SharePool({ poolId, title, detail, price }: Props) {
       ? <>Este link leva o seu código de indicação. Quem entrar por ele fica na sua lista de amigos em Minha conta.</>
       : code
         ? <>Este link leva o seu código de afiliado (<strong>{code}</strong>). As cotas vendidas por ele aparecem no seu painel.</>
-        : 'Link simples do bolão. Entre na sua conta para compartilhar com o seu link de indicação.'}</small>
+        : 'Link simples do bolão. Faça login para compartilhar com o seu link de indicação.'}</small>
   </div>;
 }

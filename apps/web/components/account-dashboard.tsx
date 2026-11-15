@@ -1,4 +1,5 @@
 'use client';
+import { OfficialResult } from './official-result';
 import { WhatsappJoin } from './community-link';
 import { TestimonialForm } from './testimonials';
 import Link from 'next/link';
@@ -21,7 +22,7 @@ type User = { id: string; nome: string; email: string; papel: string; statusKyc:
 type Share = {
   id: string; bolaoId: string; titularNome: string; status: string; quantidade: number; valorPago: string | null; valorTotal?: string;
   comprovanteIndividualUrl: string | null; valorPremio?: string | null; faixaPremio?: string | null; expiraReservaEm?: string | null; criadoEm?: string; origemVenda?: string;
-  bolao?: { id: string; status: string; grupo: string; valorCota: string; modalidade: string; numeroConcurso: number; dataSorteio: string; teveGanhador: boolean; jogos: Array<{ ordem: number; numeros: number[] }> };
+  bolao?: { id: string; status: string; grupo: string; valorCota: string; modalidade: string; numeroConcurso: number; dataSorteio: string; teveGanhador: boolean; jogos: Array<{ ordem: number; numeros: number[] }>; resultado?: { numerosSorteados: number[]; numerosSegundoSorteio: number[] } | null };
   pagamento?: (PaymentView & { id: string; notaFiscal?: { status: string; numero: string | null; pdfUrl: string | null } | null }) | null;
   cancelamento?: { tipo: 'reserva' | 'pedido' | 'nenhum'; pode: boolean; ate: string | null; motivoBloqueio: string | null; pedido: { status: string; devolucao: string | null; resposta: string | null; criadoEm: string } | null };
 };
@@ -72,6 +73,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
   return <article className="cota-card">
     <header><div><strong>{title}</strong><small>{share.bolao ? `Sorteio ${shortDate(share.bolao.dataSorteio)} · ${share.bolao.grupo}` : ''}</small></div><span className={`cota-status is-${expired ? 'muted' : TONE[share.status] ?? 'muted'}`}>{label}</span></header>
     <div className="cota-meta"><span>{share.quantidade} {share.quantidade === 1 ? 'cota' : 'cotas'}</span><strong>{money(share.valorPago ?? share.valorTotal)}</strong></div>
+    {share.bolao?.resultado && share.bolao.resultado.numerosSorteados.length > 0 && <OfficialResult numbers={share.bolao.resultado.numerosSorteados} second={share.bolao.resultado.numerosSegundoSorteio} contest={share.bolao.numeroConcurso} title="Resultado do sorteio" compact />}
     {share.status === 'premiada' && <div className="form-message form-success">Cota premiada{share.faixaPremio ? ` (${share.faixaPremio})` : ''}: {money(share.valorPremio)}. Resgate com o comprovante individual vinculado ao seu CPF.</div>}
     <div className="cota-actions">
       {pending && share.pagamento && <button type="button" className="button button-primary" onClick={() => setShowPayment((value) => !value)}>{showPayment ? 'Ocultar pagamento' : share.pagamento.metodo === 'boleto' ? 'Ver boleto / Pix' : 'Pagar com Pix'}</button>}
@@ -100,7 +102,7 @@ function ShareCard({ share, onPaid }: { share: Share; onPaid: () => void }) {
     <details className="cota-more"><summary>Detalhes</summary>
       <div className="cota-more-body">
         <small>Titular: {share.titularNome} · cota {share.id.slice(0, 8)}</small>
-        {share.bolao && share.bolao.jogos.length > 0 && <div><strong>Jogos ({share.bolao.jogos.length})</strong><ul>{share.bolao.jogos.map((game) => <li key={game.ordem}><small>Jogo {game.ordem}:</small> <code>{game.numeros.map((n) => String(n).padStart(2, '0')).join(' ')}</code></li>)}</ul></div>}
+        {share.bolao && share.bolao.jogos.length > 0 && <div><strong>Jogos ({share.bolao.jogos.length})</strong><ul>{share.bolao.jogos.map((game) => <li key={game.ordem}><small>Jogo {game.ordem}:</small> <code>{game.numeros.map((n, i) => { const hitSet = new Set([...(share.bolao?.resultado?.numerosSorteados ?? []), ...(share.bolao?.resultado?.numerosSegundoSorteio ?? [])]); return <span key={`${n}-${i}`} className={hitSet.has(n) ? 'official-hit' : undefined}>{i ? ' ' : ''}{String(n).padStart(2, '0')}</span>; })}</code></li>)}</ul></div>}
         {share.pagamento?.notaFiscal && <small className="muted">Nota fiscal de serviço: {NOTE_TEXT[share.pagamento.notaFiscal.status] ?? share.pagamento.notaFiscal.status}{share.pagamento.notaFiscal.numero ? ` · nº ${share.pagamento.notaFiscal.numero}` : ''}</small>}
         {share.pagamento?.status === 'confirmado' && <ReceiptPanel shareId={share.id} />}
       </div>

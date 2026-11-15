@@ -33,7 +33,7 @@ export function NotifyMe({ poolId }: { poolId: string }) {
   return <div className="notify-me">
     <button type="button" className={`button ${status.inscrito ? 'button-ghost' : 'button-primary'}`} onClick={() => void toggle()} disabled={busy} aria-pressed={status.inscrito}>{status.inscrito ? '✓ Você será avisado · cancelar' : 'Avise-me quando liberar'}</button>
     {status.total > 0 && <small className="muted">{status.total} {status.total === 1 ? 'pessoa pediu' : 'pessoas pediram'} aviso</small>}
-    {needsLogin && <small className="form-error">Entre na sua conta para pedir o aviso. <Link href="/login"><u>Entrar</u></Link></small>}
+    {needsLogin && <small className="form-error">Faça login para pedir o aviso. <Link href="/login"><u>Logar</u></Link></small>}
     {message && <small className="muted" role="status">{message}</small>}
   </div>;
 }

@@ -1,5 +1,5 @@
 // Página do afiliado (WhatsApp, comunidade, Instagram), depoimentos com estrelas (escrever, aprovar, mostrar no site)
-// e botões Entrar / Criar conta no celular.
+// e botões Logar / Criar conta no celular.
 // Uso: E2E_API_URL=http://localhost:3001 E2E_BASE_URL=http://localhost:3000 node --test e2e/depoimentos.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,12 +79,12 @@ test('página do afiliado e depoimentos com estrelas', async () => {
   const { chromium } = createRequire(import.meta.url)('playwright');
   const browser = await chromium.launch();
   try {
-    // Visitante no celular: Entrar e Criar conta à vista, sem rolagem lateral, no site e no app do cliente.
+    // Visitante no celular: Logar e Criar conta à vista, sem rolagem lateral, no site e no app do cliente.
     for (const width of [360, 390]) {
       const page = await (await browser.newContext({ viewport: { width, height: 800 } })).newPage();
       for (const path of ['/', '/aplicativo']) {
         await page.goto(`${BASE}${path}`, { waitUntil: 'load', timeout: 60000 });
-        for (const name of ['Entrar', 'Criar conta']) assert.equal(await page.locator('.site-header .header-actions').getByRole('link', { name, exact: true }).isVisible(), true, `${name} visível em ${path} @${width}`);
+        for (const name of ['Logar', 'Criar conta']) assert.equal(await page.locator('.site-header .header-actions').getByRole('link', { name, exact: true }).isVisible(), true, `${name} visível em ${path} @${width}`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, `sem rolagem lateral em ${path} @${width}`);
       }
     }

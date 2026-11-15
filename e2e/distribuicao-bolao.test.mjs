@@ -211,7 +211,7 @@ test('nas telas: painel da equipe envia, página do link e painel do afiliado', 
     // 2) Sem login: a página oferece entrar como afiliado ou só comprar.
     const anon = await (await browser.newContext()).newPage(); watch(anon);
     await anon.goto(`${BASE}/bolao-afiliado/${link.codigo}`, { waitUntil: 'load', timeout: 60000 });
-    await anon.getByRole('link', { name: 'Entrar como afiliado' }).waitFor({ timeout: 15000 });
+    await anon.getByRole('link', { name: 'Logar como afiliado' }).waitFor({ timeout: 15000 });
     assert.ok(await anon.getByRole('link', { name: /comprar minha cota/ }).count(), 'quem não é afiliado ainda pode comprar a cota');
 
     // 3) Afiliado logado: o bolão entra no painel dele.

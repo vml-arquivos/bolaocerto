@@ -52,7 +52,7 @@ export function AuthForm({ mode, audience = 'cliente', invite }: { mode: 'login'
       if (audience === 'admin') {
         if (isStaff(authenticatedUser?.papel)) { window.location.href = landingFor(authenticatedUser?.papel, new URLSearchParams(window.location.search).get('next')); return; }
         await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => undefined);
-        throw new Error(authenticatedUser?.papel === 'afiliado' ? 'Esta conta é de afiliado e não entra no painel da equipe. Entre pelo aplicativo BL Afiliado (ou em /afiliado/entrar).' : 'Esta conta é de cliente e não entra no painel da equipe. Para comprar cotas, use o aplicativo Bolão Livre.');
+        throw new Error(authenticatedUser?.papel === 'afiliado' ? 'Esta conta é de afiliado e não entra no painel da equipe. Faça login pelo aplicativo BL Afiliado (ou em /afiliado/entrar).' : 'Esta conta é de cliente e não entra no painel da equipe. Para comprar cotas, use o aplicativo Bolão Livre.');
       }
       if (audience === 'afiliado') {
         if (authenticatedUser?.papel === 'afiliado') { window.location.href = landingFor('afiliado', new URLSearchParams(window.location.search).get('next')); return; }
@@ -80,7 +80,7 @@ export function AuthForm({ mode, audience = 'cliente', invite }: { mode: 'login'
       <label className="field-check"><input type="checkbox" name="maiorDeIdade" required /> <span>Declaro que tenho 18 anos ou mais.</span></label>
     </fieldset>}
     {idleNotice && !message && <div className="form-message" role="status">{IDLE_NOTICE}</div>}
-    {message && <div className="form-message form-error" role="alert">{message}</div>}<button className="button button-primary" disabled={loading}>{loading ? 'Aguarde…' : audience === 'admin' ? 'Entrar no painel' : audience === 'afiliado' ? 'Entrar como afiliado' : mode === 'login' ? 'Entrar no BL' : asAffiliate ? 'Completar meu cadastro' : 'Criar minha conta'}</button>
-    {audience === 'cliente' && <p className="form-foot">{mode === 'login' ? <>Ainda não tem conta? <Link href="/cadastro">Cadastre-se</Link></> : <>Já possui conta? <Link href="/login">Entrar</Link></>}</p>}
+    {message && <div className="form-message form-error" role="alert">{message}</div>}<button className="button button-primary" disabled={loading}>{loading ? 'Aguarde…' : audience === 'admin' ? 'Logar no painel' : audience === 'afiliado' ? 'Logar como afiliado' : mode === 'login' ? 'Logar no BL' : asAffiliate ? 'Completar meu cadastro' : 'Criar minha conta'}</button>
+    {audience === 'cliente' && <p className="form-foot">{mode === 'login' ? <>Ainda não tem conta? <Link href="/cadastro">Cadastre-se</Link></> : <>Já possui conta? <Link href="/login">Logar</Link></>}</p>}
   </form>;
 }

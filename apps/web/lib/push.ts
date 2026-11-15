@@ -66,7 +66,7 @@ export async function enablePush(): Promise<PushState> {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return permission === 'denied' ? 'blocked' : 'off';
     const keyResponse = await authenticatedFetch('/api/v1/push/chave');
-    if (!keyResponse.ok) throw new Error('Não foi possível preparar os avisos agora. Entre na sua conta de novo e tente outra vez.');
+    if (!keyResponse.ok) throw new Error('Não foi possível preparar os avisos agora. Faça login de novo e tente outra vez.');
     const { chave } = await keyResponse.json() as { chave: string };
     const key = toKey(chave);
     const registration = await readyWorker();

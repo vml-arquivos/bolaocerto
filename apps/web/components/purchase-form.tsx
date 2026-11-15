@@ -97,7 +97,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     try {
       if (!contract?.aprovado || !accepted) throw new Error('Leia e aceite o contrato vigente antes de reservar.');
       const reserveResponse = await fetch('/api/v1/cotas/reservar', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bolaoId: poolId, quantidade: qty, ...(otherHolder ? { titularCpf: holderCpf, titularNome: holderName.trim() } : {}), termoMandatoHash: contract.hash, aceitoTermos: true, ...(couponCode ? { cupom: couponCode } : {}) }) });
-      if (reserveResponse.status === 401) throw new Error('Entre na sua conta antes de reservar uma cota.');
+      if (reserveResponse.status === 401) throw new Error('Faça login antes de reservar uma cota.');
       const reserve = await reserveResponse.json() as { id?: string; message?: string | string[] };
       if (!reserveResponse.ok || !reserve.id) throw new Error(Array.isArray(reserve.message) ? reserve.message.join(' ') : reserve.message || 'Falha ao reservar.');
       const paymentResponse = await fetch(`/api/v1/cotas/${reserve.id}/pagamento`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ metodo: method }) });
@@ -118,7 +118,7 @@ export function PurchaseForm({ poolId, available, unitPrice, status, paymentsEna
     {rules?.texto && <div className="sale-rules-text"><strong>Regras de venda</strong><p>{rules.texto}</p></div>}
     {release?.condicional && <ReleaseMeter release={release} />}
     {!paymentsEnabled ? <div className="notice payment-disabled"><strong>Reservas temporariamente indisponíveis</strong><span>As reservas deste bolão estão pausadas no momento. Tente novamente em alguns instantes.</span></div>
-      : enabled && me === null ? <div className="buy-login"><p>Entre na sua conta para participar. Leva um minuto.</p><Link className="button button-primary" href={`/login?next=${encodeURIComponent(`/boloes/${poolId}`)}`}>Entrar</Link><Link className="button button-secondary" href="/cadastro">Criar conta</Link></div>
+      : enabled && me === null ? <div className="buy-login"><p>Faça login para participar. Leva um minuto.</p><Link className="button button-primary" href={`/login?next=${encodeURIComponent(`/boloes/${poolId}`)}`}>Logar</Link><Link className="button button-secondary" href="/cadastro">Criar conta</Link></div>
       : enabled && me === undefined ? <p className="muted" aria-busy="true">Carregando…</p>
       : enabled && review ? <div className="purchase-review" role="group" aria-label="Confirme sua compra">
         <h3>Confirme sua compra</h3>

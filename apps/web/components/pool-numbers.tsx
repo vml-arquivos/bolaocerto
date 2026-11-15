@@ -8,7 +8,10 @@ const pad = (value: number) => String(value).padStart(2, '0');
  * Números do bolão: mostra o primeiro jogo e, quando há mais de um (ou o jogo é grande),
  * abre uma janela com todos os jogos e todas as dezenas.
  */
-export function PoolNumbers({ games, name }: { games: Game[]; name: string }) {
+export function PoolNumbers({ games, name, hits = [] }: { games: Game[]; name: string; hits?: number[] }) {
+  // Depois do sorteio, os números do bolão que saíram no resultado oficial ficam marcados.
+  const hit = new Set(hits);
+  const ballClass = (number: number, extra = '') => `number-ball${extra}${hit.has(number) ? ' is-official-hit' : ''}`;
   const dialog = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
   const first = games[0] ?? { ordem: 1, numeros: [] as number[] };
@@ -37,7 +40,7 @@ export function PoolNumbers({ games, name }: { games: Game[]; name: string }) {
       <span>{many ? `${games.length} jogos` : '1 jogo'} · {first.numeros.length} números {many ? 'cada' : ''}</span>
     </div>
     <div className="result-balls pool-numbers-balls" aria-label={many ? 'Primeiro jogo' : 'Números apostados'}>
-      {(truncated ? first.numeros.slice(0, PREVIEW) : first.numeros).map((number, index) => <span className="number-ball" key={`${number}-${index}`}>{pad(number)}</span>)}
+      {(truncated ? first.numeros.slice(0, PREVIEW) : first.numeros).map((number, index) => <span className={ballClass(number)} key={`${number}-${index}`}>{pad(number)}</span>)}
       {truncated && <span className="number-more">+{first.numeros.length - PREVIEW}</span>}
     </div>
     {(many || truncated) && <button type="button" className="button button-secondary pool-numbers-open" onClick={() => setOpen(true)}>Ver todos os números{many ? ` (${games.length} jogos)` : ''}</button>}
@@ -47,7 +50,7 @@ export function PoolNumbers({ games, name }: { games: Game[]; name: string }) {
           <button type="button" className="numbers-dialog-close" onClick={() => setOpen(false)} aria-label="Fechar">×</button></header>
         <div className="numbers-dialog-body">{games.map((game) => <article key={game.ordem}>
           <strong>Jogo {pad(game.ordem)}</strong>
-          <div className="result-balls">{game.numeros.map((number, index) => <span className="number-ball number-ball-sm" key={`${number}-${index}`}>{pad(number)}</span>)}</div>
+          <div className="result-balls">{game.numeros.map((number, index) => <span className={ballClass(number, ' number-ball-sm')} key={`${number}-${index}`}>{pad(number)}</span>)}</div>
         </article>)}</div>
       </div>
     </dialog>

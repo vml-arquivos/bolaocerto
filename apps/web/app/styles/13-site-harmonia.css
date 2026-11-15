@@ -210,3 +210,51 @@
 .affiliate-sell-links { margin-bottom: 14px; }
 .affiliate-sell-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
 .affiliate-shortcuts .affiliate-action-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+
+/* ============================================================
+   Resultado oficial da CAIXA em destaque (vermelho)
+   ============================================================ */
+:root { --result-red: #c81e1e; --result-red-strong: #9b1c1c; --result-red-soft: rgba(200, 30, 30, .08); --result-red-border: rgba(200, 30, 30, .35); --result-red-text: #9b1c1c; }
+:root[data-theme="dark"] { --result-red: #e02424; --result-red-strong: #b91c1c; --result-red-soft: rgba(239, 68, 68, .12); --result-red-border: rgba(248, 113, 113, .45); --result-red-text: #fca5a5; }
+.official-result { display: grid; gap: 10px; margin: 0 0 18px; padding: 16px 18px; border: 1px solid var(--result-red-border); border-left: 5px solid var(--result-red); border-radius: 16px; background: var(--result-red-soft); min-width: 0; }
+.official-result.is-compact { margin: 6px 0 10px; padding: 12px 14px; gap: 8px; }
+.official-result-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.official-result-head strong { color: var(--result-red-text); font-size: 1rem; font-weight: 800; letter-spacing: .01em; text-transform: uppercase; }
+.official-result.is-compact .official-result-head strong { font-size: .86rem; }
+.official-result-head small, .official-result-sub { color: var(--text-secondary); font-size: .8rem; font-weight: 600; }
+.official-result-balls { display: flex; flex-wrap: wrap; gap: 8px; }
+.official-ball { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #ff6b6b 0%, var(--result-red) 55%, var(--result-red-strong) 100%); color: #fff; font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; box-shadow: 0 6px 14px rgba(200, 30, 30, .35), inset 0 -2px 0 rgba(0, 0, 0, .18); }
+.official-result.is-compact .official-ball { width: 34px; height: 34px; font-size: .86rem; }
+@media (max-width: 480px) { .official-ball { width: 36px; height: 36px; font-size: .9rem; } .official-result-balls { gap: 6px; } }
+/* Números do bolão que saíram no sorteio */
+.number-ball.is-official-hit { background: radial-gradient(circle at 32% 28%, #ff6b6b 0%, var(--result-red) 55%, var(--result-red-strong) 100%) !important; color: #fff !important; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--result-red) !important; }
+.official-hit { color: var(--result-red-text); font-weight: 800; }
+/* Últimos resultados na página principal e em Resultados: dezenas em vermelho */
+.rs-ball { background: radial-gradient(circle at 32% 28%, #ff6b6b 0%, var(--result-red) 55%, var(--result-red-strong) 100%) !important; color: #fff !important; font-weight: 800; box-shadow: 0 4px 10px rgba(200, 30, 30, .3); }
+.rs-second .rs-ball { opacity: 1; }
+.drawn-game .number-ball.is-hit { background: var(--result-red); color: #fff; border-color: var(--result-red); }
+
+/* ============================================================
+   Contraste: botões bem definidos, sem "azul em cima de azul"
+   ============================================================ */
+:root[data-theme="dark"] .button-primary { background: linear-gradient(135deg, #1d4ed8, #2563eb); border: 1px solid rgba(191, 211, 255, .45); color: #fff; box-shadow: 0 8px 20px rgba(0, 0, 0, .35); }
+:root[data-theme="dark"] .button-primary:hover { background: linear-gradient(135deg, #2563eb, #3b6ff0); border-color: rgba(214, 226, 255, .7); }
+:root[data-theme="dark"] .button-secondary { background: #1b2a5c; border: 1px solid rgba(191, 211, 255, .38); color: #fff; }
+:root[data-theme="dark"] .button-secondary:hover { background: #24356f; border-color: rgba(214, 226, 255, .6); }
+:root[data-theme="dark"] .button-ghost { border-color: rgba(191, 211, 255, .32); }
+/* Nos cartões de bolão (fundo azul) o botão vira claro, para destacar */
+:root[data-theme="dark"] .pool-card .pool-bottom .button-primary { background: #ffffff; color: #0b1a4a; border-color: #ffffff; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); }
+:root[data-theme="dark"] .pool-card .pool-bottom .button-primary:hover { background: #e8eeff; }
+:root[data-theme="dark"] .pool-card .pool-bottom .button-primary span { color: inherit; }
+/* Valor da cota em destaque nos cartões */
+.pool-bottom .pool-price small { color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; }
+.pool-bottom .pool-price strong { font-size: 1.5rem; font-weight: 800; color: var(--text-primary); line-height: 1.15; }
+
+/* Logar / Criar conta: simples e fácil de enxergar */
+.site-header .header-actions .header-login { border: 1.5px solid var(--border-strong); background: transparent; color: var(--text-primary); font-weight: 700; }
+.site-header .header-actions .header-login:hover { border-color: var(--primary); color: var(--text-primary); }
+.site-header .header-actions .header-signup { font-weight: 700; }
+
+/* Catálogo: mais bolões sob demanda */
+.catalog-more { display: flex; justify-content: center; margin-top: 22px; }
+.catalog-more .button small { opacity: .8; font-weight: 500; margin-left: 4px; }

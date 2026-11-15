@@ -7,7 +7,7 @@ const HINT = 'bl-session-hint';
 /** Chamado após o login para o cabeçalho passar a mostrar "Minha conta". */
 export function rememberLogin() { try { localStorage.setItem(HINT, '1'); localStorage.setItem('bl-last-activity', String(Date.now())); localStorage.setItem('bl-last-refresh', String(Date.now())); } catch { /* navegação privada */ } }
 
-/** Entrar / Criar conta para visitantes; "Minha conta" (ou "Painel") para quem já entrou. */
+/** Logar / Criar conta para visitantes; "Minha conta" (ou "Painel") para quem já entrou. */
 export function HeaderAuth() {
   const [role, setRole] = useState<string | null>(null);
   useEffect(() => {
@@ -27,5 +27,5 @@ export function HeaderAuth() {
     window.location.href = '/';
   }
   if (role) return <><Link className="button button-primary" href={role === 'cotista' ? '/minha-conta' : homeForRole(role)}>{isStaff(role) ? 'Painel' : role === 'afiliado' ? 'Minha área' : 'Minha conta'}</Link><button type="button" className="button button-ghost header-logout" onClick={() => void logout()}>Sair</button></>;
-  return <><Link className="button button-ghost header-login" href="/login">Entrar</Link><Link className="button button-primary header-signup" href="/cadastro">Criar conta</Link></>;
+  return <><Link className="button button-ghost header-login" href="/login">Logar</Link><Link className="button button-primary header-signup" href="/cadastro">Criar conta</Link></>;
 }

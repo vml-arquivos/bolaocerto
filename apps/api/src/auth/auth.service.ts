@@ -382,7 +382,7 @@ export class AuthService {
       const user = await this.prisma.usuario.findUnique({ where: { id: payload.id }, select: { id: true, email: true, papel: true, tokenVersion: true, desativadoEm: true } });
       if (!user || user.desativadoEm) throw new UnauthorizedException('Usuário indisponível.');
       // Sessão revogada (troca de senha, "sair de todos", mudança de papel): o refresh antigo não renova mais.
-      if ((payload.tv ?? 0) !== user.tokenVersion) throw new UnauthorizedException('Sessão encerrada. Entre novamente.');
+      if ((payload.tv ?? 0) !== user.tokenVersion) throw new UnauthorizedException('Sessão encerrada. Faça login novamente.');
       return this.issueTokens(user);
     } catch {
       throw new UnauthorizedException('Refresh token inválido ou expirado.');
