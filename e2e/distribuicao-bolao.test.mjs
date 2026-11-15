@@ -231,6 +231,12 @@ test('nas telas: painel da equipe envia, página do link e painel do afiliado', 
     await affPage.getByText(new RegExp(`#${number}`)).first().waitFor({ timeout: 15000 });
     assert.ok(await affPage.getByRole('button', { name: /Copiar link de venda/ }).count(), 'tem o link de venda');
     assert.equal(await affPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'sem rolagem lateral no celular');
+    // Início do painel: só os links dos bolões ativos; nada de convite de cadastro.
+    await affPage.goto(`${BASE}/afiliado`, { waitUntil: 'load', timeout: 60000 });
+    const sell = affPage.locator('#links-de-venda');
+    await sell.getByText(new RegExp(`#${number}`)).first().waitFor({ timeout: 30000 });
+    assert.ok(await sell.getByRole('button', { name: 'Copiar link' }).count(), 'link do bolão para copiar');
+    for (const gone of ['Gerar convite', 'Convidar para o grupo', 'Convites recentes', 'Gerar convite do grupo']) assert.equal(await affPage.getByText(gone, { exact: true }).count(), 0, `sem "${gone}"`);
 
     // 3b) Bolão enviado só para ele: aparece no painel para aceitar, sem precisar do link.
     const contest2 = await call('POST', '/admin/concursos', { modalidade: 'megasena', numeroConcurso: number + 1, dataSorteio: future(19) }); ok(contest2, 'concurso 2');

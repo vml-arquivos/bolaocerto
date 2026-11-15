@@ -54,7 +54,7 @@ export function AffiliateMore({ pending, status }: { pending: string; status?: s
     <div className="affiliate-card-heading"><div><h2>Seu aplicativo</h2><p>Cadastro: <span className={`affiliate-status ${status}`}>{String(status ?? '—').replaceAll('_', ' ')}</span></p></div></div>
     <ProfilePanel pixLabel="Chave Pix para receber comissões" />
     <div className="aff-more-links">
-      <Link href="/afiliado?aba=grupos"><strong>Grupos</strong><small>Pessoas, convites e páginas dos seus grupos.</small></Link>
+      <Link href="/afiliado?aba=grupos"><strong>Grupos</strong><small>Pessoas e páginas dos seus grupos.</small></Link>
       <Link href="/afiliado?aba=pagina"><strong>Minha página</strong><small>Links do WhatsApp e Instagram e depoimentos dos clientes.</small></Link>
       <Link href="/afiliado?aba=comissoes"><strong>Comissões</strong><small>Pendente: {pending}. Base, percentual e repasses.</small></Link>
       <Link href="/aplicativo"><strong>Comprar cotas</strong><small>Abre o app do cliente, com a mesma conta.</small></Link>

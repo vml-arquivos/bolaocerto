@@ -205,3 +205,8 @@
 .star-picker button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .testimonial-affiliate { display: grid; gap: 14px; }
 @media (max-width: 640px) { .testimonial-form .button { width: 100%; justify-content: center; } }
+
+/* Painel do afiliado: links dos bolões ativos (é o que ele manda para vender) */
+.affiliate-sell-links { margin-bottom: 14px; }
+.affiliate-sell-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.affiliate-shortcuts .affiliate-action-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }

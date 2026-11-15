@@ -444,9 +444,9 @@ export class AdminService {
   }
 
   async createInvite(dto: CreateInviteDto, actor: AuthUser) {
-    const actorAffiliate = actor.papel === 'afiliado' ? await this.requireApprovedAffiliate(actor) : null;
-    // O afiliado é um vendedor: ele traz clientes, não monta rede de outros afiliados. Só o admin convida afiliados.
-    if (actorAffiliate && dto.tipo === 'afiliado') throw new ForbiddenException('Afiliado não convida outros afiliados. Convide clientes para o seu grupo.');
+    // O afiliado só vende: manda o link dos bolões ativos no painel dele. Não gera convite de cadastro (nem de cliente,
+    // nem de afiliado). Convites são só da equipe do BL.
+    if (actor.papel === 'afiliado') throw new ForbiddenException('Afiliado não gera convites. Mande o link dos bolões do seu painel: quem compra por ele fica ligado a você.');
     const staffInvite = dto.tipo === 'operacao' || dto.tipo === 'admin';
     if (staffInvite) {
       // Link de cadastro da equipe: só administrador gera, e só para papéis abaixo do próprio (administrador, só o superadmin).
@@ -459,8 +459,7 @@ export class AdminService {
     if (dto.tipo === 'afiliado' && (dto.comissaoPct === undefined || dto.comissaoPct === null || Number.isNaN(Number(dto.comissaoPct)))) throw new ConflictException('Defina a comissão (%) do afiliado antes de gerar o convite.');
     const requestedOrigin = dto.afiliadoOrigemId ? await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoOrigemId, statusAprovacao: 'aprovado' } }) : null;
     if (dto.afiliadoOrigemId && !requestedOrigin) throw new NotFoundException('Afiliado de origem não encontrado ou não aprovado.');
-    if (actorAffiliate && requestedOrigin && requestedOrigin.id !== actorAffiliate.id) throw new ForbiddenException('Um afiliado só pode gerar convites na própria rede.');
-    const origin = requestedOrigin ?? actorAffiliate;
+    const origin = requestedOrigin;
     if (dto.grupoId) {
       if (dto.tipo === 'afiliado') throw new ConflictException('Convite de grupo é só para clientes.');
       const group = await this.prisma.grupo.findUnique({ where: { id: dto.grupoId }, select: { id: true, afiliadoId: true } });
@@ -489,7 +488,7 @@ export class AdminService {
       }).catch(() => false);
     } else if (invite.emailDestino && this.mail?.isConfigured()) {
       const link = `${this.mail.publicUrl()}/r/${invite.codigo}`;
-      const who = actor.papel === 'afiliado' ? 'Um vendedor parceiro do BL' : 'A equipe do BL';
+      const who = 'A equipe do BL';
       const commissionLine = invite.tipo === 'afiliado' && invite.comissaoPct ? ` Sua comissão: ${Number(invite.comissaoPct)}% sobre a taxa de administração das vendas, conforme o contrato que você lê e aceita no cadastro.` : '';
       emailEnviado = await this.mail.send({
         to: invite.emailDestino,

@@ -55,10 +55,11 @@ test('afiliado: grupo com WhatsApp, cliente entra pelo link dele e vê grupo, co
     assert.equal((await call('PUT', `/grupos/${group.id}/whatsapp`, { link: 'https://site.com/x' }, jar)).status, 400);
     ok(await call('PUT', `/grupos/${group.id}/whatsapp`, { link: 'https://chat.whatsapp.com/GrupoDoAfiliado' }, jar), 'afiliado salva o WhatsApp do grupo');
 
-    // O afiliado não convida afiliados: só clientes.
-    const affInvite = await call('POST', '/afiliados/me/convites', { tipo: 'afiliado' }, jar);
-    assert.ok(affInvite.status >= 400, `afiliado não cria convite de afiliado (HTTP ${affInvite.status})`);
-    ok(await call('POST', '/afiliados/me/convites', { tipo: 'usuario' }, jar), 'convite de cliente continua funcionando');
+    // O afiliado não gera convite nenhum (nem de afiliado, nem de cliente): ele só manda o link dos bolões.
+    for (const tipo of ['afiliado', 'usuario']) {
+      const affInvite = await call('POST', '/afiliados/me/convites', { tipo }, jar);
+      assert.equal(affInvite.status, 403, `afiliado não cria convite de ${tipo} (HTTP ${affInvite.status})`);
+    }
 
     // Cliente se cadastra pelo link do afiliado: entra no grupo dele.
     const client = { cookie: '' };

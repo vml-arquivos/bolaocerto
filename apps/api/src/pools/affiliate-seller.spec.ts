@@ -134,6 +134,9 @@ describe('afiliado vendedor: convites e grupo', () => {
     };
     const service = new AdminService(prisma, { record: jest.fn() } as any);
     await expect(service.createInvite({ tipo: 'afiliado' } as any, affiliateUser)).rejects.toBeInstanceOf(ForbiddenException);
+    // Nem convite de cliente: o afiliado só manda o link dos bolões.
+    await expect(service.createInvite({ tipo: 'usuario' } as any, affiliateUser)).rejects.toThrow(/não gera convites/);
+    expect(prisma.convite.create).not.toHaveBeenCalled();
     await expect(service.createInvite({ tipo: 'afiliado', comissaoPct: 12 } as any, admin)).resolves.toBeTruthy();
     expect(Number(prisma.convite.create.mock.calls[0][0].data.comissaoPct)).toBe(12);
   });
@@ -149,19 +152,17 @@ describe('afiliado vendedor: convites e grupo', () => {
     expect(prisma.convite.create).not.toHaveBeenCalled();
   });
 
-  it('convite de grupo só vale para grupo do próprio afiliado e só para cliente', async () => {
+  it('afiliado não gera convite nenhum, nem de grupo: só manda o link dos bolões', async () => {
     const prisma: any = {
       afiliado: { findUnique: jest.fn(async () => ({ id: 'aff-1', statusAprovacao: 'aprovado' })) },
-      grupo: { findUnique: jest.fn(async ({ where }: any) => (where.id === 'g-meu' ? { id: 'g-meu', afiliadoId: 'aff-1' } : where.id === 'g-outro' ? { id: 'g-outro', afiliadoId: 'aff-2' } : null)) },
-      convite: { create: jest.fn(async ({ data }: any) => ({ id: 'i1', ...data, status: 'ativo' })) },
+      grupo: { findUnique: jest.fn(async () => ({ id: 'g-meu', afiliadoId: 'aff-1' })) },
+      convite: { create: jest.fn() },
       $transaction: async (cb: any) => cb(prisma),
     };
     const service = new AdminService(prisma, { record: jest.fn() } as any);
-    const invite = await service.createInvite({ tipo: 'usuario', grupoId: 'g-meu' } as any, affiliateUser);
-    expect(invite.grupoId).toBe('g-meu');
-    expect(prisma.convite.create.mock.calls[0][0].data.afiliadoOrigemId).toBe('aff-1');
-    await expect(service.createInvite({ tipo: 'usuario', grupoId: 'g-outro' } as any, affiliateUser)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(service.createInvite({ tipo: 'usuario', grupoId: 'nao-existe' } as any, affiliateUser)).rejects.toThrow(/não encontrado/);
+    await expect(service.createInvite({ tipo: 'usuario', grupoId: 'g-meu' } as any, affiliateUser)).rejects.toThrow(/não gera convites/);
+    await expect(service.createInvite({ tipo: 'usuario', emailDestino: 'maria@exemplo.com' } as any, affiliateUser)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.convite.create).not.toHaveBeenCalled();
   });
 
   it('afiliado só vê os membros do próprio grupo; e-mail vem mascarado', async () => {
@@ -224,14 +225,14 @@ describe('convite por e-mail', () => {
   }
   it('envia o link por e-mail quando há endereço e SMTP', async () => {
     const mail: any = { isConfigured: () => true, publicUrl: () => 'https://bl.exemplo', send: jest.fn(async () => true) };
-    const out = await build(mail).createInvite({ tipo: 'usuario', emailDestino: 'Maria@Exemplo.com' } as any, affiliateUser);
+    const out = await build(mail).createInvite({ tipo: 'usuario', emailDestino: 'Maria@Exemplo.com' } as any, admin);
     expect(out.emailEnviado).toBe(true);
     expect(mail.send.mock.calls[0][0].to).toBe('maria@exemplo.com');
     expect(mail.send.mock.calls[0][0].text).toContain('https://bl.exemplo/r/');
   });
   it('sem SMTP o convite é criado e o link continua disponível', async () => {
     const mail: any = { isConfigured: () => false, publicUrl: () => 'x', send: jest.fn() };
-    const out = await build(mail).createInvite({ tipo: 'usuario', emailDestino: 'maria@exemplo.com' } as any, affiliateUser);
+    const out = await build(mail).createInvite({ tipo: 'usuario', emailDestino: 'maria@exemplo.com' } as any, admin);
     expect(out.emailEnviado).toBe(false);
     expect(out.caminho).toMatch(/^\/r\//);
     expect(mail.send).not.toHaveBeenCalled();
