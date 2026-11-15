@@ -30,6 +30,7 @@ const groups = [
     items: [
       ['crm', 'Clientes', 'CR'],
       ['afiliados', 'Afiliados', 'AF'],
+      ['ranking', 'Ranking de vendas', 'RK'],
       ['grupos', 'Grupos', 'GR'],
       ['depoimentos', 'Depoimentos', 'DP'],
     ],

@@ -35,7 +35,7 @@ export const ACCESS_MODULES = [
 
 /** Telas (`?view=`) que pertencem a uma função diferente do próprio nome. */
 const VIEW_MODULE: Record<string, string> = {
-  jogos: 'boloes', controle: 'boloes', convites: 'afiliados', recebimentos: 'financeiro', pagamentos: 'financeiro', repasses: 'comissoes',
+  jogos: 'boloes', controle: 'boloes', convites: 'afiliados', ranking: 'afiliados', recebimentos: 'financeiro', pagamentos: 'financeiro', repasses: 'comissoes',
   comprovantes: 'operacao', 'integ-nfse': 'conexoes', 'integ-pagamentos': 'conexoes', 'integ-caixa': 'conexoes',
 };
 const KEYS = new Set<string>(ACCESS_MODULES.map((item) => item.key));

@@ -253,6 +253,16 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
   useEffect(() => { setGenSize(String(limits.min)); setPlannedSize(String(limits.min)); setGenerated(null); setGenError(''); }, [modality]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const groupCapacity: number | null = role === 'affiliate' && selectedGroup ? Number(selectedGroup.capacidade ?? 0) : null;
+  // Nível do afiliado (Bronze, Prata, Ouro, Diamante) ou limite manual autorizado: máximo de cotas e valor máximo da cota.
+  const [levelLimits, setLevelLimits] = useState<{ nomeNivel: string; maxCotas: number; maxValorCota: number; origem: 'nivel' | 'manual'; proximoNivel?: { nomeNivel: string; requisitos: string | null } | null } | null>(null);
+  useEffect(() => {
+    if (role !== 'affiliate') return;
+    let off = false;
+    authFetch('/api/v1/afiliados/me/limites').then((response) => (response.ok ? response.json() : null)).then((data) => { if (!off && data?.maxCotas) setLevelLimits(data); }).catch(() => undefined);
+    return () => { off = true; };
+  }, [role]);
+  const maxShares = levelLimits ? (groupCapacity !== null ? Math.min(groupCapacity, levelLimits.maxCotas) : levelLimits.maxCotas) : groupCapacity;
+  const levelText = levelLimits ? `${levelLimits.origem === 'manual' ? 'Limite autorizado pelo administrador' : `Nível ${levelLimits.nomeNivel}`}: até ${levelLimits.maxCotas} cotas por bolão e cota de até ${levelLimits.maxValorCota.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.${levelLimits.origem === 'nivel' && levelLimits.proximoNivel?.requisitos ? ` Para chegar ao ${levelLimits.proximoNivel.nomeNivel}: ${levelLimits.proximoNivel.requisitos}` : ''}` : null;
   const sizeNumber = Number(genSize || limits.min);
   const gameCountNumber = Math.min(Math.max(Math.trunc(Number(genCount) || 1), 1), 100);
   const unitCents = priceTable[`${modality}:${sizeNumber}`];
@@ -474,6 +484,11 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
       setMessage('Informe um total finito de cotas válido.');
       return;
     }
+    if (levelLimits && !editing) {
+      const quota = modeUi && plan?.ok ? plan.quotaCents / 100 : Number(valorCota);
+      if (Number(totalCotas) > levelLimits.maxCotas) { setMessage(`${levelText} Diminua a quantidade de cotas.`); return; }
+      if (quota > levelLimits.maxValorCota) { setMessage(`${levelText} Diminua o valor da cota.`); return; }
+    }
 
     if (conditional && !(Number(trigger) > 0)) {
       setMessage('Informe o valor de prêmio que libera as cotas (ex.: 100000000 para R$ 100 milhões).');
@@ -620,7 +635,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
         <label className={quotaMode === 'digitar' ? 'is-on' : ''}><input type="radio" name="quota-mode" checked={quotaMode === 'digitar'} onChange={() => { setQuotaMode('digitar'); if (!allowedFeeModes('digitar', role).includes(feeMode)) setFeeMode(allowedFeeModes('digitar', role)[0]!); }} /><span><strong>Eu defino o valor da cota</strong></span></label>
       </div>
       <div className="price-free-fields">
-        <label className="admin-field"><span>Quantidade de cotas</span><input type="number" min="1" step="1" max={groupCapacity ?? undefined} inputMode="numeric" value={totalCotas} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convide alguém antes de criar o bolão.'}</small>}</label>
+        <label className="admin-field"><span>Quantidade de cotas</span><input type="number" min="1" step="1" max={maxShares ?? undefined} inputMode="numeric" value={totalCotas} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convide alguém antes de criar o bolão.'}</small>}{levelText && <small className="level-limit-note">{levelText}</small>}</label>
         <label className="admin-field"><span>Valor da cota (R$){quotaMode !== 'digitar' ? ' · calculado' : ''}</span>{quotaMode === 'digitar'
           ? <input type="text" inputMode="decimal" value={quotaValue} onChange={(event) => setQuotaValue(event.target.value)} placeholder="Ex.: 20,00" />
           : <input type="text" readOnly value={plan?.ok ? (plan.quotaCents / 100).toFixed(2).replace('.', ',') : ''} placeholder="—" />}
@@ -647,7 +662,7 @@ export function PoolWizard({ contests, groupId, groups = [], role = 'admin', edi
     </fieldset> : <div className="admin-form-grid admin-form-grid-four">
       <label className="admin-field"><span>Valor da cota (R$)</span><input readOnly={automatic} type="number" min="0.01" step="0.01" value={valorCota} onChange={(event) => setValorCota(event.target.value)} /></label>
       <label className="admin-field"><span>Taxa administrativa (%)</span><input type="number" min="0" max="35" step="0.01" value={taxa} onChange={(event) => setTaxa(event.target.value)} /><small className={Number(taxa) > 35 ? 'quota-ceiling is-over' : 'quota-ceiling'}>Máximo de {QUOTA_FEE_CAP}%.{Number(custo) > 0 && Number(totalCotas) > 0 ? ` Teto da cota: ${money(Math.ceil(Number(custo) * 100 * 1.35 / Number(totalCotas)) / 100)}.` : ''}</small></label>
-      <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" max={groupCapacity ?? undefined} value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: o bolão pode ter no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convite alguém para o grupo antes de criar o bolão.'}</small>}</label>
+      <label className={`admin-field ${unlimited ? 'is-disabled' : ''}`}><span>Total de cotas</span><input type="number" min="1" max={maxShares ?? undefined} value={totalCotas} disabled={unlimited} onChange={(event) => setTotalCotas(event.target.value)} />{groupCapacity !== null && <small>{groupCapacity > 0 ? `Seu grupo tem ${groupCapacity} ${groupCapacity === 1 ? 'pessoa' : 'pessoas'}: o bolão pode ter no máximo ${groupCapacity} cotas.` : 'Seu grupo ainda não tem pessoas. Convite alguém para o grupo antes de criar o bolão.'}</small>}{levelText && <small className="level-limit-note">{levelText}</small>}</label>
       <label className="admin-field"><span>Custo total dos jogos (R$)</span><input readOnly={automatic} type="number" min="0" step="0.01" value={custo} onChange={(event) => setCusto(event.target.value)} /></label>
     </div>}
     {editing && <label className="admin-toggle-row"><input type="checkbox" checked={unlimited} onChange={(event) => setUnlimited(event.target.checked)} /><span><strong>Cotas ilimitadas</strong></span></label>}
