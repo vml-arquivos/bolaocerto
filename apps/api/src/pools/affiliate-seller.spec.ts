@@ -14,7 +14,7 @@ afterAll(() => { process.env = savedEnv; });
 const affiliateUser = { id: 'u-aff', papel: 'afiliado' } as any;
 const admin = { id: 'admin-1', papel: 'admin' } as any;
 
-function poolsFor(members: number, extra = 0) {
+function poolsFor(members: number, extra = 0, level: Record<string, unknown> = { nivel: 'diamante', manual: null }) {
   const created: any[] = [];
   const tx: any = {
     bolao: { create: jest.fn(async ({ data }: any) => { created.push(data); return { id: 'pool-1', ...data }; }), findUnique: jest.fn() },
@@ -27,6 +27,8 @@ function poolsFor(members: number, extra = 0) {
     concurso: { findUnique: jest.fn(async () => ({ id: 'c1', cutoffAt: new Date(Date.now() + 86_400_000), modalidade: 'megasena', config: { taxaAdministracaoTetoPct: 35, minCotasBolao: 2, maxCotasBolao: 500 } })) },
     grupo: { findFirst: jest.fn(async () => ({ id: 'g1', afiliadoId: 'aff-1' })), findUnique: jest.fn(async () => ({ capacidadeExtra: extra })) },
     grupoMembro: { count: jest.fn(async () => members) },
+    // Afiliado Diamante (até 100 cotas): aqui o teste é o limite do tamanho do grupo.
+    configuracaoSistema: { findUnique: jest.fn(async ({ where }: any) => (where.chave === 'afiliado.nivel.aff-1' ? { valor: JSON.stringify(level) } : null)) },
     $transaction: async (cb: any) => cb(tx),
   };
   const service = new PoolsService(prisma, { record: jest.fn() } as any);
@@ -236,5 +238,36 @@ describe('convite por e-mail', () => {
     expect(out.emailEnviado).toBe(false);
     expect(out.caminho).toMatch(/^\/r\//);
     expect(mail.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('nível do afiliado: máximo de cotas e valor máximo da cota', () => {
+  const priced = (totalCotas: number, valorCota: number) => ({ ...dto(totalCotas), valorCota });
+  it('Bronze: até 25 cotas e cota de até R$ 80', async () => {
+    const { service } = poolsFor(200, 0, { nivel: 'bronze' });
+    await expect(service.create(priced(25, 80), affiliateUser)).resolves.toBeTruthy();
+    await expect(service.create(priced(26, 10), affiliateUser)).rejects.toThrow(/Bronze.*no máximo 25 cotas/);
+    await expect(service.create(priced(10, 80.01), affiliateUser)).rejects.toThrow(/Bronze.*R\$ 80,00/);
+  });
+  it('Prata 35 / R$ 100, Ouro 50 / R$ 150, Diamante 100 / R$ 200', async () => {
+    for (const [nivel, cotas, valor] of [['prata', 35, 100], ['ouro', 50, 150], ['diamante', 100, 200]] as const) {
+      const { service } = poolsFor(200, 0, { nivel });
+      await expect(service.create(priced(cotas, valor), affiliateUser)).resolves.toBeTruthy();
+      await expect(service.create(priced(cotas + 1, 10), affiliateUser)).rejects.toThrow(/no máximo/);
+      await expect(service.create(priced(10, valor + 1), affiliateUser)).rejects.toThrow(/valor da cota/);
+    }
+  });
+  it('afiliado sem nível definido fica no Bronze', async () => {
+    const { service } = poolsFor(200, 0, {});
+    await expect(service.create(priced(26, 10), affiliateUser)).rejects.toThrow(/Bronze/);
+  });
+  it('limite manual autorizado pelo administrador substitui o do nível', async () => {
+    const { service } = poolsFor(200, 0, { nivel: 'bronze', manual: { maxCotas: 60, maxValorCota: 120 } });
+    await expect(service.create(priced(60, 120), affiliateUser)).resolves.toBeTruthy();
+    await expect(service.create(priced(61, 10), affiliateUser)).rejects.toThrow(/autorizado pelo administrador.*60 cotas/);
+  });
+  it('o administrador não tem o limite de nível', async () => {
+    const { service } = poolsFor(200, 0, { nivel: 'bronze' });
+    await expect(service.create(priced(150, 190), admin)).resolves.toBeTruthy();
   });
 });

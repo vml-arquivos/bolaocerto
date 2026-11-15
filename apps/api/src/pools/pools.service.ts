@@ -1,3 +1,4 @@
+import { assertAffiliatePoolLimits } from '../affiliate-rules/affiliate-rules';
 import { hasSaleProof } from '../attachments/proof';
 import { StorageService } from '../attachments/storage.service';
 import { assessPoolDeletion } from './pool-deletion';
@@ -201,6 +202,8 @@ export class PoolsService {
     const games = pendingNumbers ? [] : quote?.jogos ?? freeGames ?? this.normalizeGames(dto.jogos, dto.numerosApostados);
     if (dto.vendaAntecipada && user.papel !== 'admin') throw new ForbiddenException('Somente o administrador pode abrir pré-venda.');
     const rules = parseSalesRules(dto, { cutoffAt: contest.cutoffAt, totalCotas: dto.cotasIlimitadas ? null : dto.totalCotas ?? null });
+    // Nível do afiliado (Bronze, Prata, Ouro, Diamante) ou limite manual autorizado: máximo de cotas e valor máximo da cota.
+    if (affiliate) await assertAffiliatePoolLimits(this.prisma, affiliate.id, { totalCotas: dto.cotasIlimitadas ? null : dto.totalCotas ?? null, valorCota: freePricing ? freePricing.quotaCents / 100 : quote ? quote.quotaCents / 100 : dto.valorCota });
     const pool = await this.prisma.$transaction(async (tx) => {
       const created = await tx.bolao.create({
         data: {
@@ -250,6 +253,10 @@ export class PoolsService {
     if (!nextUnlimited && (nextTotal === null || nextTotal === undefined || nextTotal < pool.concurso.config.minCotasBolao || nextTotal > pool.concurso.config.maxCotasBolao)) throw new ConflictException('Quantidade de cotas fora dos limites da modalidade.');
     if (!nextUnlimited && nextTotal !== null && nextTotal !== undefined && nextTotal < pool.cotasVendidas) throw new ConflictException('Total de cotas não pode ficar abaixo das cotas já vendidas.');
     if (user.papel === 'afiliado' && dto.totalCotas !== undefined && nextTotal) await this.assertWithinGroupCapacity(pool.grupoId, nextTotal, pool.concurso.config.minCotasBolao);
+    if (user.papel === 'afiliado' && (dto.totalCotas !== undefined || dto.valorCota !== undefined)) {
+      const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true } });
+      if (affiliate) await assertAffiliatePoolLimits(this.prisma, affiliate.id, { totalCotas: dto.totalCotas !== undefined ? nextTotal : null, valorCota: dto.valorCota ?? null });
+    }
 
     if (dto.vendaAntecipada !== undefined && dto.vendaAntecipada !== pool.vendaAntecipada) {
       if (user.papel !== 'admin') throw new ForbiddenException('Somente o administrador pode ligar ou desligar a pré-venda.');
@@ -396,6 +403,10 @@ export class PoolsService {
     await this.assertCanManagePool(pool, user);
     if (pool.cotasIlimitadas) throw new ConflictException('Este bolão legado possui cotas ilimitadas. Crie um novo lote com quantidade finita.');
     if (pool.concurso.cutoffAt <= new Date() || pool.concurso.status !== 'aberto' || pool.concurso.resultado) throw new ConflictException('O concurso encerrou. Crie um bolão para o próximo concurso.');
+    if (user.papel === 'afiliado') {
+      const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true } });
+      if (affiliate) await assertAffiliatePoolLimits(this.prisma, affiliate.id, { totalCotas: pool.totalCotas, valorCota: Number(pool.valorCota) });
+    }
     const created = await this.prisma.$transaction(async (tx) => {
       const copy = await tx.bolao.create({ data: { comprovanteAntesVenda: pool.comprovanteAntesVenda, vendaAntecipada: pool.vendaAntecipada, vendaInicioEm: pool.vendaInicioEm, vendaFimEm: pool.vendaFimEm, maxCotasPorPessoa: pool.maxCotasPorPessoa, regrasVenda: pool.regrasVenda, concursoId: pool.concursoId, grupoId: pool.grupoId, criadoPor: user.id, tipoOrganizador: pool.tipoOrganizador, numerosApostados: pool.numerosApostados, totalCotas: pool.totalCotas, cotasIlimitadas: pool.cotasIlimitadas, valorCota: pool.valorCota, taxaAdministracaoPct: pool.taxaAdministracaoPct, modeloOperacional: pool.modeloOperacional, lotericaParceiraId: pool.lotericaParceiraId, premioMinimoLiberacao: pool.premioMinimoLiberacao, ...(pool.precificacao ? { precificacao: pool.precificacao } : {}), status: StatusBolao.rascunho } });
       if (pool.jogos.length) await tx.jogoBolao.createMany({ data: pool.jogos.map((game) => ({ bolaoId: copy.id, ordem: game.ordem, numeros: game.numeros, quantidadeDezenas: game.quantidadeDezenas, custo: game.custo, ...(game.selecao ? { selecao: game.selecao as Prisma.InputJsonValue } : {}), status: 'ativo' })) });

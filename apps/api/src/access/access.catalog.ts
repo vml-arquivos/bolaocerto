@@ -64,6 +64,8 @@ const ROUTES: RouteRule[] = [
   R('admin/pedidos-cancelamento', ['cotas', 'boloes', 'crm'], ['cotas']),
   R('admin/crm', ['crm', 'cupons', 'comunicados'], ['crm']),
   R('admin/comunidade', ['crm', 'comunicados', 'vitrine'], ['crm', 'comunicados']),
+  R('admin/afiliados-regras', ['afiliados', 'configuracoes', 'usuarios'], ['configuracoes']),
+  R('admin/afiliados-ranking', ['afiliados', 'relatorios', 'visao-geral', 'comissoes'], ['afiliados']),
   R('admin/afiliados', ['afiliados', 'grupos', 'usuarios', 'boloes', 'comissoes'], ['afiliados']),
   R('admin/convites', ['afiliados', 'usuarios'], ['afiliados', 'usuarios']),
   R('admin/grupos', ['grupos', 'boloes', 'afiliados', 'usuarios', 'cupons', 'comunicados', 'crm'], ['grupos', 'afiliados']),

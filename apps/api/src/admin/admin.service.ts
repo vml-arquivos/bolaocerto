@@ -1,3 +1,4 @@
+import { assertCommissionCeiling, effectiveLimit, LEVEL_NAMES, levelKey, normalizeLevel, readRules } from '../affiliate-rules/affiliate-rules';
 import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { effectiveSaleWindow } from '../pools/sales-rules';
 import { forgetAccess } from '../access/access.service';
@@ -367,7 +368,11 @@ export class AdminService {
     const currentHash = new Map(items.map((affiliate) => [affiliate.usuarioId, legalDocument('afiliado', affiliate.comissaoPadraoPct.toFixed(2)).hash]));
     const acceptances = items.length ? await this.prisma.aceiteLegal.findMany({ where: { tipo: 'afiliado', usuarioId: { in: items.map((affiliate) => affiliate.usuarioId) }, hash: { in: [...currentHash.values()] } }, select: { usuarioId: true, hash: true, aceitoEm: true } }) : [];
     const acceptedAt = (userId: string) => acceptances.find((row) => row.usuarioId === userId && row.hash === currentHash.get(userId))?.aceitoEm ?? null;
-    return { items: items.map((affiliate) => ({ ...affiliate, contratoAceitoEm: acceptedAt(affiliate.usuarioId), comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    // Nível de cada afiliado (Bronze, Prata, Ouro, Diamante) e limite manual autorizado, para a lista do painel.
+    const levelRows = items.length ? await this.prisma.configuracaoSistema?.findMany?.({ where: { chave: { in: items.map((affiliate) => levelKey(affiliate.id)) } } }).catch(() => []) ?? [] : [];
+    const rules = await readRules(this.prisma);
+    const levelOf = (id: string) => { const row = levelRows.find((item) => item.chave === levelKey(id)); let raw: unknown = null; try { raw = row ? JSON.parse(row.valor) : null; } catch { raw = null; } const level = normalizeLevel(raw); const limit = effectiveLimit(rules, level); return { nivel: level.nivel, nomeNivel: LEVEL_NAMES[level.nivel], manual: level.manual, maxCotas: limit.maxCotas, maxValorCota: limit.maxValorCota, origem: limit.origem }; };
+    return { items: items.map((affiliate) => ({ ...affiliate, nivel: levelOf(affiliate.id), contratoAceitoEm: acceptedAt(affiliate.usuarioId), comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async listCommissions(query: AdminListQueryDto = {}) {
@@ -452,6 +457,7 @@ export class AdminService {
     if (dto.parentAfiliadoId && !parent) throw new NotFoundException('Afiliado-pai aprovado não encontrado.');
     const existing = await this.prisma.usuario.findFirst({ where: { OR: [{ cpf }, { email }] }, select: { id: true } });
     if (existing) throw new ConflictException('CPF ou e-mail já cadastrado.');
+    if (papel === 'afiliado') await assertCommissionCeiling(this.prisma, dto.comissaoPadraoPct);
     const passwordHash = await argon2.hash(dto.senha, { type: argon2.argon2id });
     const created = await this.prisma.$transaction(async (tx) => {
       const user = await tx.usuario.create({ data: { nome: dto.nome.trim(), cpf, email, telefone: dto.telefone?.trim() || undefined, dataNascimento, senhaHash: passwordHash, papel } });
@@ -479,6 +485,7 @@ export class AdminService {
       if (dto.afiliadoOrigemId || dto.grupoId || (dto.comissaoPct !== undefined && dto.comissaoPct !== null)) throw new ConflictException('Link da equipe não leva afiliado, grupo nem comissão.');
     }
     if (dto.tipo === 'afiliado' && (dto.comissaoPct === undefined || dto.comissaoPct === null || Number.isNaN(Number(dto.comissaoPct)))) throw new ConflictException('Defina a comissão (%) do afiliado antes de gerar o convite.');
+    if (dto.tipo === 'afiliado') await assertCommissionCeiling(this.prisma, dto.comissaoPct);
     const requestedOrigin = dto.afiliadoOrigemId ? await this.prisma.afiliado.findFirst({ where: { id: dto.afiliadoOrigemId, statusAprovacao: 'aprovado' } }) : null;
     if (dto.afiliadoOrigemId && !requestedOrigin) throw new NotFoundException('Afiliado de origem não encontrado ou não aprovado.');
     const origin = requestedOrigin;
@@ -775,6 +782,7 @@ export class AdminService {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { id }, include: { usuario: true } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
     assertOwnsAffiliate(user, affiliate.aprovadoPor);
+    await assertCommissionCeiling(this.prisma, dto.comissaoPadraoPct);
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.afiliado.update({ where: { id }, data: { statusAprovacao: 'aprovado', comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct), aprovadoPor: user.id, aprovadoEm: new Date() } });
       await tx.usuario.update({ where: { id: affiliate.usuarioId }, data: { papel: 'afiliado' } });
@@ -813,6 +821,7 @@ export class AdminService {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { id } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
     assertOwnsAffiliate(user, affiliate.aprovadoPor);
+    await assertCommissionCeiling(this.prisma, dto.comissaoPadraoPct);
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.afiliado.update({ where: { id }, data: { comissaoPadraoPct: new Prisma.Decimal(dto.comissaoPadraoPct) } });
       await this.audit.record(tx, { entidade: 'afiliado', entidadeId: id, evento: 'afiliado.comissao.alterada', atorId: user.id, payloadAntes: affiliate as unknown as Prisma.InputJsonValue, payloadDepois: result as unknown as Prisma.InputJsonValue });
@@ -999,6 +1008,7 @@ export class AdminService {
   }
 
   async updateSettings(dto: UpdateSettingsDto, user: AuthUser) {
+    await assertCommissionCeiling(this.prisma, dto.comissaoPadraoPct);
     const changes = { prazoReservaMinutos: dto.prazoReservaMinutos, comissaoPadraoPct: dto.comissaoPadraoPct, pagamentosHabilitados: dto.pagamentosHabilitados };
     await this.audit.record(this.prisma, { entidade: 'configuracao', entidadeId: user.id, evento: 'configuracao.atualizada', atorId: user.id, payloadDepois: changes });
     return { ...changes, observacao: 'Variáveis operacionais sensíveis continuam administradas pelo ambiente de produção.' };
