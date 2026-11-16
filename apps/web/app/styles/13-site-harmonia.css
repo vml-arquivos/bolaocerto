@@ -366,3 +366,103 @@
 @media (max-width: 560px) { .pgr-game { grid-template-columns: 1fr auto; } .pgr-nums { grid-column: 1 / -1; grid-row: 2; } .pgr-best { margin-left: 0; } }
 .admin-panel-results .admin-pool-results { align-items: start; }
 .apr-card { align-content: start; }
+
+/* ============================================================
+   Gráficos e indicadores do Resumo (cores dos gráficos por papel)
+   ============================================================ */
+:root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-wait: #eda100; --viz-lost: #e34948; --viz-grid: rgba(15, 23, 42, .08); --viz-axis: rgba(15, 23, 42, .25); }
+:root[data-theme="dark"] { --viz-1: #3987e5; --viz-2: #d95926; --viz-wait: #c98500; --viz-lost: #e66767; --viz-grid: rgba(226, 232, 240, .08); --viz-axis: rgba(226, 232, 240, .25); }
+.admin-panel-insights { margin-bottom: 18px; }
+.dvz { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.dvz-tiles { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.dvz-tile { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); min-width: 0; }
+.dvz-tile span { color: var(--text-muted); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.dvz-tile strong { color: var(--text-primary); font-size: 1.35rem; font-weight: 800; line-height: 1.2; white-space: nowrap; }
+.dvz-tile small { color: var(--text-secondary); font-size: .78rem; }
+.dvz-card { display: grid; align-content: start; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); min-width: 0; }
+.dvz-span-2 { grid-column: span 2; }
+.dvz-card header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
+.dvz-card h3 { margin: 0; color: var(--text-primary); font-size: .95rem; }
+.dvz-card header small { color: var(--text-muted); font-size: .78rem; }
+/* Vendas por dia */
+.dvz-sales { position: relative; }
+.dvz-sales svg { display: block; width: 100%; height: 220px; overflow: visible; }
+.dvz-grid { stroke: var(--viz-grid); stroke-width: 1; }
+.dvz-axis { stroke: var(--viz-axis); stroke-width: 1; }
+.dvz-area { fill: color-mix(in srgb, var(--viz-1) 18%, transparent); }
+.dvz-line { fill: none; stroke: var(--viz-1); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.dvz-tick { fill: var(--text-muted); font-size: 11px; }
+.dvz-cross { stroke: var(--viz-axis); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.dvz-dot { fill: var(--viz-1); stroke: var(--surface); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.dvz-tip { position: absolute; top: 4px; transform: translateX(-50%); display: grid; gap: 1px; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-md, 0 8px 20px rgba(0,0,0,.25)); pointer-events: none; white-space: nowrap; }
+.dvz-tip strong { color: var(--text-muted); font-size: .72rem; }
+.dvz-tip span { color: var(--text-primary); font-weight: 800; }
+.dvz-tip small { color: var(--text-secondary); font-size: .74rem; }
+/* Rosca */
+.dvz-donut { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.dvz-donut svg { width: 132px; height: 132px; flex: 0 0 auto; }
+.dvz-donut-track { fill: none; stroke: var(--viz-grid); stroke-width: 16; }
+.dvz-donut-a { fill: none; stroke: var(--viz-1); stroke-width: 16; stroke-linecap: round; }
+.dvz-donut-b { fill: none; stroke: var(--viz-2); stroke-width: 16; stroke-linecap: round; }
+.dvz-donut-big { fill: var(--text-primary); font-size: 22px; font-weight: 800; }
+.dvz-donut-small { fill: var(--text-muted); font-size: 10px; }
+.dvz-legend { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; flex: 1 1 140px; }
+.dvz-legend li { display: grid; grid-template-columns: 12px 1fr; column-gap: 8px; align-items: center; color: var(--text-secondary); font-size: .85rem; }
+.dvz-legend li b { grid-column: 2; color: var(--text-primary); }
+.dvz-legend i, .dvz-split i { display: block; }
+.dvz-legend i { width: 12px; height: 12px; border-radius: 4px; }
+.sw-a { background: var(--viz-1); } .sw-b { background: var(--viz-2); }
+/* Barras horizontais */
+.dvz-bars { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.dvz-bar-head { display: flex; justify-content: space-between; gap: 10px; color: var(--text-secondary); font-size: .84rem; }
+.dvz-bar-head span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dvz-bar-head b { color: var(--text-primary); white-space: nowrap; }
+.dvz-bar-track { height: 8px; margin-top: 4px; border-radius: 4px; background: var(--viz-grid); overflow: hidden; }
+.dvz-bar-track i { display: block; height: 100%; border-radius: 4px; background: var(--viz-1); }
+.dvz-bars small { color: var(--text-muted); font-size: .74rem; }
+/* Funil */
+.dvz-funnel { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.dvz-funnel li { display: grid; grid-template-columns: 86px 1fr auto; align-items: center; gap: 10px; color: var(--text-secondary); font-size: .84rem; }
+.dvz-funnel li > div { height: 12px; border-radius: 4px; background: var(--viz-grid); overflow: hidden; }
+.dvz-funnel li > div i { display: block; height: 100%; border-radius: 4px; background: var(--viz-1); }
+.dvz-funnel i.is-wait { background: var(--viz-wait); } .dvz-funnel i.is-lost { background: var(--viz-lost); }
+.dvz-funnel b { color: var(--text-primary); white-space: nowrap; }
+.dvz-funnel b small { color: var(--text-muted); font-weight: 600; }
+/* Colunas (hora e dia da semana) */
+.dvz-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: 2px; height: 120px; }
+.dvz-col { display: grid; grid-template-rows: 1fr auto; align-items: end; height: 100%; min-width: 0; }
+.dvz-col i { display: block; width: 100%; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--viz-1) 45%, transparent); }
+.dvz-col.is-top i { background: var(--viz-1); }
+.dvz-col small { height: 16px; color: var(--text-muted); font-size: 10px; text-align: center; white-space: nowrap; }
+.dvz-split { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; color: var(--text-secondary); font-size: .8rem; }
+.dvz-split b { color: var(--text-primary); }
+.dvz-split-bar { display: flex; gap: 2px; height: 10px; border-radius: 4px; background: var(--viz-grid); overflow: hidden; }
+.dvz-split-bar i { height: 100%; }
+@media (max-width: 1200px) { .dvz { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dvz-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .dvz { grid-template-columns: 1fr; } .dvz-span-2 { grid-column: auto; } .dvz-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dvz-sales svg { height: 180px; } }
+
+/* Cartão do bolão sorteado que encolhe e abre */
+.pool-result-card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); min-width: 0; }
+.pool-result-card > summary { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 8px 14px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.pool-result-card > summary::-webkit-details-marker { display: none; }
+.pool-result-card > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 14px; }
+.prc-caret { width: 10px; height: 10px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted); transform: rotate(-45deg); transition: transform .15s ease; }
+.pool-result-card[open] .prc-caret { transform: rotate(45deg); }
+.prc-main { display: grid; gap: 2px; min-width: 0; }
+.prc-main strong { color: var(--text-primary); }
+.prc-main small { color: var(--text-muted); overflow-wrap: anywhere; }
+.prc-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.prc-tag { padding: 2px 9px; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--text-secondary); font-size: .76rem; font-weight: 600; white-space: nowrap; }
+.prc-best { display: grid; justify-items: end; color: var(--text-secondary); font-size: .86rem; white-space: nowrap; }
+.prc-best b { color: var(--text-primary); font-size: 1.15rem; }
+.prc-best.has-hits b { color: var(--hit-x); }
+.prc-best small { color: var(--text-muted); font-size: .72rem; }
+.prc-body { display: grid; gap: 10px; padding: 0 14px 14px; }
+.prc-link { justify-self: start; }
+.admin-panel-results .admin-pool-results { grid-template-columns: 1fr; }
+@media (max-width: 760px) { .pool-result-card > summary { grid-template-columns: 18px minmax(0, 1fr) auto; } .prc-tags { grid-column: 2 / -1; justify-content: flex-start; } }
+
+/* Cartão do bolão: quantos jogos e quantos números cada jogo */
+.pool-games-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--card-accent) 35%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--card-accent) 8%, transparent); color: var(--text-secondary); font-size: .9rem; font-weight: 600; }
+.pool-games-info b { color: var(--text-primary); font-size: 1.05rem; font-weight: 800; }
+.pgi-sep { width: 4px; height: 4px; border-radius: 50%; background: var(--text-muted); }

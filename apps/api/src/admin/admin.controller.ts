@@ -32,6 +32,12 @@ import {
 export class AdminController {
   constructor(private readonly admin: AdminService, private readonly saleTransfer: ShareSaleTransferService) {}
 
+  @Get('admin/dashboard/insights')
+  @Roles('admin')
+  dashboardInsights(@Query() query: DashboardQueryDto) {
+    return this.admin.dashboardInsights(query);
+  }
+
   @Get('admin/dashboard')
   @Roles('admin')
   dashboard(@Query() query: DashboardQueryDto, @CurrentUser() user: AuthUser) {

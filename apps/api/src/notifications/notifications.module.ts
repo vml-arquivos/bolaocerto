@@ -1,3 +1,4 @@
+import { ResultAnnouncer } from './result-announcer';
 import { Global, Module } from '@nestjs/common';
 import { StorageService } from '../attachments/storage.service';
 import { CommunicationsController } from './communications.controller';
@@ -12,7 +13,7 @@ import { PushService } from './push.service';
 @Global()
 @Module({
   controllers: [NotificationsController, PushController, CommunicationsController],
-  providers: [NotificationsService, PoolReleaseWatcher, RemindersWatcher, PushService, CommunicationsService, StorageService],
+  providers: [NotificationsService, PoolReleaseWatcher, RemindersWatcher, ResultAnnouncer, PushService, CommunicationsService, StorageService],
   exports: [NotificationsService, PushService],
 })
 export class NotificationsModule {}

@@ -29,3 +29,25 @@ export function PoolGamesResult({ drawn, second = [], games, maxGames = 6, moreH
     </div>}
   </div>;
 }
+
+/**
+ * Cartão do bolão sorteado que encolhe e abre: fechado mostra o nome do bolão, os dados principais e o melhor jogo;
+ * aberto mostra os números sorteados e cada jogo com X vermelho nos números acertados.
+ */
+export function PoolResultCard({ title, subtitle, details = [], drawn, second = [], games, open = false, maxGames = 10, moreHref }: { title: string; subtitle?: string; details?: string[]; drawn: number[]; second?: number[]; games: Game[]; open?: boolean; maxGames?: number; moreHref?: string }) {
+  if (!drawn.length) return null;
+  const hits = new Set([...drawn, ...second]);
+  const best = games.reduce((max, game) => Math.max(max, game.numeros.filter((n) => hits.has(n)).length), 0);
+  return <details className="pool-result-card" open={open || undefined}>
+    <summary>
+      <span className="prc-caret" aria-hidden="true" />
+      <span className="prc-main"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
+      <span className="prc-tags">{details.map((item) => <span className="prc-tag" key={item}>{item}</span>)}</span>
+      {games.length > 0 && <span className={`prc-best${best > 0 ? ' has-hits' : ''}`}><span><b>{best}</b> {best === 1 ? 'acerto' : 'acertos'}</span><small>melhor jogo{games.length > 1 ? ` de ${games.length}` : ''}</small></span>}
+    </summary>
+    <div className="prc-body">
+      <PoolGamesResult drawn={drawn} second={second} games={games} maxGames={maxGames} moreHref={moreHref} />
+      {moreHref && <a className="admin-text-link prc-link" href={moreHref} target="_blank" rel="noreferrer">Abrir o bolão</a>}
+    </div>
+  </details>;
+}

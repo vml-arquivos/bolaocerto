@@ -1,3 +1,5 @@
+import { MODALITY_NAMES } from '../reports/pdf.util';
+import { buildInsights } from './dashboard-insights';
 import { assertCommissionCeiling, effectiveLimit, LEVEL_NAMES, levelKey, normalizeLevel, readRules } from '../affiliate-rules/affiliate-rules';
 import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { effectiveSaleWindow } from '../pools/sales-rules';
@@ -70,6 +72,39 @@ export class AdminService {
     if (query?.periodo === 'mes') return new Date(now.getFullYear(), now.getMonth(), 1);
     const days = query?.periodo === '7d' ? 7 : 30;
     return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  }
+
+  /** Gráficos e infográficos do Resumo: vendas por dia, modalidade, origem, bolões que mais venderam, funil, horários e clientes. */
+  async dashboardInsights(query: DashboardQueryDto = {}) {
+    const start = this.periodStart(query);
+    const end = query.periodo === 'custom' && query.ate ? new Date(query.ate) : new Date();
+    end.setHours(23, 59, 59, 999);
+    const SOLD_SHARES: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
+    const [payments, created] = await Promise.all([
+      this.prisma.pagamento.findMany({
+        where: { status: StatusPagamento.confirmado, confirmadoEm: { gte: start, lte: end } },
+        select: { valorBruto: true, valorTaxaAdmin: true, valorComissaoAfiliado: true, confirmadoEm: true, cota: { select: { quantidade: true, afiliadoReferenciaId: true, compradorId: true, bolaoId: true, bolao: { select: { grupo: { select: { nome: true } }, concurso: { select: { modalidade: true, numeroConcurso: true } } } } } } },
+      }),
+      this.prisma.cota.groupBy({ by: ['status'], where: { criadoEm: { gte: start, lte: end } }, _count: { _all: true } }),
+    ]);
+    const rows = payments.filter((payment) => payment.cota).map((payment) => ({
+      valorBruto: Number(payment.valorBruto), valorTaxaAdmin: Number(payment.valorTaxaAdmin), valorComissaoAfiliado: Number(payment.valorComissaoAfiliado), confirmadoEm: payment.confirmadoEm,
+      quantidade: payment.cota!.quantidade, afiliado: Boolean(payment.cota!.afiliadoReferenciaId), compradorId: payment.cota!.compradorId, bolaoId: payment.cota!.bolaoId,
+      bolaoNome: `${MODALITY_NAMES[payment.cota!.bolao.concurso.modalidade] ?? payment.cota!.bolao.concurso.modalidade} #${payment.cota!.bolao.concurso.numeroConcurso}${payment.cota!.bolao.grupo?.nome ? ` · ${payment.cota!.bolao.grupo.nome}` : ''}`,
+      modalidade: payment.cota!.bolao.concurso.modalidade,
+    }));
+    const buyerIds = [...new Set(rows.map((row) => row.compradorId))];
+    // Cliente recorrente: já tinha compra confirmada antes do período.
+    const before = buyerIds.length ? await this.prisma.pagamento.findMany({ where: { status: StatusPagamento.confirmado, confirmadoEm: { lt: start }, cota: { compradorId: { in: buyerIds } } }, select: { cota: { select: { compradorId: true } } }, distinct: ['cotaId'] }) : [];
+    const count = (statuses: string[]) => created.filter((row) => statuses.includes(row.status)).reduce((sum, row) => sum + row._count._all, 0);
+    return {
+      periodo: { inicio: start, fim: end },
+      ...buildInsights(rows, {
+        start, end,
+        returningIds: new Set(before.map((row) => row.cota?.compradorId).filter((id): id is string => Boolean(id))),
+        funnel: { iniciadas: created.reduce((sum, row) => sum + row._count._all, 0), pagas: count(SOLD_SHARES), pendentes: count([StatusCota.reservada]), desistencias: count(['cancelada', 'expirada', 'estornada']) },
+      }),
+    };
   }
 
   async dashboard(query: DashboardQueryDto = {}, user?: AuthUser) {
