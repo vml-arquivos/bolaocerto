@@ -4,7 +4,7 @@ import { Stars } from './testimonials';
 import { statusClass } from './admin-views/shared';
 
 type Row = { id: string; nome: string; texto: string; estrelas: number; alvo: string; afiliadoNome: string | null; criadoEm: string; atualizadoEm: string; status: 'pendente' | 'aprovado' | 'oculto'; autor: { nome: string; email: string } | null };
-const LABEL = { pendente: 'Aguardando', aprovado: 'Publicado', oculto: 'Oculto' } as const;
+const LABEL = { pendente: 'Publicado', aprovado: 'Publicado', oculto: 'Oculto' } as const;
 
 async function call(path: string, init?: RequestInit) {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...init });
@@ -13,9 +13,9 @@ async function call(path: string, init?: RequestInit) {
   return data;
 }
 
-/** Tela "Depoimentos": aprovar, ocultar ou excluir o que os clientes escreveram. Só aprovado aparece no site. */
+/** Tela "Depoimentos": tudo que os clientes escrevem aparece na hora no site e no app; aqui a equipe oculta, republica ou exclui. */
 export function TestimonialsAdminView({ notify }: { notify: (type: 'success' | 'error', text: string) => void }) {
-  const [status, setStatus] = useState<'pendente' | 'aprovado' | 'oculto' | ''>('pendente');
+  const [status, setStatus] = useState<'pendente' | 'aprovado' | 'oculto' | ''>('');
   const [data, setData] = useState<{ contagem: Record<string, number>; items: Row[] } | null>(null);
   const [busy, setBusy] = useState('');
   const load = useCallback(async () => { setData(await call(`/api/v1/admin/depoimentos${status ? `?status=${status}` : ''}`)); }, [status]);
@@ -33,7 +33,7 @@ export function TestimonialsAdminView({ notify }: { notify: (type: 'success' | '
   const count = data?.contagem ?? {};
   return <section className="admin-section">
     <div className="admin-page-heading"><div><h1>Depoimentos</h1><p className="admin-muted-note">O que os clientes escreveram sobre o Bolão Livre e sobre os afiliados. Só o que você publicar aparece no site.</p></div></div>
-    <div className="admin-chip-row" role="tablist" aria-label="Situação">{([['pendente', 'Aguardando'], ['aprovado', 'Publicados'], ['oculto', 'Ocultos'], ['', 'Todos']] as const).map(([key, label]) => <button key={key || 'todos'} type="button" role="tab" aria-selected={status === key} className={`admin-chip-button ${status === key ? 'is-current' : ''}`} onClick={() => setStatus(key)}>{label}{key ? <strong>{count[key] ?? 0}</strong> : null}</button>)}</div>
+    <div className="admin-chip-row" role="tablist" aria-label="Situação">{([['', 'Todos'], ['aprovado', 'Publicados'], ['oculto', 'Ocultos']] as const).map(([key, label]) => <button key={key || 'todos'} type="button" role="tab" aria-selected={status === key} className={`admin-chip-button ${status === key ? 'is-current' : ''}`} onClick={() => setStatus(key)}>{label}{key ? <strong>{count[key] ?? 0}</strong> : null}</button>)}</div>
     {!data ? <p>Carregando…</p> : data.items.length === 0 ? <div className="admin-empty"><strong>Nenhum depoimento aqui.</strong></div> :
       <div className="admin-testimonials">{data.items.map((item) => <article key={item.id} className="admin-testimonial">
         <header><Stars value={item.estrelas} size="sm" /><span className={statusClass(item.status === 'oculto' ? 'inativo' : item.status)}>{LABEL[item.status]}</span></header>

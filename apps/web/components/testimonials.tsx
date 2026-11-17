@@ -5,7 +5,7 @@ export type PublicTestimonial = { id: string; nome: string; texto: string; estre
 type MineItem = PublicTestimonial & { status: 'pendente' | 'aprovado' | 'oculto'; afiliadoId: string | null };
 type Target = { tipo: 'sistema' | 'afiliado'; afiliadoId: string | null; nome: string };
 
-const STATUS: Record<string, string> = { pendente: 'Aguardando aprovação da equipe', aprovado: 'Publicado no site', oculto: 'Não publicado' };
+const STATUS: Record<string, string> = { pendente: 'Publicado no site', aprovado: 'Publicado no site', oculto: 'Ocultado pela equipe' };
 
 /** Estrelas só para mostrar (com texto para leitor de tela). */
 export function Stars({ value, size = 'md' }: { value: number; size?: 'sm' | 'md' }) {
@@ -61,18 +61,18 @@ export function TestimonialForm() {
     try {
       await call('/api/v1/depoimentos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: nome.trim(), texto: texto.trim(), estrelas, afiliadoId: target === 'sistema' ? null : target }) });
       await load();
-      setMessage({ ok: true, text: 'Obrigado! Seu depoimento foi enviado e aparece no site depois da aprovação da equipe.' });
+      setMessage({ ok: true, text: 'Obrigado! Seu depoimento já aparece na página principal do site e do app.' });
     } catch (error) { setMessage({ ok: false, text: error instanceof Error ? error.message : 'Não foi possível enviar.' }); }
     finally { setBusy(false); }
   }
   const current = items.find((item) => (item.afiliadoId ?? 'sistema') === target);
   return <div className="testimonial-form">
-    <p className="muted">Conte como foi sua experiência. Seu depoimento aparece no site com o nome que você escolher, depois da aprovação da equipe.</p>
+    <p className="muted">Conte como foi sua experiência. Seu depoimento aparece na hora na página principal do site e do app, com o nome que você escolher e as estrelas.</p>
     {targets.length > 1 && <label>Sobre quem é o depoimento<select value={target} disabled={busy} onChange={(event) => setTarget(event.target.value)}>{targets.map((item) => <option key={item.afiliadoId ?? 'sistema'} value={item.afiliadoId ?? 'sistema'}>{item.tipo === 'sistema' ? 'O Bolão Livre' : `Afiliado: ${item.nome}`}</option>)}</select></label>}
     <div className="testimonial-stars-field"><span>Sua nota</span><StarPicker value={estrelas} onChange={setEstrelas} disabled={busy} /></div>
     <label>Seu depoimento<textarea value={texto} maxLength={800} rows={4} disabled={busy} placeholder="Como foi participar do bolão, receber o comprovante, acompanhar o resultado…" onChange={(event) => setTexto(event.target.value)} /><small>{texto.trim().length}/800</small></label>
     <label>Nome que aparece no site<input value={nome} maxLength={60} disabled={busy} onChange={(event) => setNome(event.target.value)} /></label>
-    {current && <small className="testimonial-status">Situação: {STATUS[current.status]}{current.status === 'aprovado' ? ' (se mudar, volta para aprovação)' : ''}</small>}
+    {current && <small className="testimonial-status">Situação: {STATUS[current.status]}{current.status === 'oculto' ? ' (fale com a equipe se quiser republicar)' : ''}</small>}
     {message && <p className={`form-message ${message.ok ? 'form-success' : 'form-error'}`} role="status">{message.text}</p>}
     <button type="button" className="button button-primary" disabled={busy || estrelas < 1 || texto.trim().length < 10} onClick={() => void save()}>{busy ? 'Enviando…' : current ? 'Atualizar depoimento' : 'Enviar depoimento'}</button>
   </div>;

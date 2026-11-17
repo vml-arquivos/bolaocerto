@@ -1,4 +1,4 @@
-// Página do afiliado (WhatsApp, comunidade, Instagram), depoimentos com estrelas (escrever, aprovar, mostrar no site)
+// Página do afiliado (WhatsApp, comunidade, Instagram), depoimentos com estrelas (escrever, aparecer na hora, ocultar)
 // e botões Logar / Criar conta no celular.
 // Uso: E2E_API_URL=http://localhost:3001 E2E_BASE_URL=http://localhost:3000 node --test e2e/depoimentos.test.mjs
 import test from 'node:test';
@@ -63,14 +63,16 @@ test('página do afiliado e depoimentos com estrelas', async () => {
   assert.equal((await call('POST', '/depoimentos', { texto: 'Texto válido aqui.', estrelas: 0 }, client)).status, 400);
   const sys = await call('POST', '/depoimentos', { texto: `Participar foi simples e recebi o comprovante ${stamp}.`, estrelas: 5 }, client); ok(sys, 'depoimento sobre o BL');
   const aboutAff = await call('POST', '/depoimentos', { texto: 'A Joana me ajudou a escolher o bolão.', estrelas: 4, afiliadoId: row.id, nome: 'Carla' }, client); ok(aboutAff, 'depoimento sobre a afiliada');
-  assert.equal(sys.data.status, 'pendente');
-  assert.ok(!(await call('GET', '/depoimentos?limite=50')).data.items.some((item) => item.id === sys.data.id), 'antes de aprovar não aparece no site');
-  assert.ok([401, 403].includes((await call('PATCH', `/admin/depoimentos/${sys.data.id}`, { status: 'aprovado' }, client)).status), 'cliente não aprova');
-  ok(await call('PATCH', `/admin/depoimentos/${sys.data.id}`, { status: 'aprovado' }), 'aprovar BL');
-  ok(await call('PATCH', `/admin/depoimentos/${aboutAff.data.id}`, { status: 'aprovado' }), 'aprovar afiliada');
-  const pub = (await call('GET', '/depoimentos?limite=50')).data;
+  // Todo comentário registrado aparece na hora na página principal; a equipe pode ocultar.
+  assert.equal(sys.data.status, 'aprovado');
+  assert.ok((await call('GET', '/depoimentos?limite=200')).data.items.some((item) => item.id === sys.data.id), 'aparece no site na hora');
+  assert.ok([401, 403].includes((await call('PATCH', `/admin/depoimentos/${sys.data.id}`, { status: 'oculto' }, client)).status), 'cliente não oculta');
+  ok(await call('PATCH', `/admin/depoimentos/${sys.data.id}`, { status: 'oculto' }), 'equipe oculta');
+  assert.ok(!(await call('GET', '/depoimentos?limite=200')).data.items.some((item) => item.id === sys.data.id), 'ocultado sai do site');
+  ok(await call('PATCH', `/admin/depoimentos/${sys.data.id}`, { status: 'aprovado' }), 'equipe republica');
+  const pub = (await call('GET', '/depoimentos?limite=200')).data;
   const shown = pub.items.find((item) => item.id === sys.data.id);
-  assert.ok(shown && shown.nome === 'Carla S.' && shown.estrelas === 5, 'aprovado aparece no site com o nome escolhido');
+  assert.ok(shown && shown.nome === 'Carla S.' && shown.estrelas === 5, 'aparece no site com o nome escolhido');
   assert.ok(!JSON.stringify(pub).includes(clientEmail), 'o site não mostra e-mail de ninguém');
   const affView = (await call('GET', '/afiliados/me/depoimentos', undefined, aff)).data;
   assert.equal(affView.total, 1); assert.equal(affView.media, 4);
@@ -108,7 +110,7 @@ test('página do afiliado e depoimentos com estrelas', async () => {
     await form.getByRole('radio', { name: '3 estrelas' }).click();
     await form.getByLabel('Seu depoimento').fill('Atualizei: gostei, mas quero mais bolões de Quina.');
     await form.getByRole('button', { name: 'Atualizar depoimento' }).click();
-    await app.getByText(/Seu depoimento foi enviado/).waitFor({ timeout: 20000 });
+    await app.getByText(/Seu depoimento já aparece na página principal/).waitFor({ timeout: 20000 });
     assert.equal(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'formulário sem rolagem lateral');
     // Afiliada: aba Minha página.
     const affPage = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
@@ -119,8 +121,9 @@ test('página do afiliado e depoimentos com estrelas', async () => {
     await affPage.waitForFunction(() => [...document.querySelectorAll('input')].some((input) => input.value === 'https://www.instagram.com/joana'), undefined, { timeout: 15000 });
     assert.equal(await affPage.getByLabel('Meu Instagram').inputValue(), 'https://www.instagram.com/joana');
   } finally { await browser.close(); }
-  // Voltou para aprovação depois de editar.
-  assert.equal((await call('GET', '/depoimentos/meus', undefined, client)).data.itens.find((item) => item.id === sys.data.id).status, 'pendente');
+  // Editado continua publicado e aparece com o texto novo.
+  assert.equal((await call('GET', '/depoimentos/meus', undefined, client)).data.itens.find((item) => item.id === sys.data.id).status, 'aprovado');
+  assert.ok((await call('GET', '/depoimentos?limite=200')).data.items.some((item) => item.id === sys.data.id && item.estrelas === 3), 'editado aparece com a nota nova');
   ok(await call('DELETE', `/admin/depoimentos/${sys.data.id}`), 'excluir');
   ok(await call('DELETE', `/admin/depoimentos/${aboutAff.data.id}`), 'excluir 2');
 });

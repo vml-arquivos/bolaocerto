@@ -27,33 +27,40 @@ const admin = { id: 'adm', papel: 'admin' } as any;
 describe('Depoimentos', () => {
   it('nome público: primeiro nome e inicial', () => { expect(publicName('Maria da Silva')).toBe('Maria S.'); expect(publicName('Ana')).toBe('Ana'); });
 
-  it('cotista escreve sobre o BL e sobre o afiliado dele; só aparece depois de aprovado', async () => {
+  it('cotista escreve sobre o BL e sobre o afiliado dele; aparece na hora no site', async () => {
     const { service } = setup();
     const mine = await service.mine(cli);
     expect(mine.destinos.map((item) => item.nome)).toEqual(['Bolão Livre', 'João Afiliado']);
     const sys = await service.save(cli, { texto: 'Muito fácil acompanhar meu bolão.', estrelas: 5 });
+    expect(sys.status).toBe('aprovado');
     await service.save(cli, { texto: 'O João me explicou tudo.', estrelas: 4, afiliadoId: 'af1', nome: 'Maria' });
-    expect((await service.publicList()).items).toHaveLength(0);
-    await service.moderate(sys.id, 'aprovado', admin);
     const pub = await service.publicList();
-    expect(pub).toMatchObject({ total: 1, media: 5, items: [{ nome: 'Maria S.', estrelas: 5, alvo: 'sistema' }] });
+    expect(pub).toMatchObject({ total: 2, media: 4.5 });
+    expect(pub.items.map((item) => [item.nome, item.estrelas, item.alvo])).toEqual(expect.arrayContaining([['Maria S.', 5, 'sistema'], ['Maria', 4, 'afiliado']]));
     expect(JSON.stringify(pub)).not.toContain('cli');
     const affiliateView = await service.forAffiliate({ id: 'joao', papel: 'afiliado' } as any);
-    expect(affiliateView).toMatchObject({ total: 0, aguardando: 1 });
+    expect(affiliateView).toMatchObject({ total: 1, aguardando: 0 });
   });
 
-  it('reescrever volta para aprovação e não duplica; limites e validações', async () => {
-    const { service } = setup();
+  it('a equipe pode ocultar; editar o ocultado não republica sozinho; não duplica; validações', async () => {
+    const { service, store } = setup();
     const first = await service.save(cli, { texto: 'Gostei bastante do sistema.', estrelas: 5 });
-    await service.moderate(first.id, 'aprovado', admin);
+    await service.moderate(first.id, 'oculto', admin);
+    expect((await service.publicList()).items).toHaveLength(0);
     const again = await service.save(cli, { texto: 'Gostei bastante, recomendo.', estrelas: 4 });
-    expect(again.id).toBe(first.id); expect(again.status).toBe('pendente');
+    expect(again.id).toBe(first.id); expect(again.status).toBe('oculto');
+    expect((await service.publicList()).items).toHaveLength(0);
+    await service.moderate(first.id, 'aprovado', admin);
+    expect((await service.publicList()).items).toHaveLength(1);
+    // Depoimento antigo que esperava aprovação também aparece.
+    store.set('depoimento.antigo', JSON.stringify({ id: 'antigo', usuarioId: 'out', nome: 'Ana', texto: 'Comentário antigo registrado.', estrelas: 3, alvo: 'sistema', afiliadoId: null, afiliadoNome: null, status: 'pendente', criadoEm: '2026-01-01T00:00:00.000Z', atualizadoEm: '2026-01-01T00:00:00.000Z' }));
+    expect((await service.publicList()).total).toBe(2);
     await expect(service.save(cli, { texto: 'curto', estrelas: 5 })).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.save(cli, { texto: 'Texto válido aqui.', estrelas: 6 })).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.save({ id: 'out', papel: 'cotista' } as any, { texto: 'Quero avaliar este afiliado.', estrelas: 1, afiliadoId: 'af1' })).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.save(admin, { texto: 'Equipe não escreve.', estrelas: 5 })).rejects.toBeInstanceOf(ForbiddenException);
-    const list = await service.adminList('pendente');
-    expect(list.contagem).toEqual({ pendente: 1, aprovado: 0, oculto: 0 });
-    expect(list.items[0]!.autor).toEqual({ nome: 'Maria da Silva', email: 'm@x.com' });
+    const list = await service.adminList();
+    expect(list.contagem).toEqual({ pendente: 1, aprovado: 1, oculto: 0 });
+    expect(list.items.find((item) => item.id === first.id)!.autor).toEqual({ nome: 'Maria da Silva', email: 'm@x.com' });
   });
 });

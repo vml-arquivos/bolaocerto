@@ -8,6 +8,8 @@ import { AuthUser } from '../auth/auth.utils';
 export const TESTIMONIAL_PREFIX = 'depoimento.';
 export const MAX_PER_USER = 5;
 export type TestimonialStatus = 'pendente' | 'aprovado' | 'oculto';
+/** Aparece no site: tudo que não foi ocultado pela equipe (inclui os antigos que esperavam aprovação). */
+const isVisible = (item: { status: TestimonialStatus }) => item.status !== 'oculto';
 export type Testimonial = {
   id: string; usuarioId: string; nome: string; texto: string; estrelas: number;
   alvo: 'sistema' | 'afiliado'; afiliadoId: string | null; afiliadoNome: string | null;
@@ -52,16 +54,19 @@ export class TestimonialsService {
     return { id: item.id, nome: item.nome, texto: item.texto, estrelas: item.estrelas, alvo: item.alvo, afiliadoNome: item.afiliadoNome, criadoEm: item.criadoEm };
   }
 
-  /** Site: só aprovados. `afiliado` (código) filtra os de um afiliado. */
+  /**
+   * Site e app: todos os depoimentos registrados aparecem (o que a equipe ocultou fica de fora).
+   * `afiliado` (código) filtra os de um afiliado.
+   */
   async publicList(limit = 12, affiliateCode?: string) {
-    let items = (await this.all()).filter((item) => item.status === 'aprovado');
+    let items = (await this.all()).filter(isVisible);
     if (affiliateCode) {
       const affiliate = await this.prisma.afiliado.findUnique({ where: { codigoAfiliado: affiliateCode }, select: { id: true } });
       items = affiliate ? items.filter((item) => item.afiliadoId === affiliate.id) : [];
     }
     const total = items.length;
     const average = total ? Math.round((items.reduce((sum, item) => sum + item.estrelas, 0) / total) * 10) / 10 : 0;
-    return { total, media: average, items: items.slice(0, Math.min(Math.max(limit, 1), 50)).map((item) => this.view(item)) };
+    return { total, media: average, items: items.slice(0, Math.min(Math.max(limit, 1), 200)).map((item) => this.view(item)) };
   }
 
   /** Afiliados que a pessoa pode avaliar: quem a indicou e quem vendeu cotas para ela. */
@@ -111,7 +116,8 @@ export class TestimonialsService {
     const item: Testimonial = {
       id: existing?.id ?? randomUUID(), usuarioId: user.id, nome, texto, estrelas,
       alvo: affiliateId ? 'afiliado' : 'sistema', afiliadoId: affiliateId, afiliadoNome: affiliateName,
-      status: 'pendente', criadoEm: existing?.criadoEm ?? now, atualizadoEm: now, moderadoPor: null,
+      // Publica na hora; se a equipe tinha ocultado, editar não republica sozinho.
+      status: existing?.status === 'oculto' ? 'oculto' : 'aprovado', criadoEm: existing?.criadoEm ?? now, atualizadoEm: now, moderadoPor: existing?.status === 'oculto' ? existing.moderadoPor ?? null : null,
     };
     await this.put(item);
     await this.audit.record(this.prisma, { entidade: 'depoimento', entidadeId: item.id, evento: existing ? 'depoimento.editado' : 'depoimento.criado', atorId: user.id, payloadDepois: { estrelas, alvo: item.alvo, afiliadoId: affiliateId } });
@@ -125,12 +131,12 @@ export class TestimonialsService {
     return { ok: true };
   }
 
-  /** Afiliado: o que os clientes disseram dele (aprovados) e quantos esperam aprovação. */
+  /** Afiliado: o que os clientes disseram dele (todos os visíveis). */
   async forAffiliate(user: AuthUser) {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { usuarioId: user.id }, select: { id: true } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
     const mine = (await this.all()).filter((item) => item.afiliadoId === affiliate.id);
-    const approved = mine.filter((item) => item.status === 'aprovado');
+    const approved = mine.filter(isVisible);
     const media = approved.length ? Math.round((approved.reduce((sum, item) => sum + item.estrelas, 0) / approved.length) * 10) / 10 : 0;
     return { media, total: approved.length, aguardando: mine.filter((item) => item.status === 'pendente').length, items: approved.map((item) => this.view(item)) };
   }

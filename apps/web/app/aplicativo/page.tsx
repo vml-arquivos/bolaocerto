@@ -8,13 +8,16 @@ import { RoleLaunch } from '../../components/role-launch';
 import { PushPrompt } from '../../components/push-prompt';
 import { WelcomeJoin } from '../../components/welcome-join';
 import { Suspense } from 'react';
+import { TestimonialsWall } from '../../components/testimonials-wall';
+import type { PublicTestimonial } from '../../components/testimonials';
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Bolões' };
 export default async function ClientApp() {
-  const result = await apiGet<PublicPool[]>('/boloes/disponiveis');
+  const [result, testimonials] = await Promise.all([apiGet<PublicPool[]>('/boloes/disponiveis'), apiGet<{ total: number; media: number; items: PublicTestimonial[] }>('/depoimentos?limite=200')]);
   return <><SiteHeader/><LiveStorefront/><RoleLaunch/><main className="shell client-app-home client-page" id="main-content"><PushPrompt audience="cliente" />
     <div className="account-app"><header className="account-top"><div><small>Bolão Livre</small><h1>Escolha seu bolão</h1></div></header>
     <Suspense fallback={null}><WelcomeJoin /></Suspense>
     {result.error ? <div className="notice" role="status">Não foi possível consultar os bolões agora. Verifique sua conexão e tente novamente.</div> : <PoolCarousel pools={result.data ?? []} serverNow={Date.now()}/>}</div>
+    <TestimonialsWall data={testimonials.data} id="comentarios" inApp />
   </main><ClientFooter/></>;
 }

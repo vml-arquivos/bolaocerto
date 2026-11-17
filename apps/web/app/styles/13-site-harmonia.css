@@ -466,3 +466,19 @@
 .pool-games-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--card-accent) 35%, var(--border)); border-radius: 12px; background: color-mix(in srgb, var(--card-accent) 8%, transparent); color: var(--text-secondary); font-size: .9rem; font-weight: 600; }
 .pool-games-info b { color: var(--text-primary); font-size: 1.05rem; font-weight: 800; }
 .pgi-sep { width: 4px; height: 4px; border-radius: 50%; background: var(--text-muted); }
+
+/* Página principal (site e app): todos os comentários dos cotistas numa faixa que rola para o lado */
+.testimonials-wall .section-title { align-items: end; }
+.testimonials-wall.is-app { display: grid; gap: 12px; margin-top: 28px; }
+.testimonials-wall.is-app .section-title h2 { font-size: 1.3rem; }
+.testimonials-score { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); }
+.testimonials-score > strong { color: var(--text-primary); font-size: 2rem; font-weight: 800; line-height: 1; }
+.testimonials-score > div { display: grid; gap: 2px; }
+.testimonials-score small { color: var(--text-secondary); font-weight: 600; }
+.testimonials-strip { display: grid; grid-auto-flow: column; grid-auto-columns: max(280px, calc((100% - 48px) / 3.4)); gap: 16px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 4px 2px 14px; scrollbar-width: thin; }
+.testimonials-strip:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 18px; }
+.testimonials-strip-item { scroll-snap-align: start; display: grid; min-width: 0; }
+.testimonials-strip-item .testimonial-card { height: 100%; }
+.testimonials-strip-item .testimonial-card p { overflow-wrap: anywhere; }
+.testimonials-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin-top: 6px; }
+@media (max-width: 640px) { .testimonials-strip { grid-auto-columns: 84%; } .testimonials-wall .section-title { align-items: start; } }
