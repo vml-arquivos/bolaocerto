@@ -8,6 +8,7 @@ import { AdminService } from './admin.service';
 import { ShareSaleTransferService } from './share-sale-transfer.service';
 import {
   AdminListQueryDto,
+  CommissionStatementQueryDto,
   TransferShareSaleDto,
   ApproveAffiliateDto,
   CreateAffiliateDto,
@@ -85,6 +86,13 @@ export class AdminController {
   @Roles('admin')
   commissions(@Query() query: AdminListQueryDto) {
     return this.admin.listCommissions(query);
+  }
+
+  /** Comissões por afiliado: total a receber e extrato de cada cota (filtros por afiliado, mês e período). */
+  @Get('admin/comissoes-afiliados')
+  @Roles('admin')
+  commissionStatement(@Query() query: CommissionStatementQueryDto) {
+    return this.admin.commissionStatement(query);
   }
 
   @Get('admin/repasses')

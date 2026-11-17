@@ -350,3 +350,45 @@
 .affiliate-error strong { display: block; color: var(--danger-strong); font-size: 15px; }
 .affiliate-error p { font-size: 13px; }
 .affiliate-loading { font-size: 13px; }
+
+/* Comissões por afiliado (abas A pagar / Pagas / Canceladas, filtros, extrato) */
+.comm-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.comm-tabs .report-tab { display: inline-flex; align-items: center; gap: 8px; }
+.comm-tab-total { font-weight: 700; font-variant-numeric: tabular-nums; }
+.comm-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.comm-filters label { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.comm-filters label > span { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.comm-filters select, .comm-filters input { min-height: 38px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-primary); font: inherit; font-size: 14px; }
+.comm-filter-search { flex: 1 1 220px; }
+.comm-filter-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.comm-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.comm-summary > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); min-width: 130px; }
+.comm-summary > div > span { font-size: 12px; color: var(--text-muted); }
+.comm-summary > div > strong { font-size: 20px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.comm-summary .comm-summary-action { flex-direction: row; align-items: center; gap: 12px; margin-left: auto; background: var(--primary-soft); border-color: transparent; }
+.comm-summary .comm-summary-action > span { font-size: 13px; color: var(--text-primary); font-weight: 600; }
+.comm-total { font-size: 16px; font-variant-numeric: tabular-nums; }
+.comm-row.is-open > td { background: var(--surface-muted); }
+.comm-detail > td { padding: 12px 14px 16px; background: var(--surface-muted); }
+.comm-months { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px; }
+.comm-month { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-primary); cursor: pointer; white-space: nowrap; font: inherit; }
+.comm-month span { font-size: 12px; color: var(--text-muted); }
+.comm-month strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.comm-month small { font-size: 11px; color: var(--text-muted); }
+.comm-month.is-current { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.comm-statement { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.comm-statement tfoot td { font-weight: 700; border-top: 2px solid var(--border-strong); }
+.comm-note { margin-top: 10px; font-size: 13px; color: var(--text-muted); }
+@media (max-width: 760px) {
+  .comm-filters label { min-width: 0; flex: 1 1 calc(50% - 12px); }
+  .comm-filter-search { flex-basis: 100%; }
+  .comm-summary > div { flex: 1 1 calc(50% - 10px); min-width: 0; }
+  .comm-summary .comm-summary-action { flex-basis: 100%; margin-left: 0; flex-wrap: wrap; }
+  .admin-app .admin-table .comm-row td .admin-row-actions > * { flex: 1 1 calc(50% - 8px); white-space: normal; }
+  .admin-app .admin-table .comm-row td .admin-row-actions > .admin-button-primary { flex-basis: 100%; order: -1; }
+  .admin-app .admin-table .comm-row td.td-nowrap small { white-space: normal; }
+  .admin-app .admin-table tr.comm-detail { display: block; padding: 10px; }
+  .admin-app .admin-table tr.comm-detail > td { display: block; padding: 0; background: transparent; }
+  .comm-statement { border: 0; background: transparent; }
+  .admin-app .comm-statement .admin-table tfoot tr { display: flex; justify-content: space-between; gap: 10px; }
+}

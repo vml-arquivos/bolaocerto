@@ -1,5 +1,6 @@
 import { MODALITY_NAMES } from '../reports/pdf.util';
 import { buildInsights } from './dashboard-insights';
+import { buildCommissionStatement, statementRange } from './commission-statement';
 import { assertCommissionCeiling, effectiveLimit, LEVEL_NAMES, levelKey, normalizeLevel, readRules } from '../affiliate-rules/affiliate-rules';
 import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { effectiveSaleWindow } from '../pools/sales-rules';
@@ -21,6 +22,7 @@ import { PrismaService } from '../common/prisma.service';
 import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import {
   AdminListQueryDto,
+  CommissionStatementQueryDto,
   ApproveAffiliateDto,
   CreateGroupDto,
   CreateInviteDto,
@@ -426,6 +428,38 @@ export class AdminService {
       this.prisma.comissao.count({ where }),
     ]);
     return { items: items.map((commission) => ({ ...commission, valor: commission.valor.toFixed(2), baseCalculo: commission.baseCalculo?.toFixed(2) ?? null, percentual: commission.percentual?.toFixed(2) ?? null, loteRepasse: commission.loteRepasse ? { id: commission.loteRepasse.id, codigo: commission.loteRepasse.codigo, status: commission.loteRepasse.status } : null })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  /** Comissões agrupadas por afiliado (total a receber + extrato de cada cota), com filtro por afiliado, mês e período. */
+  async commissionStatement(query: CommissionStatementQueryDto = {}) {
+    const status = (query.status ?? 'pendente') as StatusComissao;
+    const range = statementRange(query);
+    const byPayment = status === StatusComissao.paga && query.data === 'pagamento';
+    const dateWhere: Prisma.ComissaoWhereInput = range.gte || range.lt ? (byPayment ? { pagoEm: range } : { criadoEm: range }) : {};
+    const where: Prisma.ComissaoWhereInput = {
+      status,
+      ...(query.afiliadoId ? { afiliadoId: query.afiliadoId } : {}),
+      ...dateWhere,
+      ...(query.busca ? { OR: [{ afiliado: { codigoAfiliado: { contains: query.busca, mode: 'insensitive' } } }, { afiliado: { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } } }, { cota: { comprador: { nome: { contains: query.busca, mode: 'insensitive' } } } }, { cota: { titularNome: { contains: query.busca, mode: 'insensitive' } } }] } : {}),
+    };
+    const [rows, totalsByStatus, affiliates] = await Promise.all([
+      this.prisma.comissao.findMany({ where, include: { afiliado: { include: { usuario: { select: { nome: true } } } }, cota: { include: { bolao: { include: { concurso: true, grupo: { select: { nome: true } } } }, comprador: { select: { nome: true } } } }, loteRepasse: { select: { id: true, codigo: true, status: true } } }, orderBy: { criadoEm: 'desc' }, take: 10000 }),
+      this.prisma.comissao.groupBy({ by: ['status'], _sum: { valor: true }, _count: { _all: true } }),
+      this.prisma.afiliado.findMany({ where: { comissoes: { some: {} } }, select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } }),
+    ]);
+    const statement = buildCommissionStatement(rows.map((row) => ({
+      id: row.id, afiliadoId: row.afiliadoId, afiliadoNome: row.afiliado.usuario?.nome ?? row.afiliado.codigoAfiliado, afiliadoCodigo: row.afiliado.codigoAfiliado, chavePix: row.afiliado.chavePixRepasse ?? null,
+      valor: Number(row.valor), baseCalculo: row.baseCalculo === null ? null : Number(row.baseCalculo), percentual: row.percentual === null ? null : Number(row.percentual),
+      status: row.status, criadoEm: row.criadoEm, pagoEm: row.pagoEm ?? row.repassadoEm ?? null, lote: row.loteRepasse ?? null,
+      comprador: row.cota?.comprador?.nome ?? row.cota?.titularNome ?? '—', cotaId: row.cotaId,
+      bolao: row.cota?.bolao ? { modalidade: row.cota.bolao.concurso?.modalidade ?? '', numeroConcurso: row.cota.bolao.concurso?.numeroConcurso ?? 0, valorCota: Number(row.cota.bolao.valorCota).toFixed(2) } : null,
+      grupo: row.cota?.bolao?.grupo?.nome ?? null,
+    })));
+    const resumo = Object.fromEntries(['pendente', 'paga', 'cancelada'].map((key) => {
+      const found = totalsByStatus.find((item) => item.status === key);
+      return [key, { total: Number(found?._sum.valor ?? 0).toFixed(2), quantidade: found?._count._all ?? 0 }];
+    }));
+    return { status, filtros: { afiliadoId: query.afiliadoId ?? null, mes: query.mes ?? null, de: query.de ?? null, ate: query.ate ?? null, data: byPayment ? 'pagamento' : 'venda' }, resumo, ...statement, opcoesAfiliados: affiliates.map((item) => ({ id: item.id, nome: item.usuario?.nome ?? item.codigoAfiliado, codigo: item.codigoAfiliado })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')), limitado: rows.length >= 10000 };
   }
 
   async listRemittances(query: AdminListQueryDto = {}) {

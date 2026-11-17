@@ -325,3 +325,36 @@ export class TransferShareSaleDto {
   @IsOptional() @IsUUID() afiliadoId?: string | null;
   @IsOptional() @IsString() @MaxLength(300) motivo?: string;
 }
+
+/** Filtros do extrato de comissões por afiliado (abas A pagar / Pagas / Canceladas). */
+export class CommissionStatementQueryDto {
+  @IsOptional()
+  @IsIn(['pendente', 'paga', 'cancelada'])
+  status?: 'pendente' | 'paga' | 'cancelada';
+
+  @IsOptional()
+  @IsUUID()
+  afiliadoId?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}$/, { message: 'Mês inválido (use AAAA-MM).' })
+  mes?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Data inicial inválida.' })
+  de?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Data final inválida.' })
+  ate?: string;
+
+  /** Em "Pagas" dá para filtrar pela data do pagamento; o padrão é a data da venda. */
+  @IsOptional()
+  @IsIn(['venda', 'pagamento'])
+  data?: 'venda' | 'pagamento';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  busca?: string;
+}

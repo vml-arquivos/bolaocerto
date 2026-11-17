@@ -71,6 +71,7 @@ const ROUTES: RouteRule[] = [
   R('admin/grupos', ['grupos', 'boloes', 'afiliados', 'usuarios', 'cupons', 'comunicados', 'crm'], ['grupos', 'afiliados']),
   R('admin/recebimentos', ['financeiro', 'relatorios', 'visao-geral'], ['financeiro']),
   R('admin/financeiro', ['financeiro', 'relatorios'], ['financeiro']),
+  R('admin/comissoes-afiliados', ['comissoes', 'financeiro'], ['comissoes']),
   R('admin/comissoes', ['comissoes', 'financeiro', 'afiliados'], ['comissoes']),
   R('admin/repasses', ['comissoes', 'financeiro'], ['comissoes']),
   R('admin/notas-fiscais', ['notas-fiscais', 'financeiro'], ['notas-fiscais']),

@@ -45,8 +45,8 @@ import { WalletAdminView } from './admin-wallet';
 import { PromotionsAdminView } from './admin-promotions';
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['ranking', 'relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'blog', 'documentos', 'funil', 'depoimentos']);
-const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'comissoes', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
+const selfLoadingViews = new Set(['ranking', 'relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'blog', 'documentos', 'funil', 'depoimentos', 'comissoes']);
+const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
 const MONTH_LABELS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 /** Meses (AAAA-MM) de `from` até `to` em relação ao mês atual (Brasília), do mais novo para o mais antigo quando for histórico. */
