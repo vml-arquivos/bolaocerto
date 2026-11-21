@@ -7,6 +7,9 @@ import { escapeHtml, MailService, wrapEmailHtml } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
 import { AuthUser } from '../auth/auth.utils';
 import { buildContractPdf, type CertificateBlock } from './contract-pdf';
+import { ESTADOS_CIVIS, FIELD_LABELS, missingFields, readExtra, rgIssuer, UFS, type ExtraContractData } from './contract-data';
+import { icpEnabled, icpInfo, signPdfWithCompanyCertificate } from './contract-icp';
+import { documentSituation, IdentityDocumentService, readDoc, SITUATION_LABELS } from './identity-document';
 import {
   buildContractText, companyHash, CONTRACT_TEMPLATE_VERSION, CONTRACT_TITLES, formatCpf, longDate, sanitizeCompany, textHash,
   type AffiliateParty, type CompanyData, type ContractKind,
@@ -24,6 +27,12 @@ export type SignatureMeta = { ip: string; userAgent: string | null; forwardedFor
 export type DeviceInfo = { latitude?: number | null; longitude?: number | null; precisao?: number | null; localNegado?: boolean; fuso?: string | null; idioma?: string | null };
 export type CompanyApproval = { hash: string; usuarioId: string; nome: string; email: string; em: string; ip: string; userAgent: string | null; local: Record<string, unknown> | null };
 type ContractEvent = { em: string; evento: string; detalhe?: string; ip?: string; por?: string };
+export type ContractDataInput = {
+  dataNascimento?: string; telefone?: string; rg?: string; rgOrgao?: string; rgUf?: string; nacionalidade?: string; estadoCivil?: string; profissao?: string;
+  enderecoCep?: string; enderecoLogradouro?: string; enderecoNumero?: string; enderecoComplemento?: string; enderecoBairro?: string; enderecoCidade?: string; enderecoUf?: string;
+};
+/** Ordem de assinatura: primeiro o contrato, depois o aditivo. */
+const KIND_ORDER: Record<string, number> = { afiliado: 0, 'aditivo-bonificacao': 1 };
 
 /** Esconde parte do e-mail: m*****o@gmail.com. */
 export function maskEmail(email: string): string {
@@ -81,7 +90,7 @@ export class ContractsService {
   private readonly logger = new Logger(ContractsService.name);
   private running = false;
 
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly mail: MailService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly mail: MailService, private readonly documents: IdentityDocumentService) {}
 
   private secret(): string {
     return process.env.CONTRACT_CODE_SECRET || process.env.JWT_ACCESS_SECRET || 'bl-contratos';
@@ -122,7 +131,7 @@ export class ContractsService {
     const dados = sanitizeCompany(stored?.dados);
     const hash = companyHash(dados);
     const aprovacao = stored?.aprovacao && stored.aprovacao.hash === hash ? stored.aprovacao : null;
-    return { dados, hash, versaoModelo: CONTRACT_TEMPLATE_VERSION, aprovacao, aprovacaoAnterior: !aprovacao && stored?.aprovacao ? stored.aprovacao : null };
+    return { dados, hash, versaoModelo: CONTRACT_TEMPLATE_VERSION, aprovacao, aprovacaoAnterior: !aprovacao && stored?.aprovacao ? stored.aprovacao : null, certificadoDigital: await icpInfo() };
   }
 
   async saveCompany(actor: AuthUser, raw: Partial<CompanyData>) {
@@ -181,8 +190,12 @@ export class ContractsService {
     const affiliate = await this.prisma.afiliado.findUnique({ where: { id: afiliadoId }, include: { usuario: true } });
     if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
     const u = affiliate.usuario;
-    const party: AffiliateParty = { nome: u.nome, cpf: u.cpf, email: u.email, telefone: u.telefone, dataNascimento: u.dataNascimento, endereco: addressLine(u), codigoAfiliado: affiliate.codigoAfiliado, comissaoPct: affiliate.comissaoPadraoPct ? Number(affiliate.comissaoPadraoPct).toFixed(2) : null };
-    return { affiliate, party };
+    const extra = readExtra(affiliate.dadosContrato);
+    const party: AffiliateParty = {
+      nome: u.nome, cpf: u.cpf, email: u.email, telefone: u.telefone, dataNascimento: u.dataNascimento, endereco: addressLine(u), codigoAfiliado: affiliate.codigoAfiliado, comissaoPct: affiliate.comissaoPadraoPct ? Number(affiliate.comissaoPadraoPct).toFixed(2) : null,
+      rg: extra.rg, rgOrgao: rgIssuer(extra), nacionalidade: extra.nacionalidade, estadoCivil: extra.estadoCivil, profissao: extra.profissao,
+    };
+    return { affiliate, party, extra, missing: missingFields(u, extra) };
   }
 
   private makeNumber(kind: ContractKind, date: Date): string {
@@ -263,11 +276,37 @@ export class ContractsService {
     await this.prisma.contrato.update({ where: { id }, data: { eventos: [...((row.eventos as ContractEvent[] | null) ?? []), event] as unknown as Prisma.InputJsonValue } });
   }
 
-  /** Garante o contrato principal do afiliado (não gera de novo se já houver um aguardando ou assinado). */
+  /** Garante os dois documentos do afiliado: o contrato e o aditivo (não gera de novo o que já estiver aguardando ou assinado). */
   async ensureAffiliateContract(afiliadoId: string, origem: 'cadastro' | 'painel' | 'automatico', notify: boolean, actorId?: string | null) {
-    const existing = await this.prisma.contrato.findFirst({ where: { afiliadoId, tipo: 'afiliado', status: { in: ['aguardando', 'assinado'] } }, orderBy: { criadoEm: 'desc' } });
-    if (existing) return { contrato: existing, criado: false };
-    return { contrato: await this.create(afiliadoId, 'afiliado', { origem, notify, actorId }), criado: true };
+    let criados = 0;
+    let main = await this.prisma.contrato.findFirst({ where: { afiliadoId, tipo: 'afiliado', status: { in: ['aguardando', 'assinado'] } }, orderBy: { criadoEm: 'desc' } });
+    if (!main) { main = await this.create(afiliadoId, 'afiliado', { origem, notify: false, actorId }); criados += 1; }
+    const addendum = await this.prisma.contrato.findFirst({ where: { afiliadoId, tipo: 'aditivo-bonificacao', status: { in: ['aguardando', 'assinado'] } }, select: { id: true } });
+    if (!addendum) { await this.create(afiliadoId, 'aditivo-bonificacao', { origem, notify: false, actorId }); criados += 1; }
+    if (criados && notify) await this.notifyAffiliate(afiliadoId).catch(() => undefined);
+    return { contrato: main, criado: criados > 0, criados };
+  }
+
+  /** Um só aviso para tudo o que o afiliado tem para assinar. */
+  private async notifyAffiliate(afiliadoId: string, reminder = false): Promise<boolean> {
+    const rows = await this.prisma.contrato.findMany({ where: { afiliadoId, status: 'aguardando' }, select: { id: true, numero: true, titulo: true, tipo: true, usuarioId: true } });
+    if (!rows.length || !rows[0]!.usuarioId) return false;
+    if (rows.length === 1) return this.notifyReady(rows[0]!.id, reminder);
+    rows.sort((a, b) => (KIND_ORDER[a.tipo] ?? 9) - (KIND_ORDER[b.tipo] ?? 9));
+    const user = await this.prisma.usuario.findUnique({ where: { id: rows[0]!.usuarioId }, select: { nome: true, email: true } });
+    if (!user) return false;
+    const link = `${this.mail.publicUrl()}/afiliado?aba=contrato`;
+    const first = user.nome.split(' ')[0] ?? user.nome;
+    const list = rows.map((row) => `${row.titulo} nº ${row.numero}`);
+    const sent = await this.mail.send({
+      to: user.email,
+      subject: reminder ? 'Lembrete: assine o seu contrato e o aditivo de afiliado' : 'Seu contrato e o aditivo de afiliado estão prontos para assinar',
+      text: `Olá, ${first}. Estes documentos já estão preenchidos com os seus dados: ${list.join('; ')}. Para assinar, entre no app do afiliado, abra "Contrato", confira seus dados e confirme com o código que enviaremos ao seu e-mail: ${link}`,
+      html: wrapEmailHtml(reminder ? 'Seus documentos aguardam assinatura' : 'Seus documentos estão prontos', `<p>Olá, ${escapeHtml(first)}.</p><p>Estes documentos já estão preenchidos com os seus dados:</p><ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p>Para assinar, abra o app do afiliado em <strong>Contrato</strong>, confira seus dados e confirme com o código que enviaremos ao seu e-mail. Um só código assina os dois.</p>`, { label: 'Ver e assinar', url: link }),
+    });
+    await this.prisma.notificacao.create({ data: { usuarioId: rows[0]!.usuarioId, canal: 'push', tipo: 'contrato.assinar', payload: { titulo: 'Documentos para assinar', mensagem: 'Seu contrato e o aditivo estão prontos. Toque para ler e assinar.', link: '/afiliado?aba=contrato' } } }).catch(() => undefined);
+    for (const row of rows) await this.pushEvent(row.id, { em: new Date().toISOString(), evento: reminder ? 'lembrete_enviado' : 'aviso_enviado', detalhe: sent ? maskEmail(user.email) : 'e-mail não enviado' });
+    return sent;
   }
 
   /** A cada 5 minutos: afiliados cadastrados nos últimos 3 dias sem contrato recebem o contrato já preenchido. */
@@ -277,7 +316,7 @@ export class ContractsService {
     this.running = true;
     try {
       const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-      const affiliates = await this.prisma.afiliado.findMany({ where: { criadoEm: { gte: since }, statusAprovacao: { notIn: ['rejeitado', 'recusado', 'inativo'] }, contratos: { none: { tipo: 'afiliado' } }, usuario: { desativadoEm: null } }, select: { id: true }, take: 50 });
+      const affiliates = await this.prisma.afiliado.findMany({ where: { criadoEm: { gte: since }, statusAprovacao: { notIn: ['rejeitado', 'recusado', 'inativo'] }, OR: [{ contratos: { none: { tipo: 'afiliado' } } }, { contratos: { none: { tipo: 'aditivo-bonificacao' } } }], usuario: { desativadoEm: null } }, select: { id: true }, take: 50 });
       for (const affiliate of affiliates) {
         await this.ensureAffiliateContract(affiliate.id, 'cadastro', true).catch((error) => this.logger.warn(`Contrato do afiliado ${affiliate.id} não gerado: ${error instanceof Error ? error.message : String(error)}`));
       }
@@ -288,13 +327,14 @@ export class ContractsService {
     }
   }
 
-  /** Painel: gera o contrato para todos os afiliados que ainda não têm (avisa cada um por e-mail). */
+  /** Painel: gera o contrato e o aditivo para todos os afiliados que ainda não têm (avisa cada um por e-mail). */
   async generateMissing(actor: AuthUser) {
-    const affiliates = await this.prisma.afiliado.findMany({ where: { statusAprovacao: 'aprovado', contratos: { none: { tipo: 'afiliado', status: { in: ['aguardando', 'assinado'] } } }, usuario: { desativadoEm: null } }, select: { id: true }, take: 500 });
+    const active = { status: { in: ['aguardando', 'assinado'] } };
+    const affiliates = await this.prisma.afiliado.findMany({ where: { statusAprovacao: 'aprovado', OR: [{ contratos: { none: { tipo: 'afiliado', ...active } } }, { contratos: { none: { tipo: 'aditivo-bonificacao', ...active } } }], usuario: { desativadoEm: null } }, select: { id: true }, take: 500 });
     let gerados = 0;
     for (const affiliate of affiliates) {
       const result = await this.ensureAffiliateContract(affiliate.id, 'painel', true, actor.id).catch(() => null);
-      if (result?.criado) gerados += 1;
+      gerados += result?.criados ?? 0;
     }
     return { gerados };
   }
@@ -327,19 +367,23 @@ export class ContractsService {
       ] } : {}),
     };
     const [rows, total, counts, companyPending] = await Promise.all([
-      this.prisma.contrato.findMany({ where, orderBy: { criadoEm: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.contrato.findMany({ where, orderBy: { criadoEm: 'desc' }, skip: (page - 1) * pageSize, take: pageSize, include: { afiliado: { select: { documentoIdentidade: true } } } }),
       this.prisma.contrato.count({ where }),
       this.prisma.contrato.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.contrato.count({ where: { empresaAssinadaEm: null, status: { not: 'cancelado' } } }),
     ]);
     const resumo = Object.fromEntries(STATUS.map((key) => [key, counts.find((item) => item.status === key)?._count._all ?? 0]));
-    return { items: rows.map((row) => this.summary(row)), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) }, resumo: { ...resumo, empresaPendente: companyPending } };
+    return { items: rows.map((row) => { const situacao = documentSituation(readDoc(row.afiliado?.documentoIdentidade)); return { ...this.summary(row), documento: { situacao, rotulo: SITUATION_LABELS[situacao] } }; }), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) }, resumo: { ...resumo, empresaPendente: companyPending } };
   }
 
   async detail(id: string) {
     const row = await this.prisma.contrato.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Contrato não encontrado.');
-    return { ...this.summary(row), texto: row.texto, versaoModelo: row.versaoModelo, partes: row.partes, assinatura: row.assinatura, empresaAssinatura: row.empresaAssinatura, eventos: row.eventos, verificacao: this.verifyUrl(row.numero, row.hash) };
+    const [dados, documento] = await Promise.all([
+      row.afiliadoId ? this.contractData(row.afiliadoId).then((data) => ({ completo: data.completo, faltando: data.faltando })).catch(() => null) : null,
+      this.documents.forAffiliate(row.afiliadoId).catch(() => null),
+    ]);
+    return { ...this.summary(row), texto: row.texto, versaoModelo: row.versaoModelo, partes: row.partes, assinatura: row.assinatura, empresaAssinatura: row.empresaAssinatura, eventos: row.eventos, verificacao: this.verifyUrl(row.numero, row.hash), dados, documento, certificadoDigital: icpEnabled() };
   }
 
   /** Afiliados para o seletor de "Gerar contrato", com a situação do contrato principal. */
@@ -390,20 +434,221 @@ export class ContractsService {
     const affiliate = await this.affiliateOf(user);
     await this.ensureAffiliateContract(affiliate.id, 'cadastro', false).catch((error) => this.logger.warn(`Contrato não gerado ao abrir o app: ${error instanceof Error ? error.message : String(error)}`));
     const rows = await this.prisma.contrato.findMany({ where: { afiliadoId: affiliate.id, status: { not: 'cancelado' } }, orderBy: { criadoEm: 'desc' } });
+    rows.sort((a, b) => (a.status === b.status ? (KIND_ORDER[a.tipo] ?? 9) - (KIND_ORDER[b.tipo] ?? 9) : a.status === 'aguardando' ? -1 : b.status === 'aguardando' ? 1 : 0));
     const account = await this.prisma.usuario.findUnique({ where: { id: user.id }, select: { email: true } });
+    const pending = rows.filter((row) => row.status === 'aguardando');
     return {
       email: account ? maskEmail(account.email) : null,
       items: rows.map((row) => ({
         id: row.id, numero: row.numero, tipo: row.tipo, titulo: row.titulo, status: row.status, criadoEm: row.criadoEm, assinadoEm: row.assinadoEm, hash: row.hash,
         texto: row.texto, empresaAssinadaEm: row.empresaAssinadaEm, codigoEnviadoEm: row.codigoEnviadoEm, codigoValido: Boolean(row.codigoHash && row.codigoExpiraEm && row.codigoExpiraEm.getTime() > Date.now()),
       })),
-      pendentes: rows.filter((row) => row.status === 'aguardando').length,
+      pendentes: pending.length,
+      codigoValido: pending.length > 0 && pending.every((row) => row.codigoHash && row.codigoExpiraEm && row.codigoExpiraEm.getTime() > Date.now()),
+      dados: await this.contractData(affiliate.id),
+      documento: await this.documents.forAffiliate(affiliate.id),
     };
+  }
+
+  // ---------- Dados do afiliado para o contrato ----------
+
+  /** Dados atuais (para o formulário) e o que falta preencher antes de assinar. */
+  async contractData(afiliadoId: string) {
+    const affiliate = await this.prisma.afiliado.findUnique({ where: { id: afiliadoId }, include: { usuario: true } });
+    if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
+    const u = affiliate.usuario;
+    const extra = readExtra(affiliate.dadosContrato);
+    const missing = missingFields(u, extra);
+    return {
+      valores: {
+        nome: u.nome, cpf: formatCpf(u.cpf), email: maskEmail(u.email), telefone: u.telefone ?? '', dataNascimento: u.dataNascimento ? u.dataNascimento.toISOString().slice(0, 10) : '',
+        rg: extra.rg ?? '', rgOrgao: extra.rgOrgao ?? '', rgUf: extra.rgUf ?? '', nacionalidade: extra.nacionalidade ?? 'brasileiro(a)', estadoCivil: extra.estadoCivil ?? '', profissao: extra.profissao ?? '',
+        enderecoCep: u.enderecoCep ?? '', enderecoLogradouro: u.enderecoLogradouro ?? '', enderecoNumero: u.enderecoNumero ?? '', enderecoComplemento: u.enderecoComplemento ?? '',
+        enderecoBairro: u.enderecoBairro ?? '', enderecoCidade: u.enderecoCidade ?? '', enderecoUf: u.enderecoUf ?? '',
+      },
+      faltando: missing.map((key) => ({ campo: key, rotulo: FIELD_LABELS[key] ?? key })),
+      completo: missing.length === 0,
+      estadosCivis: ESTADOS_CIVIS,
+    };
+  }
+
+  /** O afiliado completa os dados; os documentos ainda não assinados são refeitos com os dados novos. */
+  async saveContractData(user: AuthUser, input: ContractDataInput) {
+    const affiliate = await this.affiliateOf(user);
+    const current = await this.prisma.afiliado.findUniqueOrThrow({ where: { id: affiliate.id }, select: { dadosContrato: true } });
+    const clean = (value: string | undefined, max: number) => (value === undefined ? undefined : value.replace(/\s+/g, ' ').trim().slice(0, max));
+    const userData: Prisma.UsuarioUpdateInput = {};
+    if (input.dataNascimento !== undefined) {
+      const date = new Date(`${input.dataNascimento}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dataNascimento) || Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1900) throw new BadRequestException('Data de nascimento inválida.');
+      const adult = new Date(); adult.setUTCFullYear(adult.getUTCFullYear() - 18);
+      if (date > adult) throw new BadRequestException('O afiliado precisa ter 18 anos ou mais.');
+      userData.dataNascimento = date;
+    }
+    if (input.telefone !== undefined) {
+      const phone = input.telefone.replace(/\D/g, '');
+      if (phone && (phone.length < 10 || phone.length > 11)) throw new BadRequestException('Celular inválido. Use DDD + número.');
+      userData.telefone = phone || null;
+    }
+    if (input.enderecoCep !== undefined) {
+      const cep = input.enderecoCep.replace(/\D/g, '');
+      if (cep && cep.length !== 8) throw new BadRequestException('CEP inválido.');
+      userData.enderecoCep = cep || null;
+    }
+    if (input.enderecoUf !== undefined) {
+      const uf = input.enderecoUf.trim().toUpperCase();
+      if (uf && !(UFS as readonly string[]).includes(uf)) throw new BadRequestException('UF inválida.');
+      userData.enderecoUf = uf || null;
+    }
+    const map: Array<[keyof ContractDataInput, keyof Prisma.UsuarioUpdateInput, number]> = [['enderecoLogradouro', 'enderecoLogradouro', 120], ['enderecoNumero', 'enderecoNumero', 20], ['enderecoComplemento', 'enderecoComplemento', 80], ['enderecoBairro', 'enderecoBairro', 80], ['enderecoCidade', 'enderecoCidade', 80]];
+    for (const [from, to, max] of map) { const value = clean(input[from], max); if (value !== undefined) (userData as Record<string, unknown>)[to] = value || null; }
+    const extra: ExtraContractData = { ...readExtra(current.dadosContrato) };
+    if (input.estadoCivil !== undefined && input.estadoCivil && !(ESTADOS_CIVIS as readonly string[]).includes(input.estadoCivil)) throw new BadRequestException('Escolha o estado civil na lista.');
+    if (input.rgUf !== undefined && input.rgUf && !(UFS as readonly string[]).includes(input.rgUf.trim().toUpperCase())) throw new BadRequestException('UF do RG inválida.');
+    const extraMap: Array<[keyof ExtraContractData, number, ((v: string) => string)?]> = [['rg', 20, (v) => v.toUpperCase()], ['rgOrgao', 20, (v) => v.toUpperCase()], ['rgUf', 2, (v) => v.toUpperCase()], ['nacionalidade', 40], ['estadoCivil', 30], ['profissao', 60]];
+    for (const [key, max, fn] of extraMap) { const value = clean(input[key as keyof ContractDataInput], max); if (value !== undefined) extra[key] = value ? (fn ? fn(value) : value) : null; }
+    await this.prisma.$transaction(async (tx) => {
+      if (Object.keys(userData).length) await tx.usuario.update({ where: { id: user.id }, data: userData });
+      await tx.afiliado.update({ where: { id: affiliate.id }, data: { dadosContrato: extra as unknown as Prisma.InputJsonValue } });
+    });
+    await this.audit.record(this.prisma, { entidade: 'afiliado', entidadeId: affiliate.id, evento: 'afiliado.dados_contrato', atorId: user.id, payloadDepois: { campos: [...Object.keys(userData), ...Object.keys(extra)] } });
+    const refeitos = await this.refreshPending(affiliate.id);
+    return { ...(await this.contractData(affiliate.id)), refeitos };
+  }
+
+  /** Refaz o texto dos documentos que ainda aguardam assinatura (o número continua o mesmo; códigos pedidos antes deixam de valer). */
+  async refreshPending(afiliadoId: string): Promise<number> {
+    const rows = await this.prisma.contrato.findMany({ where: { afiliadoId, status: 'aguardando' } });
+    if (!rows.length) return 0;
+    const { party } = await this.affiliateParty(afiliadoId);
+    const company = await this.company();
+    let changed = 0;
+    for (const row of rows.sort((a, b) => (KIND_ORDER[a.tipo] ?? 9) - (KIND_ORDER[b.tipo] ?? 9))) {
+      const kind = row.tipo as ContractKind;
+      const main = kind === 'aditivo-bonificacao'
+        ? await this.prisma.contrato.findFirst({ where: { afiliadoId, tipo: 'afiliado', status: { in: ['assinado', 'aguardando'] } }, orderBy: [{ status: 'asc' }, { criadoEm: 'desc' }], select: { numero: true, criadoEm: true, assinadoEm: true } })
+        : null;
+      const texto = buildContractText({ kind, numero: row.numero, company: company.dados, affiliate: party, date: row.criadoEm, mainContract: main ? { numero: main.numero, data: main.assinadoEm ?? main.criadoEm } : null });
+      const hash = textHash(texto);
+      if (hash === row.hash) continue;
+      const events = [...((row.eventos as ContractEvent[] | null) ?? []), { em: new Date().toISOString(), evento: 'dados_atualizados', detalhe: 'texto refeito com os dados completados pelo afiliado' }];
+      const updated = await this.prisma.contrato.updateMany({
+        where: { id: row.id, status: 'aguardando' },
+        data: { texto, hash, partes: { ...((row.partes as Record<string, unknown> | null) ?? {}), afiliado: { ...party, dataNascimento: party.dataNascimento?.toISOString() ?? null, afiliadoId } } as unknown as Prisma.InputJsonValue, codigoHash: null, codigoExpiraEm: null, eventos: events as unknown as Prisma.InputJsonValue },
+      });
+      changed += updated.count;
+    }
+    return changed;
+  }
+
+  private async assertDataComplete(afiliadoId: string): Promise<void> {
+    const data = await this.contractData(afiliadoId);
+    if (!data.completo) throw new BadRequestException(`Complete seus dados antes de assinar: ${data.faltando.map((item) => item.rotulo).join(', ')}.`);
+  }
+
+  // ---------- Assinatura dos dois documentos com um só código ----------
+
+  async requestCodeAll(user: AuthUser, meta: SignatureMeta) {
+    const affiliate = await this.affiliateOf(user);
+    await this.assertDataComplete(affiliate.id);
+    await this.refreshPending(affiliate.id);
+    const rows = await this.prisma.contrato.findMany({ where: { afiliadoId: affiliate.id, status: 'aguardando' } });
+    if (!rows.length) throw new ConflictException('Não há documentos aguardando assinatura.');
+    rows.sort((a, b) => (KIND_ORDER[a.tipo] ?? 9) - (KIND_ORDER[b.tipo] ?? 9));
+    const now = Date.now();
+    const lastSent = Math.max(0, ...rows.map((row) => row.codigoEnviadoEm?.getTime() ?? 0));
+    if (lastSent && now - lastSent < RESEND_MS) throw new HttpException('Aguarde 1 minuto para pedir outro código.', HttpStatus.TOO_MANY_REQUESTS);
+    const sendsToday = Math.max(0, ...rows.map((row) => (row.codigoEnviadoEm && now - row.codigoEnviadoEm.getTime() < 24 * 60 * 60 * 1000 ? row.codigoEnvios : 0)));
+    if (sendsToday >= MAX_SENDS_PER_DAY) throw new HttpException('Limite de códigos do dia atingido. Tente amanhã ou fale com a administração.', HttpStatus.TOO_MANY_REQUESTS);
+    const account = await this.prisma.usuario.findUniqueOrThrow({ where: { id: user.id }, select: { nome: true, email: true } });
+    const code = this.newCode();
+    const first = account.nome.split(' ')[0] ?? account.nome;
+    const list = rows.map((row) => `${row.titulo} nº ${row.numero}`);
+    const sent = await this.mail.send({
+      to: account.email,
+      subject: rows.length > 1 ? 'Código para assinar o contrato e o aditivo' : `Código para assinar o contrato ${rows[0]!.numero}`,
+      text: `Olá, ${first}. Seu código para assinar ${rows.length > 1 ? 'os documentos' : 'o documento'} ${list.join(' e ')} é ${code}. Ele vale por 15 minutos. Ao digitar este código você confirma que leu e aceita ${rows.length > 1 ? 'os documentos' : 'o documento'}. Se não foi você, ignore este e-mail e avise a administração do BL.`,
+      html: wrapEmailHtml('Código para assinar', `<p>Olá, ${escapeHtml(first)}.</p><p>Seu código para assinar:</p><ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p style="font-size:30px;font-weight:700;letter-spacing:6px;margin:18px 0">${code}</p><p>Ele vale por 15 minutos. Ao digitar este código você confirma que leu e aceita ${rows.length > 1 ? 'os documentos' : 'o documento'}.</p><p style="color:#646b86">Se não foi você, ignore este e-mail e avise a administração do BL.</p>`),
+    });
+    if (!sent) throw new ConflictException('Não conseguimos enviar o e-mail agora. Tente de novo em alguns minutos.');
+    for (const row of rows) {
+      const events = [...((row.eventos as ContractEvent[] | null) ?? []), { em: new Date(now).toISOString(), evento: 'codigo_enviado', detalhe: maskEmail(account.email), ip: meta.ip }];
+      await this.prisma.contrato.update({ where: { id: row.id }, data: { codigoHash: this.codeHash(`contrato:${row.id}:${row.hash}`, code), codigoExpiraEm: new Date(now + CODE_TTL_MS), codigoTentativas: 0, codigoEnviadoEm: new Date(now), codigoEnvios: sendsToday + 1, eventos: events as unknown as Prisma.InputJsonValue } });
+    }
+    return { enviado: true, email: maskEmail(account.email), validoAte: new Date(now + CODE_TTL_MS), documentos: rows.length };
+  }
+
+  async signAll(user: AuthUser, code: string, device: DeviceInfo | undefined, meta: SignatureMeta) {
+    const affiliate = await this.affiliateOf(user);
+    await this.assertDataComplete(affiliate.id);
+    const rows = await this.prisma.contrato.findMany({ where: { afiliadoId: affiliate.id, status: 'aguardando' } });
+    if (!rows.length) throw new ConflictException('Não há documentos aguardando assinatura.');
+    rows.sort((a, b) => (KIND_ORDER[a.tipo] ?? 9) - (KIND_ORDER[b.tipo] ?? 9));
+    if (rows.some((row) => !row.codigoHash || !row.codigoExpiraEm)) throw new BadRequestException('Peça o código de confirmação primeiro.');
+    if (rows.some((row) => row.codigoExpiraEm!.getTime() < Date.now())) throw new BadRequestException('O código venceu. Peça um novo.');
+    if (rows.some((row) => row.codigoTentativas >= MAX_ATTEMPTS)) throw new BadRequestException('Muitas tentativas. Peça um novo código.');
+    if (rows.some((row) => row.hash !== textHash(row.texto))) throw new ConflictException('O texto de um dos documentos não confere. Fale com a administração.');
+    const digits = code.replace(/\D/g, '');
+    const wrong = rows.filter((row) => !this.sameHash(row.codigoHash, this.codeHash(`contrato:${row.id}:${row.hash}`, digits)));
+    if (wrong.length) {
+      let left = MAX_ATTEMPTS;
+      for (const row of rows) {
+        const attempts = row.codigoTentativas + 1;
+        left = Math.min(left, MAX_ATTEMPTS - attempts);
+        const events = [...((row.eventos as ContractEvent[] | null) ?? []), { em: new Date().toISOString(), evento: 'codigo_incorreto', ip: meta.ip }];
+        await this.prisma.contrato.update({ where: { id: row.id }, data: { codigoTentativas: attempts, ...(attempts >= MAX_ATTEMPTS ? { codigoHash: null } : {}), eventos: events as unknown as Prisma.InputJsonValue } });
+      }
+      throw new BadRequestException(left <= 0 ? 'Código incorreto. Peça um novo código.' : `Código incorreto. Você ainda tem ${left} ${left === 1 ? 'tentativa' : 'tentativas'}.`);
+    }
+    const account = await this.prisma.usuario.findUniqueOrThrow({ where: { id: user.id }, select: { nome: true, email: true, cpf: true } });
+    const signed: Array<{ id: string; numero: string; titulo: string; hash: string }> = [];
+    for (const row of rows) {
+      await this.applySignature(row, user, account, device, meta);
+      signed.push({ id: row.id, numero: row.numero, titulo: row.titulo, hash: row.hash });
+    }
+    await this.sendSignedCopies(account, signed);
+    return { status: 'assinado', assinadoEm: new Date(), documentos: signed.map(({ numero, titulo, hash }) => ({ numero, titulo, hash })) };
+  }
+
+  /** Grava a assinatura de um documento (cada um com o seu registro). */
+  private async applySignature(row: { id: string; numero: string; titulo: string; hash: string; codigoHash: string | null; codigoEnviadoEm: Date | null; eventos: Prisma.JsonValue }, user: AuthUser, account: { nome: string; email: string; cpf: string }, device: DeviceInfo | undefined, meta: SignatureMeta) {
+    const now = new Date();
+    const signature = {
+      metodo: 'Código numérico de uso único enviado ao e-mail cadastrado',
+      nome: account.nome, cpf: formatCpf(account.cpf), email: account.email, usuarioId: user.id,
+      ip: meta.ip, ipsEncaminhados: meta.forwardedFor, userAgent: meta.userAgent,
+      ...cleanDevice(device),
+      codigoEnviadoEm: row.codigoEnviadoEm?.toISOString() ?? null, assinadoEm: now.toISOString(), hash: row.hash,
+    };
+    const events = [...((row.eventos as ContractEvent[] | null) ?? []), { em: now.toISOString(), evento: 'assinado', detalhe: `${account.nome} (${maskEmail(account.email)})`, ip: meta.ip }];
+    const updated = await this.prisma.contrato.updateMany({ where: { id: row.id, status: 'aguardando', codigoHash: row.codigoHash }, data: { status: 'assinado', assinadoEm: now, assinatura: signature as unknown as Prisma.InputJsonValue, codigoHash: null, codigoExpiraEm: null, eventos: events as unknown as Prisma.InputJsonValue } });
+    if (updated.count !== 1) throw new ConflictException('Este contrato mudou enquanto você assinava. Recarregue a página.');
+    await this.audit.record(this.prisma, { entidade: 'contrato', entidadeId: row.id, evento: 'contrato.assinado', atorId: user.id, payloadDepois: { numero: row.numero, hash: row.hash, ip: meta.ip } });
+    return now;
+  }
+
+  /** Cópia em PDF do que foi assinado (falha no envio não desfaz a assinatura). */
+  private async sendSignedCopies(account: { email: string }, docs: Array<{ id: string; numero: string; titulo: string }>) {
+    try {
+      const files = [];
+      for (const doc of docs) files.push(await this.pdf(doc.id));
+      const list = docs.map((doc) => `${doc.titulo} nº ${doc.numero}`);
+      await this.mail.send({
+        to: account.email,
+        subject: docs.length > 1 ? 'Contrato e aditivo assinados' : `Contrato assinado: ${docs[0]!.numero}`,
+        text: `${docs.length > 1 ? 'Seus documentos foram assinados' : 'Seu documento foi assinado'} em ${dateTimeBr(new Date())}: ${list.join('; ')}. ${docs.length > 1 ? 'As cópias em PDF seguem anexas' : 'A cópia em PDF segue anexa'} e também ficam no app do afiliado, em Contrato.`,
+        html: wrapEmailHtml(docs.length > 1 ? 'Contrato e aditivo assinados' : 'Contrato assinado', `<p>${docs.length > 1 ? 'Seus documentos foram assinados' : 'Seu documento foi assinado'} em ${escapeHtml(dateTimeBr(new Date()))}:</p><ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p>${docs.length > 1 ? 'As cópias em PDF seguem anexas' : 'A cópia em PDF segue anexa'} e também ficam no app do afiliado, em <strong>Contrato</strong>.</p>`),
+        attachments: files.map((file) => ({ filename: file.filename, content: file.buffer, contentType: 'application/pdf' })),
+      });
+    } catch (error) {
+      this.logger.warn(`Cópia dos documentos assinados não enviada: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async requestCode(user: AuthUser, id: string, meta: SignatureMeta) {
     const row = await this.ownContract(user, id);
     if (row.status !== 'aguardando') throw new ConflictException(row.status === 'assinado' ? 'Este contrato já está assinado.' : 'Este contrato foi cancelado.');
+    await this.assertDataComplete(row.afiliadoId!);
     const now = Date.now();
     if (row.codigoEnviadoEm && now - row.codigoEnviadoEm.getTime() < RESEND_MS) throw new HttpException('Aguarde 1 minuto para pedir outro código.', HttpStatus.TOO_MANY_REQUESTS);
     const sendsToday = row.codigoEnviadoEm && now - row.codigoEnviadoEm.getTime() < 24 * 60 * 60 * 1000 ? row.codigoEnvios : 0;
@@ -438,31 +683,8 @@ export class ContractsService {
       throw new BadRequestException(attempts >= MAX_ATTEMPTS ? 'Código incorreto. Peça um novo código.' : `Código incorreto. Você ainda tem ${MAX_ATTEMPTS - attempts} ${MAX_ATTEMPTS - attempts === 1 ? 'tentativa' : 'tentativas'}.`);
     }
     const account = await this.prisma.usuario.findUniqueOrThrow({ where: { id: user.id }, select: { nome: true, email: true, cpf: true } });
-    const now = new Date();
-    const signature = {
-      metodo: 'Código numérico de uso único enviado ao e-mail cadastrado',
-      nome: account.nome, cpf: formatCpf(account.cpf), email: account.email, usuarioId: user.id,
-      ip: meta.ip, ipsEncaminhados: meta.forwardedFor, userAgent: meta.userAgent,
-      ...cleanDevice(device),
-      codigoEnviadoEm: row.codigoEnviadoEm?.toISOString() ?? null, assinadoEm: now.toISOString(), hash: row.hash,
-    };
-    const events = [...((row.eventos as ContractEvent[] | null) ?? []), { em: now.toISOString(), evento: 'assinado', detalhe: `${account.nome} (${maskEmail(account.email)})`, ip: meta.ip }];
-    const updated = await this.prisma.contrato.updateMany({ where: { id, status: 'aguardando', codigoHash: row.codigoHash }, data: { status: 'assinado', assinadoEm: now, assinatura: signature as unknown as Prisma.InputJsonValue, codigoHash: null, codigoExpiraEm: null, eventos: events as unknown as Prisma.InputJsonValue } });
-    if (updated.count !== 1) throw new ConflictException('Este contrato mudou enquanto você assinava. Recarregue a página.');
-    await this.audit.record(this.prisma, { entidade: 'contrato', entidadeId: id, evento: 'contrato.assinado', atorId: user.id, payloadDepois: { numero: row.numero, hash: row.hash, ip: meta.ip } });
-    // Cópia do contrato assinado por e-mail (falha no envio não desfaz a assinatura).
-    try {
-      const pdf = await this.pdf(id);
-      await this.mail.send({
-        to: account.email,
-        subject: `Contrato assinado: ${row.numero}`,
-        text: `Seu documento "${row.titulo}" nº ${row.numero} foi assinado em ${dateTimeBr(now)}. A cópia em PDF segue anexa e também fica no app do afiliado, em Contrato.`,
-        html: wrapEmailHtml('Contrato assinado', `<p>Seu documento <strong>${escapeHtml(row.titulo)}</strong> nº ${escapeHtml(row.numero)} foi assinado em ${escapeHtml(dateTimeBr(now))}.</p><p>A cópia em PDF segue anexa e também fica no app do afiliado, em <strong>Contrato</strong>.</p>`),
-        attachments: [{ filename: pdf.filename, content: pdf.buffer, contentType: 'application/pdf' }],
-      });
-    } catch (error) {
-      this.logger.warn(`Cópia do contrato ${row.numero} não enviada: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    const now = await this.applySignature(row, user, account, device, meta);
+    await this.sendSignedCopies(account, [{ id: row.id, numero: row.numero, titulo: row.titulo }]);
     return { status: 'assinado', assinadoEm: now, numero: row.numero, hash: row.hash };
   }
 
@@ -480,6 +702,8 @@ export class ContractsService {
     const signature = (row.assinatura ?? null) as Record<string, unknown> | null;
     const company = (row.empresaAssinatura ?? null) as CompanyApproval | null;
     const events = ((row.eventos as ContractEvent[] | null) ?? []);
+    const digital = icpEnabled();
+    const idDoc = await this.documents.forAffiliate(row.afiliadoId).catch(() => null);
     const statusText = row.status === 'assinado' ? 'Assinado pelo afiliado' : row.status === 'cancelado' ? `Cancelado em ${dateTimeBr(row.canceladoEm)}${row.motivoCancelamento ? ` — ${row.motivoCancelamento}` : ''}` : 'Aguardando assinatura do afiliado';
     const blocks: CertificateBlock[] = [
       { title: 'Documento', rows: [['Número', row.numero], ['Tipo', row.titulo], ['Situação', statusText], ['Gerado em', dateTimeBr(row.criadoEm)], ['Versão do modelo', row.versaoModelo]] },
@@ -488,6 +712,7 @@ export class ContractsService {
         ['Representante legal', `${partes.empresa?.representanteNome ?? '—'} — CPF ${partes.empresa?.representanteCpf ?? '—'}`],
         ['Assinatura', company ? `Modelo aprovado eletronicamente em ${dateTimeBr(company.em)} por ${company.nome} (${maskEmail(company.email)}), com código enviado ao e-mail` : 'Pendente: o modelo ainda não foi aprovado pelo representante legal'],
         ...(company ? [['IP da aprovação', company.ip] as const, ['Local da aprovação', localText(company.local)] as const] : []),
+        ...(digital ? [['Certificado digital', 'Este PDF é assinado digitalmente pela contratante com certificado ICP-Brasil (e-CNPJ). A assinatura pode ser conferida no leitor de PDF ou em validar.iti.gov.br.'] as const] : []),
       ] },
       { title: 'Afiliado', rows: [
         ['Nome', partes.afiliado?.nome ?? '—'], ['CPF', partes.afiliado?.cpf ? formatCpf(partes.afiliado.cpf) : '—'], ['E-mail', partes.afiliado?.email ? maskEmail(partes.afiliado.email) : '—'],
@@ -498,10 +723,15 @@ export class ContractsService {
         ['Localização do aparelho', signature ? localText(signature) : '—'],
         ['Dispositivo e navegador', signature ? String(signature.userAgent ?? '—').slice(0, 220) : '—'],
         ['Fuso e idioma', signature ? [signature.fuso, signature.idioma].filter(Boolean).join(' · ') || '—' : '—'],
+        ...(idDoc ? [['Documento de identidade', `${idDoc.rotulo}${idDoc.frente ? ` · enviado em ${dateTimeBr(idDoc.frente.enviadoEm)}` : ''}`] as const] : []),
       ] },
-      { title: 'Histórico', rows: events.map((event) => [dateTimeBr(event.em).replace(' (horário de Brasília)', ''), `${{ gerado: 'Contrato gerado', aviso_enviado: 'Aviso enviado ao afiliado', lembrete_enviado: 'Lembrete enviado', codigo_enviado: 'Código enviado para', codigo_incorreto: 'Código incorreto digitado', assinado: 'Assinado por', empresa_assinou: 'Assinatura da contratante', cancelado: 'Cancelado' }[event.evento] ?? event.evento}${event.detalhe && event.evento !== 'gerado' ? ` ${event.detalhe}` : ''}${event.ip ? ` · IP ${event.ip}` : ''}`] as const) },
+      { title: 'Histórico', rows: events.map((event) => [dateTimeBr(event.em).replace(' (horário de Brasília)', ''), `${{ gerado: 'Contrato gerado', dados_atualizados: 'Dados do afiliado atualizados',  aviso_enviado: 'Aviso enviado ao afiliado', lembrete_enviado: 'Lembrete enviado', codigo_enviado: 'Código enviado para', codigo_incorreto: 'Código incorreto digitado', assinado: 'Assinado por', empresa_assinou: 'Assinatura da contratante', cancelado: 'Cancelado' }[event.evento] ?? event.evento}${event.detalhe && event.evento !== 'gerado' ? ` ${event.detalhe}` : ''}${event.ip ? ` · IP ${event.ip}` : ''}`] as const) },
     ];
-    const buffer = await buildContractPdf({ numero: row.numero, titulo: row.titulo, texto: row.texto, hash: row.hash, status: row.status, blocks, verifyUrl: this.verifyUrl(row.numero, row.hash), footer: `${partes.empresa?.razaoSocial ?? 'BL — Bolão Livre'} · ${longDate(row.criadoEm)}` });
+    const plain = await buildContractPdf({ numero: row.numero, titulo: row.titulo, texto: row.texto, hash: row.hash, status: row.status, blocks, verifyUrl: this.verifyUrl(row.numero, row.hash), footer: `${partes.empresa?.razaoSocial ?? 'BL — Bolão Livre'} · ${longDate(row.criadoEm)}` });
+    // Com o e-CNPJ configurado, o PDF sai assinado digitalmente pela contratante (ICP-Brasil).
+    const { buffer } = digital
+      ? await signPdfWithCompanyCertificate(plain, { reason: `Contratante: ${row.titulo} nº ${row.numero}`, location: partes.empresa?.cidade ?? 'Brasil', name: partes.empresa?.razaoSocial ?? 'Contratante' })
+      : { buffer: plain };
     return { buffer, filename: `${row.numero}.pdf` };
   }
 

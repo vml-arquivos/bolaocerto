@@ -12,10 +12,10 @@ export function initials(name: unknown): string {
 
 export type PersonStat = { label: string; value: ReactNode; hint?: ReactNode; href?: string };
 
-export function PersonCard({ name, subtitle, status, tags, stats, footer, actions, tone, selected }: { name: ReactNode; subtitle?: ReactNode; status?: ReactNode; tags?: ReactNode; stats?: PersonStat[]; footer?: ReactNode; actions?: ReactNode; tone?: 'muted'; selected?: boolean }) {
+export function PersonCard({ name, avatar, subtitle, status, tags, stats, footer, actions, tone, selected }: { name: ReactNode; avatar?: string; subtitle?: ReactNode; status?: ReactNode; tags?: ReactNode; stats?: PersonStat[]; footer?: ReactNode; actions?: ReactNode; tone?: 'muted'; selected?: boolean }) {
   return <article className={`pc-card${tone === 'muted' ? ' is-muted' : ''}${selected ? ' is-selected' : ''}`} aria-current={selected ? 'true' : undefined}>
     <header className="pc-head">
-      <span className="pc-avatar" aria-hidden="true">{initials(typeof name === 'string' ? name : '')}</span>
+      <span className="pc-avatar" aria-hidden="true">{initials(avatar ?? (typeof name === 'string' ? name : ''))}</span>
       <div className="pc-id"><strong>{name}</strong>{subtitle && <small>{subtitle}</small>}</div>
       {status && <div className="pc-status">{status}</div>}
     </header>

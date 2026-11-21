@@ -44,6 +44,7 @@ import {
 import { ensureAffiliateGroup } from '../common/affiliate-groups';
 import { legalDocument } from '../legal/documents';
 import { formatCpf } from '../reports/export.util';
+import { publicDoc, readDoc } from '../contracts/identity-document';
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, @Optional() private readonly mail?: MailService) {}
@@ -444,6 +445,72 @@ export class AdminService {
     const contractOf = (id: string) => { const rows = contractRows.filter((row) => row.afiliadoId === id); const row = rows.find((item) => item.status === 'assinado') ?? rows[0]; return row ? { status: row.status, numero: row.numero, assinadoEm: row.assinadoEm } : null; };
     const levelOf = (id: string) => { const row = levelRows.find((item) => item.chave === levelKey(id)); let raw: unknown = null; try { raw = row ? JSON.parse(row.valor) : null; } catch { raw = null; } const level = normalizeLevel(raw); const limit = effectiveLimit(rules, level); return { nivel: level.nivel, nomeNivel: LEVEL_NAMES[level.nivel], manual: level.manual, maxCotas: limit.maxCotas, maxValorCota: limit.maxValorCota, origem: limit.origem }; };
     return { items: items.map((affiliate) => ({ ...affiliate, nivel: levelOf(affiliate.id), contratoAceitoEm: acceptedAt(affiliate.usuarioId), contrato: contractOf(affiliate.id), comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, clientes: clientCount.get(affiliate.id) ?? affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+  }
+
+  /** Ficha completa do afiliado: dados pessoais, vendas, clientes, comissões, contratos e documento de identidade. */
+  async affiliateProfile(id: string) {
+    const affiliate = await this.prisma.afiliado.findUnique({
+      where: { id },
+      include: {
+        usuario: { select: { id: true, nome: true, email: true, cpf: true, telefone: true, dataNascimento: true, papel: true, statusKyc: true, chavePixRecebimento: true, criadoEm: true, desativadoEm: true, enderecoCep: true, enderecoLogradouro: true, enderecoNumero: true, enderecoComplemento: true, enderecoBairro: true, enderecoCidade: true, enderecoUf: true } },
+        parentAfiliado: { select: { id: true, codigoAfiliado: true, usuario: { select: { nome: true } } } },
+        indicados: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, usuario: { select: { nome: true } } }, take: 50 },
+        grupos: { select: { id: true, nome: true, slug: true, _count: { select: { membros: true } } }, take: 50 },
+      },
+    });
+    if (!affiliate) throw new NotFoundException('Afiliado não encontrado.');
+    const paidStatus = [StatusCota.paga, StatusCota.registrada, StatusCota.apurada, StatusCota.premiada];
+    const [sales, commissions, commissionTotals, contracts, clientCount, levelRow, rules, acceptance] = await Promise.all([
+      this.prisma.cota.findMany({ where: { afiliadoReferenciaId: id, status: { in: paidStatus } }, select: { compradorId: true, valorPago: true, quantidade: true, criadoEm: true, comprador: { select: { nome: true, email: true } } }, orderBy: { criadoEm: 'desc' }, take: 5000 }),
+      this.prisma.comissao.findMany({ where: { afiliadoId: id }, include: { cota: { select: { titularNome: true, comprador: { select: { nome: true } }, bolao: { select: { concurso: { select: { modalidade: true, numeroConcurso: true } } } } } } }, orderBy: { criadoEm: 'desc' }, take: 15 }),
+      this.prisma.comissao.groupBy({ by: ['status'], where: { afiliadoId: id }, _sum: { valor: true }, _count: { _all: true } }),
+      this.prisma.contrato?.findMany?.({ where: { afiliadoId: id }, select: { id: true, numero: true, tipo: true, titulo: true, status: true, criadoEm: true, assinadoEm: true, empresaAssinadaEm: true, canceladoEm: true }, orderBy: { criadoEm: 'desc' } }).catch(() => []) ?? [],
+      this.affiliateClientCounts([{ id: affiliate.id, usuarioId: affiliate.usuarioId }]),
+      this.prisma.configuracaoSistema?.findUnique?.({ where: { chave: levelKey(id) } }).catch(() => null) ?? null,
+      readRules(this.prisma),
+      this.prisma.aceiteLegal.findFirst({ where: { tipo: 'afiliado', usuarioId: affiliate.usuarioId, hash: legalDocument('afiliado', affiliate.comissaoPadraoPct.toFixed(2)).hash }, select: { aceitoEm: true } }).catch(() => null),
+    ]);
+    let rawLevel: unknown = null;
+    try { rawLevel = levelRow ? JSON.parse(levelRow.valor) : null; } catch { rawLevel = null; }
+    const level = normalizeLevel(rawLevel);
+    const limit = effectiveLimit(rules, level);
+    const byBuyer = new Map<string, { nome: string; email: string | null; cotas: number; valor: number; ultima: Date }>();
+    let revenue = 0; let shares = 0;
+    for (const sale of sales) {
+      const value = Number(sale.valorPago ?? 0);
+      revenue += value; shares += sale.quantidade ?? 1;
+      const row = byBuyer.get(sale.compradorId) ?? { nome: sale.comprador?.nome ?? '—', email: sale.comprador?.email ?? null, cotas: 0, valor: 0, ultima: sale.criadoEm };
+      row.cotas += sale.quantidade ?? 1; row.valor += value; if (sale.criadoEm > row.ultima) row.ultima = sale.criadoEm;
+      byBuyer.set(sale.compradorId, row);
+    }
+    const total = (status: StatusComissao) => commissionTotals.find((row) => row.status === status);
+    const u = affiliate.usuario;
+    const extra = (affiliate.dadosContrato ?? {}) as Record<string, string | null>;
+    const doc = publicDoc(readDoc(affiliate.documentoIdentidade));
+    return {
+      id: affiliate.id, codigoAfiliado: affiliate.codigoAfiliado, statusAprovacao: affiliate.statusAprovacao, comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2),
+      criadoEm: affiliate.criadoEm, aprovadoEm: affiliate.aprovadoEm, chavePixRepasse: affiliate.chavePixRepasse,
+      nivel: { nivel: level.nivel, nomeNivel: LEVEL_NAMES[level.nivel], manual: level.manual, maxCotas: limit.maxCotas, maxValorCota: limit.maxValorCota },
+      usuario: {
+        id: u.id, nome: u.nome, email: u.email, cpf: formatCpf(u.cpf), telefone: u.telefone, dataNascimento: u.dataNascimento, statusKyc: u.statusKyc, criadoEm: u.criadoEm, desativadoEm: u.desativadoEm, chavePix: u.chavePixRecebimento,
+        endereco: [u.enderecoLogradouro && `${u.enderecoLogradouro}${u.enderecoNumero ? `, ${u.enderecoNumero}` : ''}${u.enderecoComplemento ? ` - ${u.enderecoComplemento}` : ''}`, u.enderecoBairro, u.enderecoCidade && `${u.enderecoCidade}${u.enderecoUf ? `/${u.enderecoUf}` : ''}`, u.enderecoCep && `CEP ${u.enderecoCep.replace(/^(\d{5})(\d{3})$/, '$1-$2')}`].filter(Boolean).join(' · ') || null,
+        cidade: u.enderecoCidade ? `${u.enderecoCidade}${u.enderecoUf ? `/${u.enderecoUf}` : ''}` : null,
+      },
+      dadosContrato: { rg: extra.rg ?? null, rgOrgao: [extra.rgOrgao, extra.rgUf].filter(Boolean).join('/') || null, nacionalidade: extra.nacionalidade ?? null, estadoCivil: extra.estadoCivil ?? null, profissao: extra.profissao ?? null },
+      indicadoPor: affiliate.parentAfiliado ? { id: affiliate.parentAfiliado.id, nome: affiliate.parentAfiliado.usuario?.nome ?? affiliate.parentAfiliado.codigoAfiliado, codigo: affiliate.parentAfiliado.codigoAfiliado } : null,
+      indicados: affiliate.indicados.map((item) => ({ id: item.id, nome: item.usuario?.nome ?? item.codigoAfiliado, codigo: item.codigoAfiliado, status: item.statusAprovacao })),
+      grupos: affiliate.grupos.map((group) => ({ id: group.id, nome: group.nome, slug: group.slug, membros: group._count.membros })),
+      indicadores: {
+        clientes: clientCount.get(affiliate.id) ?? 0, compradores: byBuyer.size, cotas: shares, vendido: revenue.toFixed(2), ticketMedio: byBuyer.size ? (revenue / byBuyer.size).toFixed(2) : '0.00',
+        pendente: Number(total(StatusComissao.pendente)?._sum.valor ?? 0).toFixed(2), paga: Number(total(StatusComissao.paga)?._sum.valor ?? 0).toFixed(2),
+        comissoes: commissionTotals.reduce((sum, row) => sum + row._count._all, 0), ultimaVenda: sales[0]?.criadoEm ?? null,
+      },
+      maioresClientes: [...byBuyer.entries()].sort((a, b) => b[1].valor - a[1].valor).slice(0, 10).map(([userId, row]) => ({ id: userId, nome: row.nome, email: row.email, cotas: row.cotas, valor: row.valor.toFixed(2), ultima: row.ultima })),
+      comissoes: commissions.map((row) => ({ id: row.id, valor: row.valor.toFixed(2), percentual: row.percentual?.toFixed(2) ?? null, status: row.status, criadoEm: row.criadoEm, pagoEm: row.pagoEm ?? null, cliente: row.cota?.comprador?.nome ?? row.cota?.titularNome ?? '—', bolao: row.cota?.bolao?.concurso ? `${MODALITY_NAMES[row.cota.bolao.concurso.modalidade] ?? row.cota.bolao.concurso.modalidade} ${row.cota.bolao.concurso.numeroConcurso}` : null })),
+      contratos: contracts,
+      contratoAceitoEm: acceptance?.aceitoEm ?? null,
+      documento: doc,
+    };
   }
 
   async listCommissions(query: AdminListQueryDto = {}) {

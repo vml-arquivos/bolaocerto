@@ -6,6 +6,7 @@ import { AttachmentsPanel } from './admin-attachments';
 import { useSearchParams } from 'next/navigation';
 import { PersonCard, PersonList } from './admin-views/person-card';
 import { AdminDrawer } from './admin-drawer';
+import { FichaEmpty, FichaGrid, FichaHead, FichaSection, FichaStats, InfoList, KYC_TEXT, phoneText } from './admin-views/ficha';
 
 /* -------------------------------------------------------------------------- */
 /* CRM de clientes                                                         */
@@ -87,7 +88,7 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
   return <div className="crm-page">
     <div className="admin-page-heading"><div><h1>Clientes (cotistas)</h1></div></div>
 
-    {selected && <BettorDetail key={selected} id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
+    {selected && <ClientFicha key={selected} id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} onEdit={onEditUser ? (userId) => { setSelected(null); onEditUser(userId); } : undefined} />}
 
     <div className="admin-kpi-grid">
       <Kpi label="Clientes cadastrados" value={totals.cadastrados ?? 0} hint={`${totals.compradores ?? 0} já compraram`} tone="blue" />
@@ -156,7 +157,8 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
   </div>;
 }
 
-function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose: () => void; onChanged: () => void; notify: Notify }) {
+/** Ficha completa do cliente (cotista). Usada no CRM e em "Equipe e acessos". */
+export function ClientFicha({ id, onClose, onChanged, notify, onEdit }: { id: string; onClose: () => void; onChanged: () => void; notify: Notify; onEdit?: (id: string) => void }) {
   const [data, setData] = useState<Rec | null>(null);
   const [note, setNote] = useState('');
   const [tags, setTags] = useState('');
@@ -197,45 +199,64 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível salvar.'); } finally { setBusy(false); }
   }
 
-  if (!data) return <AdminDrawer title="Abrindo ficha…" onClose={onClose}><div className="admin-spinner" aria-label="Carregando" /></AdminDrawer>;
+  if (!data) return <AdminDrawer size="page" title="Abrindo ficha…" onClose={onClose}><div className="admin-spinner" aria-label="Carregando" /></AdminDrawer>;
   const profile = data.perfil ?? {}; const metrics = data.metricas ?? {};
-  return <AdminDrawer title={profile.nome} subtitle={`${profile.email}${profile.telefone ? ` · ${profile.telefone}` : ''} · CPF ${profile.cpf}${profile.cidade ? ` · ${profile.cidade}/${profile.uf ?? ''}` : ''}`} onClose={onClose}>
-    <div className="admin-kpi-grid">
-      <Kpi label="Nível" value={metrics.nivelNome ?? '—'} hint={(metrics.segmentoNomes ?? []).join(' · ')} tone="violet" />
-      <Kpi label="Total investido" value={brl(metrics.totalGasto)} hint={`${metrics.compras ?? 0} compra(s) · ticket ${brl(metrics.ticketMedio)}`} tone="green" />
-      <Kpi label="Cotas pagas" value={metrics.cotasPagas ?? 0} hint={`${metrics.boloesDistintos ?? 0} bolão(ões) diferentes`} tone="blue" />
-      <Kpi label="Última compra" value={metrics.ultimaCompraEm ? dateOnly(metrics.ultimaCompraEm) : '—'} hint={metrics.diasSemComprar != null ? `há ${metrics.diasSemComprar} dia(s)` : 'nunca comprou'} tone="amber" />
-      <Kpi label="Pendente" value={brl(metrics.valorPendente)} hint={`${metrics.cotasPendentes ?? 0} cota(s) aguardando`} tone="rose" />
-    </div>
-    {metrics.etapa && <p className="admin-help"><strong>Etapa do funil:</strong> <StageChip etapa={metrics.etapa} nome={metrics.etapaNome} /> · próximo passo: {metrics.proximaAcao}</p>}
-    <p className="admin-help">Cadastrado em {dateOnly(profile.cadastradoEm)}{profile.afiliadoOrigem ? ` · indicado por ${profile.afiliadoOrigem.nome} (${profile.afiliadoOrigem.codigo})` : ' · cadastro direto'} · Verificação: {label(profile.statusKyc)}{Number(metrics.premiosGanhos) > 0 ? ` · prêmios: ${brl(metrics.premiosGanhos)}` : ''}</p>
-    {profile.exclusaoSolicitadaEm && <div className="admin-callout admin-callout-warning"><strong>Pediu a exclusão da conta (LGPD)</strong> em {dateOnly(profile.exclusaoSolicitadaEm)}. Analise o pedido: cotas em andamento e dados fiscais precisam ser mantidos pelo prazo legal.</div>}
-    <div className="admin-row-actions" style={{ margin: '4px 0 12px' }}><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void generateResetLink()}>Gerar link de redefinição de senha</button><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void resetTwoFactor()}>Redefinir 2FA</button></div>
-    {resetLink && <div className="admin-callout"><strong>Link de redefinição (vale 1 hora, uso único):</strong><br /><input readOnly value={resetLink} onFocus={(event) => event.currentTarget.select()} style={{ width: '100%', marginTop: 6 }} aria-label="Link de redefinição" /><button type="button" className="admin-button admin-button-small" style={{ marginTop: 8 }} onClick={() => void navigator.clipboard?.writeText(resetLink).then(() => notify('success', 'Link copiado.')).catch(() => undefined)}>Copiar link</button></div>}
-    <div className="admin-two-col">
-      <div>
-        <h3 style={{ margin: '0 0 8px', fontSize: 13 }}>Acompanhamento</h3>
-        <form onSubmit={saveProfile} className="admin-form-grid">
-          <label className="admin-field"><span>Etiquetas (separe por vírgula)</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="vip, bolão grande, prefere mega" /></label>
-          <label className="admin-field"><span>Próximo contato</span><input type="date" value={next} onChange={(event) => setNext(event.target.value)} /></label>
-          <div className="admin-field" style={{ alignSelf: 'end' }}><button className="admin-button admin-button-primary" disabled={busy}>Salvar</button></div>
-        </form>
-        
-        <h3 style={{ margin: '16px 0 8px', fontSize: 13 }}>Notas do relacionamento</h3>
-        <form onSubmit={saveNote} style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-          <label className="admin-field"><span>Nova nota</span><textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Ex.: Ligou pedindo cotas maiores no próximo bolão da Mega da Virada." /></label>
-          <div><button className="admin-button admin-button-small" disabled={busy || note.trim().length < 2}>Registrar nota</button></div>
-        </form>
-        {(data.notas ?? []).map((item: Rec) => <div className="admin-note" key={item.id}>{item.texto}<small>{item.autor} · {dateTime(item.criadoEm)}</small></div>)}
-        {!(data.notas ?? []).length && <p className="admin-help">Nenhuma nota ainda.</p>}
-      </div>
-      <div>
-        <h3 style={{ margin: '0 0 8px', fontSize: 13 }}>Modalidades preferidas</h3>
-        <Table minWidth={320}><thead><tr><th>Modalidade</th><th>Cotas</th><th>Investido</th></tr></thead><tbody>{(data.modalidadesPreferidas ?? []).map((row: Rec) => <tr key={row.modalidade}><td>{modalityNames[row.modalidade] ?? row.modalidade}</td><td>{row.cotas}</td><td className="td-nowrap">{brl(row.valor)}</td></tr>)}</tbody></Table>
-        {!(data.modalidadesPreferidas ?? []).length && <p className="admin-help">Sem compras pagas.</p>}
-        <h3 style={{ margin: '16px 0 8px', fontSize: 13 }}>Histórico de participações</h3>
-        <Table minWidth={420}><thead><tr><th>Data</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th></tr></thead><tbody>{(data.historico ?? []).map((row: Rec) => <tr key={row.id}><td className="td-date">{dateTime(row.criadoEm)}</td><td>{modalityNames[row.modalidade] ?? row.modalidade} #{row.concurso}</td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valor)}</td><td><span className={chip(row.status)}>{label(row.status)}</span></td></tr>)}</tbody></Table>
-      </div>
+  return <AdminDrawer size="page" title="Ficha do cliente" subtitle={profile.nome} onClose={onClose} actions={onEdit ? <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => onEdit(id)}>Editar conta</button> : undefined}>
+    <div className="ficha">
+      <FichaHead
+        name={profile.nome ?? 'Cliente'}
+        lines={[profile.email, phoneText(profile.telefone), profile.cpf && `CPF ${profile.cpf}`, profile.cidade && `${profile.cidade}${profile.uf ? `/${profile.uf}` : ''}`]}
+        chips={<>{metrics.etapa && <StageChip etapa={metrics.etapa} nome={metrics.etapaNome} />}<LevelChip nivel={metrics.nivel ?? 'sem_compra'} nome={metrics.nivelNome} />{(metrics.segmentoNomes ?? []).map((name: string) => <span key={name} className="status-chip">{name}</span>)}{profile.afiliadoOrigem ? <span className="status-chip status-info">Afiliado: {profile.afiliadoOrigem.nome}</span> : <span className="status-chip">Sem afiliado</span>}</>}
+      />
+      {profile.exclusaoSolicitadaEm && <div className="admin-callout admin-callout-warning"><strong>Pediu a exclusão da conta (LGPD)</strong> em {dateOnly(profile.exclusaoSolicitadaEm)}. Cotas em andamento e dados fiscais precisam ser mantidos pelo prazo legal.</div>}
+      <FichaStats items={[
+        { label: 'Total investido', value: brl(metrics.totalGasto), hint: `${metrics.compras ?? 0} compra(s) · ticket ${brl(metrics.ticketMedio)}`, tone: 'green' },
+        { label: 'Cotas pagas', value: metrics.cotasPagas ?? 0, hint: `${metrics.boloesDistintos ?? 0} bolão(ões)` },
+        { label: 'Última compra', value: metrics.ultimaCompraEm ? dateOnly(metrics.ultimaCompraEm) : '—', hint: metrics.diasSemComprar != null ? `há ${metrics.diasSemComprar} dia(s)` : 'nunca comprou' },
+        { label: 'Pendente', value: brl(metrics.valorPendente), hint: `${metrics.cotasPendentes ?? 0} cota(s) aguardando`, tone: Number(metrics.valorPendente) > 0 ? 'amber' : undefined },
+        { label: 'Prêmios', value: brl(metrics.premiosGanhos ?? 0), tone: Number(metrics.premiosGanhos) > 0 ? 'green' : undefined },
+      ]} />
+      <FichaGrid>
+        <div className="ficha-col">
+          <FichaSection title="Dados">
+            <InfoList rows={[
+              ['Nome', profile.nome], ['CPF', profile.cpf], ['E-mail', profile.email], ['Celular', phoneText(profile.telefone)],
+              ['Cidade', profile.cidade ? `${profile.cidade}${profile.uf ? `/${profile.uf}` : ''}` : null], ['Cadastro', dateOnly(profile.cadastradoEm)],
+              ['Indicado por', profile.afiliadoOrigem ? `${profile.afiliadoOrigem.nome} (${profile.afiliadoOrigem.codigo})` : 'Cadastro direto'], ['Verificação', KYC_TEXT[profile.statusKyc] ?? label(profile.statusKyc)],
+            ]} />
+            {metrics.proximaAcao && <p className="admin-help" style={{ margin: '12px 0 0' }}><strong>Próximo passo:</strong> {metrics.proximaAcao}</p>}
+          </FichaSection>
+          <FichaSection title="Acompanhamento">
+            <form onSubmit={saveProfile} className="ficha-form">
+              <label className="admin-field"><span>Etiquetas</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="vip, prefere mega" /></label>
+              <label className="admin-field"><span>Próximo contato</span><input type="date" value={next} onChange={(event) => setNext(event.target.value)} /></label>
+              <div><button className="admin-button admin-button-primary admin-button-small" disabled={busy}>Salvar</button></div>
+            </form>
+          </FichaSection>
+          <FichaSection title="Notas">
+            <form onSubmit={saveNote} style={{ display: 'grid', gap: 8 }}>
+              <textarea rows={2} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Escreva uma nota" aria-label="Nova nota" />
+              <div><button className="admin-button admin-button-small" disabled={busy || note.trim().length < 2}>Registrar nota</button></div>
+            </form>
+            {(data.notas ?? []).map((item: Rec) => <div className="admin-note" key={item.id}>{item.texto}<small>{item.autor} · {dateTime(item.criadoEm)}</small></div>)}
+          </FichaSection>
+          <FichaSection title="Acesso">
+            <div className="ficha-actions"><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void generateResetLink()}>Link para nova senha</button><button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => void resetTwoFactor()}>Redefinir 2FA</button></div>
+            {resetLink && <div className="admin-callout" style={{ marginTop: 10 }}><strong>Link (vale 1 hora, uso único):</strong><input readOnly value={resetLink} onFocus={(event) => event.currentTarget.select()} style={{ width: '100%', marginTop: 6 }} aria-label="Link de redefinição" /><button type="button" className="admin-button admin-button-small" style={{ marginTop: 8 }} onClick={() => void navigator.clipboard?.writeText(resetLink).then(() => notify('success', 'Link copiado.')).catch(() => undefined)}>Copiar link</button></div>}
+          </FichaSection>
+        </div>
+        <div className="ficha-col">
+          <FichaSection title="Participações">
+            {(data.historico ?? []).length ? <ul className="ficha-list">{(data.historico ?? []).map((row: Rec) => <li key={row.id}>
+              <div><strong>{modalityNames[row.modalidade] ?? row.modalidade} #{row.concurso}</strong><small>{dateTime(row.criadoEm)} · {row.quantidade} {row.quantidade === 1 ? 'cota' : 'cotas'}</small></div>
+              <div className="ficha-right"><strong>{brl(row.valor)}</strong><span className={chip(row.status)}>{label(row.status)}</span></div>
+            </li>)}</ul> : <FichaEmpty text="Nenhuma participação ainda." />}
+          </FichaSection>
+          <FichaSection title="Modalidades preferidas">
+            {(data.modalidadesPreferidas ?? []).length ? <ul className="ficha-list">{(data.modalidadesPreferidas ?? []).map((row: Rec) => <li key={row.modalidade}><div><strong>{modalityNames[row.modalidade] ?? row.modalidade}</strong><small>{row.cotas} {row.cotas === 1 ? 'cota' : 'cotas'}</small></div><div className="ficha-right"><strong>{brl(row.valor)}</strong></div></li>)}</ul> : <FichaEmpty text="Sem compras pagas." />}
+          </FichaSection>
+        </div>
+      </FichaGrid>
     </div>
   </AdminDrawer>;
 }
@@ -296,7 +317,7 @@ function PoolDetail({ id, onClose, onChanged, notify }: { id: string; onClose: (
     catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível liberar.'); } finally { setBusy(false); }
   }
 
-  if (!data) return <AdminDrawer title="Abrindo bolão…" onClose={onClose}><div className="admin-spinner" aria-label="Carregando" /></AdminDrawer>;
+  if (!data) return <AdminDrawer size="page" title="Abrindo bolão…" onClose={onClose}><div className="admin-spinner" aria-label="Carregando" /></AdminDrawer>;
   const summary = data.resumo ?? {}; const gate = data.liberacao ?? {};
   const rows: Rec[] = (data.linhas ?? []).filter((row: Rec) => {
     if (filter === 'pagas') return row.statusPagamento === 'confirmado';
@@ -304,7 +325,7 @@ function PoolDetail({ id, onClose, onChanged, notify }: { id: string; onClose: (
     if (filter === 'canceladas') return ['cancelada', 'estornada'].includes(String(row.statusCota));
     return true;
   });
-  return <AdminDrawer title={`${modalityNames[summary.modalidade] ?? summary.modalidade} · concurso ${summary.concurso}`} subtitle={`${summary.grupo} · sorteio ${dateTime(summary.sorteio)} · cota ${brl(summary.valorCota)} · taxa de administração ${summary.taxaAdministracaoPct}%`} onClose={onClose} actions={<ExportBar path={`/api/v1/admin/relatorios/boloes/${id}`} id={`bolao-${id.slice(0, 8)}`} small={false} onError={(text) => notify('error', text)} />}>
+  return <AdminDrawer size="page" title={`${modalityNames[summary.modalidade] ?? summary.modalidade} · concurso ${summary.concurso}`} subtitle={`${summary.grupo} · sorteio ${dateTime(summary.sorteio)} · cota ${brl(summary.valorCota)} · taxa de administração ${summary.taxaAdministracaoPct}%`} onClose={onClose} actions={<ExportBar path={`/api/v1/admin/relatorios/boloes/${id}`} id={`bolao-${id.slice(0, 8)}`} small={false} onError={(text) => notify('error', text)} />}>
     {gate.condicional && <div className={`admin-toast ${gate.liberado ? 'admin-toast-success' : 'admin-toast-error'}`} role="status" style={{ position: 'static', marginBottom: 14 }}><strong>{gate.liberado ? 'Cotas liberadas' : 'Bolão condicional: cotas bloqueadas'}</strong> — {gate.mensagem} {!gate.liberado && <><Progress value={gate.progressoPct} tone="amber" /><button className="admin-button admin-button-small" style={{ marginTop: 8 }} disabled={busy} onClick={() => void release()}>Liberar cotas agora (manual)</button></>}</div>}
     <div className="admin-kpi-grid">
       <Kpi label="Cotas pagas" value={summary.cotasPagas ?? 0} hint={summary.totalCotas ? `de ${summary.totalCotas} · ${summary.percentualVendido ?? 0}% vendido` : 'cotas ilimitadas'} tone="green" />

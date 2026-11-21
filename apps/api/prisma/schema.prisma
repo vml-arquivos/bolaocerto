@@ -268,6 +268,10 @@ model Afiliado {
   aprovadoPor           String?         @map("aprovado_por") @db.Uuid
   aprovadoEm            DateTime?       @map("aprovado_em")
   parentAfiliadoId      String?         @map("parent_afiliado_id") @db.Uuid
+  /// RG, órgão emissor, nacionalidade, estado civil e profissão informados para o contrato.
+  dadosContrato         Json?           @map("dados_contrato")
+  /// Documento de identidade (frente e verso), resultado da leitura automática e conferência da administração.
+  documentoIdentidade   Json?           @map("documento_identidade")
   criadoEm              DateTime        @default(now()) @map("criado_em")
   usuario               Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   aprovador             Usuario?       @relation("aprovador_afiliado", fields: [aprovadoPor], references: [id])

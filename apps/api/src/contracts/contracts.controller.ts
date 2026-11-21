@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { Request, Response } from 'express';
@@ -9,6 +10,45 @@ import { RolesGuard } from '../auth/roles.guard';
 import { isSuperAdmin } from '../admin/superadmin';
 import { CONTRACT_KINDS, type ContractKind } from './contract-templates';
 import { ContractsService, type SignatureMeta } from './contracts.service';
+import { DOC_SIDES, IdentityDocumentService, type DocSide } from './identity-document';
+
+/** Limite do envio (o serviço confere de novo com UPLOAD_MAX_MB). */
+const DOC_UPLOAD_LIMIT = 25 * 1024 * 1024;
+
+export class ContractDataDto {
+  @IsOptional() @IsString() @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: 'Data de nascimento inválida.' }) dataNascimento?: string;
+  @IsOptional() @IsString() @MaxLength(20) telefone?: string;
+  @IsOptional() @IsString() @MaxLength(20) rg?: string;
+  @IsOptional() @IsString() @MaxLength(20) rgOrgao?: string;
+  @IsOptional() @IsString() @MaxLength(2) rgUf?: string;
+  @IsOptional() @IsString() @MaxLength(40) nacionalidade?: string;
+  @IsOptional() @IsString() @MaxLength(30) estadoCivil?: string;
+  @IsOptional() @IsString() @MaxLength(60) profissao?: string;
+  @IsOptional() @IsString() @MaxLength(9) enderecoCep?: string;
+  @IsOptional() @IsString() @MaxLength(120) enderecoLogradouro?: string;
+  @IsOptional() @IsString() @MaxLength(20) enderecoNumero?: string;
+  @IsOptional() @IsString() @MaxLength(80) enderecoComplemento?: string;
+  @IsOptional() @IsString() @MaxLength(80) enderecoBairro?: string;
+  @IsOptional() @IsString() @MaxLength(80) enderecoCidade?: string;
+  @IsOptional() @IsString() @MaxLength(2) enderecoUf?: string;
+}
+
+export class ReviewDocumentDto {
+  @IsBoolean() aprovado!: boolean;
+  @IsOptional() @IsString() @MaxLength(300) motivo?: string;
+}
+
+function docSide(value: string): DocSide {
+  return (DOC_SIDES as readonly string[]).includes(value) ? value as DocSide : 'frente';
+}
+
+function sendDocument(file: { stream: NodeJS.ReadableStream; mime: string; filename: string }, response: Response, inline: boolean): StreamableFile {
+  response.setHeader('Content-Type', file.mime);
+  response.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${file.filename}"`);
+  response.setHeader('Cache-Control', 'private, no-store');
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  return new StreamableFile(file.stream as never);
+}
 
 export class DeviceDto {
   @IsOptional() @IsNumber() @Min(-90) @Max(90) latitude?: number | null;
@@ -93,9 +133,30 @@ function sendPdf(file: { buffer: Buffer; filename: string }, response: Response,
 /** Contratos do afiliado: painel (gerar, acompanhar, cancelar, dados da empresa) e assinatura pelo próprio afiliado. */
 @Controller()
 export class ContractsController {
-  constructor(private readonly contracts: ContractsService) {}
+  constructor(private readonly contracts: ContractsService, private readonly documents: IdentityDocumentService) {}
 
   // ----- Afiliado -----
+  @Put('afiliados/me/contratos/dados') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado')
+  saveData(@Body() dto: ContractDataDto, @CurrentUser() user: AuthUser) { return this.contracts.saveContractData(user, dto); }
+
+  @Post('afiliados/me/contratos/codigo') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado')
+  requestCodeAll(@CurrentUser() user: AuthUser, @Req() req: Request) { return this.contracts.requestCodeAll(user, signatureMeta(req)); }
+
+  @Post('afiliados/me/contratos/assinar') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado')
+  signAll(@Body() dto: SignContractDto, @CurrentUser() user: AuthUser, @Req() req: Request) { return this.contracts.signAll(user, dto.codigo, dto.dispositivo, signatureMeta(req)); }
+
+  @Get('afiliados/me/documento') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado') @Header('Cache-Control', 'private, no-store')
+  myDocument(@CurrentUser() user: AuthUser) { return this.documents.mine(user.id); }
+
+  @Post('afiliados/me/documento/:lado') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado')
+  @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: DOC_UPLOAD_LIMIT, files: 1 } }))
+  uploadDocument(@Param('lado') side: string, @UploadedFile() file: { buffer: Buffer; originalname?: string } | undefined, @Body('leitura') reading: string | undefined, @CurrentUser() user: AuthUser) {
+    return this.documents.upload(user.id, side as DocSide, file, reading);
+  }
+
+  @Get('afiliados/me/documento/:lado/arquivo') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado')
+  async myDocumentFile(@Param('lado') side: string, @CurrentUser() user: AuthUser, @Res({ passthrough: true }) response: Response) { return sendDocument(await this.documents.ownFile(user.id, docSide(side)), response, true); }
+
   @Get('afiliados/me/contratos') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('afiliado') @Header('Cache-Control', 'private, no-store')
   mine(@CurrentUser() user: AuthUser) { return this.contracts.mine(user); }
 
@@ -136,6 +197,12 @@ export class ContractsController {
 
   @Post('admin/contratos/gerar-pendentes') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
   generateMissing(@CurrentUser() user: AuthUser) { return this.contracts.generateMissing(user); }
+
+  @Get('admin/contratos/documento/:afiliadoId/:lado') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
+  async documentFile(@Param('afiliadoId', ParseUUIDPipe) afiliadoId: string, @Param('lado') side: string, @Query('baixar') download: string | undefined, @Res({ passthrough: true }) response: Response) { return sendDocument(await this.documents.file(afiliadoId, docSide(side)), response, download !== '1'); }
+
+  @Post('admin/contratos/documento/:afiliadoId/revisar') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
+  reviewDocument(@Param('afiliadoId', ParseUUIDPipe) afiliadoId: string, @Body() dto: ReviewDocumentDto, @CurrentUser() user: AuthUser) { return this.documents.review(user, afiliadoId, dto.aprovado, dto.motivo); }
 
   @Get('admin/contratos/:id') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
   async detail(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) { return hideApprover(await this.contracts.detail(id), user); }

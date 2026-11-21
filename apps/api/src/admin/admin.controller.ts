@@ -82,6 +82,12 @@ export class AdminController {
     return this.admin.listAffiliates(query, user);
   }
 
+  @Get('admin/afiliados/:id/ficha')
+  @Roles('admin')
+  affiliateProfile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.admin.affiliateProfile(id);
+  }
+
   @Get('admin/comissoes')
   @Roles('admin')
   commissions(@Query() query: AdminListQueryDto) {

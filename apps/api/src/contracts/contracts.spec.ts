@@ -1,6 +1,9 @@
 import { buildContractPdf } from './contract-pdf';
 import { affiliateContractText, bonusAddendumText, companyHash, DEFAULT_COMPANY, longDate, numberInWords, sanitizeCompany, textHash, type AffiliateParty } from './contract-templates';
 import { addressLine, cleanDevice, ContractsService, maskEmail } from './contracts.service';
+import { missingFields, readExtra, rgIssuer } from './contract-data';
+import { icpInfo, signPdfWithCompanyCertificate } from './contract-icp';
+import { combinedFound, detectFileType, documentSituation, sanitizeReading, type IdentityDoc } from './identity-document';
 
 const party: AffiliateParty = { nome: 'Maria da Silva', cpf: '52998224725', email: 'maria@exemplo.com', telefone: '61999998888', dataNascimento: new Date('1990-05-10T12:00:00Z'), endereco: 'Rua A, nº 10, Centro, Brasília/DF, CEP 70.000-000', codigoAfiliado: 'BLX123', comissaoPct: '35.00' };
 const date = new Date('2026-11-19T15:00:00Z');
@@ -95,8 +98,8 @@ function fakeDb() {
     return row[key] === cond;
   });
   const user = { id: 'u1', nome: 'Maria da Silva', cpf: '52998224725', email: 'maria@exemplo.com', telefone: '61999998888', dataNascimento: null, enderecoLogradouro: 'Rua A', enderecoNumero: '10', enderecoComplemento: null, enderecoBairro: 'Centro', enderecoCidade: 'Brasília', enderecoUf: 'DF', enderecoCep: '70000000' };
-  const affiliate = { id: 'a1', usuarioId: 'u1', codigoAfiliado: 'BLX123', comissaoPadraoPct: 20, criadoEm: new Date(), usuario: user };
-  const prisma = {
+  const affiliate: Record<string, any> = { id: 'a1', usuarioId: 'u1', codigoAfiliado: 'BLX123', comissaoPadraoPct: 20, criadoEm: new Date(), dadosContrato: null, documentoIdentidade: null, usuario: user };
+  const prisma: Record<string, any> = {
     contratos,
     configuracaoSistema: {
       findUnique: jest.fn(async ({ where }: any) => (config.has(where.chave) ? { chave: where.chave, valor: config.get(where.chave) } : null)),
@@ -105,11 +108,15 @@ function fakeDb() {
     },
     afiliado: {
       findUnique: jest.fn(async ({ where }: any) => (where.id === 'a1' || where.usuarioId === 'u1' ? affiliate : null)),
+      findUniqueOrThrow: jest.fn(async () => affiliate),
+      update: jest.fn(async ({ data }: any) => Object.assign(affiliate, data)),
     },
     usuario: {
       findUnique: jest.fn(async () => user),
       findUniqueOrThrow: jest.fn(async () => user),
+      update: jest.fn(async ({ data }: any) => Object.assign(user, data)),
     },
+    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     notificacao: { create: jest.fn(async () => ({})) },
     contrato: {
       findFirst: jest.fn(async ({ where }: any) => contratos.find((row) => matches(row, where)) ?? null),
@@ -131,25 +138,71 @@ describe('serviço de contratos', () => {
     const prisma = fakeDb();
     const mail = { send: jest.fn(async (_message: unknown) => true), publicUrl: () => 'https://bolaolivre.com' };
     const audit = { record: jest.fn(async () => undefined) };
-    const service = new ContractsService(prisma as any, audit as any, mail as any);
+    const documents = { forAffiliate: jest.fn(async () => null) };
+    const service = new ContractsService(prisma as any, audit as any, mail as any, documents as any);
     return { prisma, mail, audit, service };
   }
+  const complete = { dataNascimento: '1990-05-10', rg: '1234567', rgOrgao: 'SSP', rgUf: 'DF', nacionalidade: 'brasileira', estadoCivil: 'solteiro(a)', profissao: 'Vendedora' };
   const lastCode = (mail: { send: jest.Mock }) => String((mail.send.mock.calls.at(-1)![0] as { text: string }).text.match(/\b(\d{6})\b/)![1]);
 
-  it('ao abrir o app, o afiliado já encontra o contrato preenchido (gerado uma vez só)', async () => {
+  it('ao abrir o app, o afiliado já encontra o contrato e o aditivo preenchidos (gerados uma vez só)', async () => {
     const { service, prisma } = setup();
     const first = await service.mine(user);
-    expect(first.items).toHaveLength(1);
+    expect(first.items).toHaveLength(2);
+    expect(first.items.map((item) => item.tipo)).toEqual(['afiliado', 'aditivo-bonificacao']);
     expect(first.items[0]).toMatchObject({ tipo: 'afiliado', status: 'aguardando' });
     expect(first.items[0]!.texto).toContain('MARIA DA SILVA');
     expect(first.items[0]!.hash).toBe(textHash(first.items[0]!.texto));
+    expect(first.items[1]!.texto).toContain(`nº ${first.items[0]!.numero}`);
+    expect(first.dados.completo).toBe(false);
+    expect(first.dados.faltando.map((item) => item.campo)).toEqual(['dataNascimento', 'rg', 'rgOrgao', 'nacionalidade', 'estadoCivil', 'profissao']);
     await service.mine(user);
-    expect(prisma.contratos).toHaveLength(1);
+    expect(prisma.contratos).toHaveLength(2);
+  });
+
+  it('sem os dados completos não dá para pedir o código; ao completar, os textos são refeitos com RG, estado civil e profissão', async () => {
+    const { service, prisma } = setup();
+    await service.mine(user);
+    const oldHash = prisma.contratos[0]!.hash;
+    await expect(service.requestCodeAll(user, meta)).rejects.toThrow('Complete seus dados');
+    await expect(service.saveContractData(user, { ...complete, estadoCivil: 'enrolado' })).rejects.toThrow('estado civil');
+    await expect(service.saveContractData(user, { ...complete, dataNascimento: '2015-01-01' })).rejects.toThrow('18 anos');
+    const saved = await service.saveContractData(user, complete);
+    expect(saved.completo).toBe(true);
+    expect(saved.refeitos).toBe(2);
+    expect(prisma.contratos[0]!.numero).toMatch(/^BLC-/);
+    expect(prisma.contratos[0]!.hash).not.toBe(oldHash);
+    expect(prisma.contratos[0]!.hash).toBe(textHash(prisma.contratos[0]!.texto));
+    expect(prisma.contratos[0]!.texto).toContain('MARIA DA SILVA, brasileira, solteiro(a), vendedora, portador(a) da cédula de identidade nº 1234567 SSP/DF, inscrito(a) no CPF');
+    expect(prisma.contratos[1]!.texto).toContain('nascido(a) em 10/05/1990');
+    expect(prisma.contratos[0]!.eventos.map((event: { evento: string }) => event.evento)).toContain('dados_atualizados');
+  });
+
+  it('um só código assina o contrato e o aditivo: duas assinaturas, um e-mail com os dois PDFs', async () => {
+    const { service, prisma, mail } = setup();
+    await service.mine(user);
+    await service.saveContractData(user, complete);
+    const sent = await service.requestCodeAll(user, meta);
+    expect(sent.documentos).toBe(2);
+    const code = lastCode(mail);
+    await expect(service.requestCodeAll(user, meta)).rejects.toThrow('Aguarde 1 minuto');
+    const wrong = code === '000000' ? '111111' : '000000';
+    await expect(service.signAll(user, wrong, undefined, meta)).rejects.toThrow('Código incorreto. Você ainda tem 4');
+    const result = await service.signAll(user, code, { latitude: -15.79, longitude: -47.88, fuso: 'America/Sao_Paulo' }, meta);
+    expect(result.documentos).toHaveLength(2);
+    expect(prisma.contratos.map((row: any) => row.status)).toEqual(['assinado', 'assinado']);
+    for (const row of prisma.contratos as any[]) expect(row.assinatura).toMatchObject({ ip: '200.10.20.30', hash: row.hash, latitude: -15.79 });
+    expect(prisma.contratos[0]!.assinatura).not.toBe(prisma.contratos[1]!.assinatura);
+    const copy = mail.send.mock.calls.at(-1)![0] as unknown as { subject: string; attachments: Array<{ filename: string }> };
+    expect(copy.subject).toBe('Contrato e aditivo assinados');
+    expect(copy.attachments.map((item) => item.filename)).toEqual(prisma.contratos.map((row: any) => `${row.numero}.pdf`));
+    await expect(service.signAll(user, code, undefined, meta)).rejects.toThrow('Não há documentos');
   });
 
   it('assina só com o código certo, registra IP, aparelho e local, e envia a cópia em PDF', async () => {
     const { service, prisma, mail } = setup();
     const { items } = await service.mine(user);
+    await service.saveContractData(user, complete);
     const id = items[0]!.id;
     await expect(service.sign(user, id, '123456', undefined, meta)).rejects.toThrow('Peça o código');
     const sent = await service.requestCode(user, id, meta);
@@ -164,7 +217,7 @@ describe('serviço de contratos', () => {
     const row = prisma.contratos[0]!;
     expect(row.status).toBe('assinado');
     expect(row.assinatura).toMatchObject({ ip: '200.10.20.30', userAgent: 'Mozilla/5.0 Teste', latitude: -15.79, longitude: -47.88, precisaoMetros: 20, cpf: '529.982.247-25', hash: row.hash });
-    expect(row.eventos.map((event: { evento: string }) => event.evento)).toEqual(['gerado', 'codigo_enviado', 'codigo_incorreto', 'assinado']);
+    expect(row.eventos.map((event: { evento: string }) => event.evento)).toEqual(['gerado', 'dados_atualizados', 'codigo_enviado', 'codigo_incorreto', 'assinado']);
     const copy = mail.send.mock.calls.at(-1)![0] as unknown as { attachments: Array<{ filename: string; content: Buffer }> };
     expect(copy.attachments[0]!.filename).toBe(`${row.numero}.pdf`);
     expect(copy.attachments[0]!.content.subarray(0, 4).toString()).toBe('%PDF');
@@ -174,6 +227,7 @@ describe('serviço de contratos', () => {
   it('depois de 5 erros o código deixa de valer', async () => {
     const { service, prisma, mail } = setup();
     const { items } = await service.mine(user);
+    await service.saveContractData(user, complete);
     await service.requestCode(user, items[0]!.id, meta);
     const code = lastCode(mail);
     const wrong = code === '000000' ? '111111' : '000000';
@@ -192,7 +246,7 @@ describe('serviço de contratos', () => {
     await expect(service.approveCompany(admin, '999999' === lastCode(mail) ? '888888' : '999999', undefined, meta)).rejects.toThrow('Código incorreto');
     const result = await service.approveCompany(admin, lastCode(mail), { localNegado: true }, meta);
     expect(result.aprovacao).toMatchObject({ ip: '200.10.20.30', hash: result.hash });
-    expect(result.contratosAtualizados).toBe(1);
+    expect(result.contratosAtualizados).toBe(2);
     expect(prisma.contratos[0]!.empresaAssinadaEm).toBeInstanceOf(Date);
     // Novo contrato já nasce com a assinatura da empresa.
     const addendum = await service.create('a1', 'aditivo-bonificacao', { origem: 'painel', actorId: 'admin' });
@@ -223,4 +277,71 @@ describe('serviço de contratos', () => {
     expect(ok).toMatchObject({ valido: true, numero: row.numero, afiliado: 'Maria S.' });
     expect(JSON.stringify(ok)).not.toContain('529');
   });
+});
+
+describe('dados para o contrato', () => {
+  const base = { nome: 'Maria da Silva', cpf: '52998224725', email: 'm@x.com', telefone: '61999998888', dataNascimento: new Date('1990-01-01'), enderecoCep: '70000000', enderecoLogradouro: 'Rua A', enderecoNumero: '10', enderecoComplemento: null, enderecoBairro: 'Centro', enderecoCidade: 'Brasília', enderecoUf: 'DF' };
+  it('aponta o que falta e monta o órgão emissor', () => {
+    const extra = readExtra({ rg: '123456', rgOrgao: 'ssp', rgUf: 'df', nacionalidade: 'brasileira', estadoCivil: 'casado(a)', profissao: 'Autônomo', lixo: '<script>' });
+    expect(missingFields(base, extra)).toEqual([]);
+    expect(rgIssuer(extra)).toBe('SSP/DF');
+    expect(rgIssuer({ rgOrgao: 'SSP/DF', rgUf: 'DF' })).toBe('SSP/DF');
+    expect(missingFields({ ...base, cpf: '11111111111', telefone: '123', enderecoUf: 'XX' }, {})).toEqual(expect.arrayContaining(['cpf', 'telefone', 'enderecoUf', 'rg', 'profissao']));
+  });
+});
+
+describe('documento de identidade', () => {
+  it('reconhece o tipo pelo conteúdo e recusa o que não é imagem nem PDF', () => {
+    expect(detectFileType(Buffer.from('ffd8ffe000104a4649460001', 'hex'))).toEqual({ ext: 'jpg', mime: 'image/jpeg' });
+    expect(detectFileType(Buffer.from('89504e470d0a1a0a0000000d', 'hex'))?.ext).toBe('png');
+    expect(detectFileType(Buffer.concat([Buffer.from('000000186674797068656963', 'hex')]))?.ext).toBe('heic');
+    expect(detectFileType(Buffer.from('%PDF-1.7\n%âãÏÓ\n1 0 obj'))?.mime).toBe('application/pdf');
+    expect(detectFileType(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">'))).toBeNull();
+    expect(detectFileType(Buffer.from('MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00'))).toBeNull();
+  });
+
+  it('guarda só números e sim/não da leitura feita no aparelho', () => {
+    const reading = sanitizeReading(JSON.stringify({ automatica: true, legivel: true, motivo: '<b>ok</b>', largura: 2000, altura: 1200, nitidez: 350.123, brilho: 900, confianca: 81, achou: { nome: true, cpf: 'sim', rg: false }, texto: 'CPF 529' }));
+    expect(reading).toEqual({ automatica: true, legivel: true, motivo: 'bok/b', largura: 2000, altura: 1200, nitidez: 350.12, brilho: 255, confianca: 81, achou: { nome: true, cpf: null, rg: false, nascimento: null } });
+    expect(sanitizeReading('{quebrado')).toBeNull();
+  });
+
+  it('situação: falta verso, em análise, conferido e revisão da administração', () => {
+    const file = (achou: Record<string, boolean>, ext = 'jpg') => ({ chave: 'k', mime: 'image/jpeg', ext, nome: 'f', bytes: 1, enviadoEm: '', leitura: { automatica: true, legivel: true, motivo: null, largura: 1, altura: 1, nitidez: 1, brilho: 1, confianca: 1, achou: { nome: null, cpf: null, rg: null, nascimento: null, ...achou } } });
+    expect(documentSituation({})).toBe('pendente');
+    expect(documentSituation({ frente: file({ nome: true }) })).toBe('incompleto');
+    expect(documentSituation({ frente: file({ nome: true, cpf: true, rg: true, nascimento: true }, 'pdf') })).toBe('conferido');
+    const both: IdentityDoc = { frente: file({ nome: true, nascimento: true }), verso: file({ cpf: true, rg: true, nome: false }) };
+    expect(combinedFound(both)).toEqual({ nome: true, cpf: true, rg: true, nascimento: true });
+    expect(documentSituation(both)).toBe('conferido');
+    expect(documentSituation({ ...both, verso: { ...both.verso!, leitura: { ...both.verso!.leitura!, legivel: false } } })).toBe('em_analise');
+    expect(documentSituation({ ...both, revisao: { aprovado: false, motivo: 'foto cortada', em: '', por: 'a', nome: 'A' } })).toBe('recusado');
+  });
+});
+
+describe('certificado digital da contratante (e-CNPJ A1)', () => {
+  it('sem certificado o PDF sai como antes; com certificado sai assinado; senha errada não trava', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const forge = require('node-forge');
+    const keys = forge.pki.rsa.generateKeyPair(1024);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = '01';
+    cert.validity.notBefore = new Date(Date.now() - 1000);
+    cert.validity.notAfter = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    const attrs = [{ name: 'commonName', value: 'SORTE TECH TESTE:65265592000119' }];
+    cert.setSubject(attrs); cert.setIssuer(attrs);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    const p12 = forge.asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'senha-teste', { algorithm: '3des' })).getBytes();
+    const env = { CONTRATO_CERTIFICADO_A1_BASE64: Buffer.from(p12, 'binary').toString('base64'), CONTRATO_CERTIFICADO_SENHA: 'senha-teste' } as NodeJS.ProcessEnv;
+    const pdf = await buildContractPdf({ numero: 'BLC-1', titulo: 'Contrato', texto: 'Texto', hash: 'a'.repeat(64), status: 'assinado', blocks: [], verifyUrl: 'https://x', footer: 'x' });
+    expect(await signPdfWithCompanyCertificate(pdf, { reason: 'r', location: 'l', name: 'n' }, {} as NodeJS.ProcessEnv)).toEqual({ buffer: pdf, assinado: false });
+    const signed = await signPdfWithCompanyCertificate(pdf, { reason: 'Contratante', location: 'Brasília/DF', name: 'SORTE TECH' }, env);
+    expect(signed.assinado).toBe(true);
+    expect(signed.buffer.toString('latin1')).toContain('/ByteRange');
+    expect(await icpInfo(env)).toMatchObject({ configurado: true, titular: 'SORTE TECH TESTE:65265592000119', vencido: false });
+    const wrong = await signPdfWithCompanyCertificate(pdf, { reason: 'r', location: 'l', name: 'n' }, { ...env, CONTRATO_CERTIFICADO_SENHA: 'x' } as NodeJS.ProcessEnv);
+    expect(wrong.assinado).toBe(false);
+    expect(await icpInfo({ ...env, CONTRATO_CERTIFICADO_SENHA: 'x' } as NodeJS.ProcessEnv)).toMatchObject({ configurado: true, erro: 'Senha do certificado incorreta.' });
+  }, 30000);
 });

@@ -6,6 +6,8 @@ import { InviteManager, ManagedUserForm } from '../admin-people-tools';
 import { money, statusLabel, statusClass, SectionHeading, Panel, Empty } from './shared';
 import type { AdminCtx, RecordValue } from './shared';
 import { PersonCard, PersonList } from './person-card';
+import { useState } from 'react';
+import { AffiliateFicha } from './affiliate-ficha';
 
 const plural = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
 
@@ -20,7 +22,10 @@ function ContractChip({ item }: { item: RecordValue }) {
 
 export function AffiliatesView({ ctx }: { ctx: AdminCtx }) {
   const { items, affiliateOptions, setSelectedUser, selectedUser, setToast, load, execute } = ctx;
+  const [ficha, setFicha] = useState<string | null>(null);
+  const notify = (type: 'success' | 'error', text: string) => setToast({ type, text });
   return <>
+    {ficha && <AffiliateFicha key={ficha} id={ficha} notify={notify} onClose={() => setFicha(null)} onChanged={() => void load()} onEdit={(userId) => { setFicha(null); setSelectedUser(userId); }} />}
     <SectionHeading title="Afiliados" action={<Link href="/admin?view=convites" className="admin-button admin-button-ghost admin-button-small">Convites emitidos</Link>} />
     <div className="admin-management-grid people-tools">
       <ManagedUserForm mode="affiliate" affiliates={affiliateOptions as any} onDone={load} onNotice={(text) => setToast({ type: 'success', text })} />
@@ -32,8 +37,9 @@ export function AffiliatesView({ ctx }: { ctx: AdminCtx }) {
         const clients = Number(ind.clientes ?? ind.usuariosIndicados ?? 0);
         return <PersonCard
           key={item.id}
-          selected={Boolean(selectedUser) && selectedUser === item.usuario?.id}
-          name={item.usuario?.nome ?? 'Afiliado'}
+          selected={ficha === item.id || (Boolean(selectedUser) && selectedUser === item.usuario?.id)}
+          avatar={item.usuario?.nome}
+          name={<button type="button" className="pc-name-button" onClick={() => setFicha(item.id)}>{item.usuario?.nome ?? 'Afiliado'}</button>}
           subtitle={item.usuario?.email}
           status={<span className={statusClass(item.statusAprovacao)}>{statusLabel(item.statusAprovacao)}</span>}
           tags={<><LevelBadge info={item.nivel} /><code className="pc-code">{item.codigoAfiliado}</code><span className="status-chip status-info">{Number(item.comissaoPadraoPct ?? 0).toLocaleString('pt-BR')}% de comissão</span><ContractChip item={item} /></>}
@@ -44,6 +50,7 @@ export function AffiliatesView({ ctx }: { ctx: AdminCtx }) {
             { label: 'A pagar', value: money(ind.pendente), hint: `pago ${money(ind.paga)}` },
           ]}
           actions={<>
+            <button className="admin-button admin-button-small admin-button-primary" onClick={() => setFicha(item.id)}>Ver ficha</button>
             {item.statusAprovacao !== 'aprovado' && <button className="admin-button admin-button-small admin-button-primary" onClick={() => execute(`/api/v1/admin/afiliados/${item.id}/aprovar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comissaoPadraoPct: Number(item.comissaoPadraoPct ?? 10) }) }, 'Afiliado aprovado e papel atualizado.')}>Aprovar</button>}
             <button className="admin-button admin-button-small admin-button-ghost" onClick={() => { const value = window.prompt('Nova comissão percentual (o afiliado será avisado e precisa aceitar o novo contrato):', String(item.comissaoPadraoPct ?? 10)); if (value !== null) void execute(`/api/v1/admin/afiliados/${item.id}/comissao`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comissaoPadraoPct: Number(value) }) }, 'Comissão atualizada.'); }}>Alterar %</button>
             <AffiliateLevelButton affiliateId={item.id} name={item.usuario?.nome ?? 'afiliado'} info={item.nivel} onSaved={(text) => { setToast({ type: 'success', text }); void load(); }} />

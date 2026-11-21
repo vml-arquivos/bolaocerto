@@ -12,7 +12,9 @@ const TABS: ReadonlyArray<readonly [Tab, string]> = [['aguardando', 'Aguardando 
 const KINDS: Record<string, string> = { afiliado: 'Contrato de afiliado', 'aditivo-bonificacao': 'Termo aditivo (bonificação)' };
 const STATUS_TEXT: Record<string, string> = { aguardando: 'Aguardando afiliado', assinado: 'Assinado', cancelado: 'Cancelado' };
 const STATUS_CLASS: Record<string, string> = { aguardando: 'status-chip status-warning', assinado: 'status-chip status-success', cancelado: 'status-chip status-danger' };
-const EVENT_TEXT: Record<string, string> = { gerado: 'Contrato gerado', aviso_enviado: 'Aviso enviado ao afiliado', lembrete_enviado: 'Lembrete enviado', codigo_enviado: 'Código enviado para', codigo_incorreto: 'Código incorreto digitado', assinado: 'Assinado por', empresa_assinou: 'Assinatura da empresa', cancelado: 'Cancelado' };
+const DOC_CLASS: Record<string, string> = { pendente: 'status-chip status-warning', incompleto: 'status-chip status-warning', em_analise: 'status-chip status-info', conferido: 'status-chip status-success', aprovado: 'status-chip status-success', recusado: 'status-chip status-danger' };
+const FOUND: Array<[string, string]> = [['nome', 'Nome'], ['cpf', 'CPF'], ['rg', 'RG'], ['nascimento', 'Nascimento']];
+const EVENT_TEXT: Record<string, string> = { dados_atualizados: 'Dados do afiliado atualizados', gerado: 'Contrato gerado', aviso_enviado: 'Aviso enviado ao afiliado', lembrete_enviado: 'Lembrete enviado', codigo_enviado: 'Código enviado para', codigo_incorreto: 'Código incorreto digitado', assinado: 'Assinado por', empresa_assinou: 'Assinatura da empresa', cancelado: 'Cancelado' };
 const ORIGIN_TEXT: Record<string, string> = { cadastro: 'automático (cadastro)', automatico: 'automático', painel: 'pelo painel' };
 
 const COMPANY_FIELDS: ReadonlyArray<readonly [key: string, label: string, wide?: boolean]> = [
@@ -32,6 +34,62 @@ async function openPdf(id: string, notify: Notify) {
     link.href = url; link.download = name; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível gerar o PDF.'); }
+}
+
+/** Situação do certificado digital (e-CNPJ) que assina os PDFs. Nada sigiloso aparece aqui. */
+function CertificateChip({ info }: { info: RecordValue | undefined }) {
+  if (!info) return null;
+  if (!info.configurado) return <small title="Opcional: com o e-CNPJ A1 configurado no servidor, todo PDF sai assinado digitalmente pela empresa.">Certificado digital (e-CNPJ): não configurado</small>;
+  if (info.erro) return <span className="status-chip status-danger">Certificado digital: {info.erro}</span>;
+  return <>
+    <span className={`status-chip ${info.vencido ? 'status-danger' : 'status-success'}`}>{info.vencido ? 'Certificado digital vencido' : 'PDFs com certificado digital'}</span>
+    <small>{info.titular}{info.validoAte ? ` · válido até ${dateOnly(info.validoAte)}` : ''}</small>
+  </>;
+}
+
+/** Documento de identidade do afiliado: ver frente e verso, o que a leitura encontrou, aprovar ou recusar. */
+export function IdentityReview({ affiliateId, doc, notify, onChanged }: { affiliateId: string; doc: RecordValue; notify: Notify; onChanged: (next: RecordValue) => void }) {
+  const [refusing, setRefusing] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function review(aprovado: boolean) {
+    setBusy(true);
+    try {
+      const next = await fetchAdmin(`/api/v1/admin/contratos/documento/${affiliateId}/revisar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ aprovado, motivo: aprovado ? undefined : reason }) });
+      notify('success', aprovado ? 'Documento aprovado.' : 'Documento recusado. O afiliado foi avisado.');
+      setRefusing(false); setReason(''); onChanged(next);
+    } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível salvar.'); } finally { setBusy(false); }
+  }
+  const sides = (['frente', 'verso'] as const).filter((side) => doc[side]);
+  const achou = (doc.achou ?? {}) as RecordValue;
+  return <div className="contracts-evidence contracts-id">
+    <h3>Documento de identidade <span className={DOC_CLASS[doc.situacao] ?? 'status-chip'}>{doc.rotulo}</span></h3>
+    {!sides.length ? <p className="admin-muted-note">O afiliado ainda não enviou. Ele pode enviar depois de assinar, pelo app.</p> : <>
+      <div className="contracts-id-sides">{sides.map((side) => {
+        const file = doc[side] as RecordValue;
+        const url = `/api/v1/admin/contratos/documento/${affiliateId}/${side}`;
+        const image = /^image\/(jpeg|png|gif|webp|avif|bmp)$/.test(file.mime);
+        const reading = (file.leitura ?? null) as RecordValue | null;
+        return <figure key={side}>
+          <figcaption><strong>{side === 'frente' ? 'Frente' : 'Verso'}</strong> · {dateTime(file.enviadoEm)}</figcaption>
+          {image ? <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Documento, ${side}`} loading="lazy" /></a> : <a className="admin-button admin-button-small" href={url} target="_blank" rel="noreferrer">Abrir {file.ext === 'pdf' ? 'PDF' : 'arquivo'}</a>}
+          <small>{reading ? (reading.automatica ? `${reading.legivel === false ? 'Difícil de ler' : 'Legível'}${reading.confianca !== null && reading.confianca !== undefined ? ` · leitura ${reading.confianca}%` : ''}${reading.motivo ? ` · ${reading.motivo}` : ''}` : reading.motivo ?? 'Conferência manual') : 'Sem leitura automática'}</small>
+          <a className="contracts-id-download" href={`${url}?baixar=1`}>Baixar</a>
+        </figure>;
+      })}</div>
+      <p className="contracts-id-found">Leitura automática (feita no aparelho do afiliado): {FOUND.map(([key, label]) => <span key={key} className={`status-chip ${achou[key] === true ? 'status-success' : achou[key] === false ? 'status-danger' : ''}`}>{achou[key] === true ? '✓' : achou[key] === false ? '✗' : '•'} {label}</span>)}</p>
+      {doc.revisao && <p className="admin-muted-note">{doc.revisao.aprovado ? 'Aprovado' : 'Recusado'} por {doc.revisao.nome} em {dateTime(doc.revisao.em)}{doc.revisao.motivo ? `: ${doc.revisao.motivo}` : ''}</p>}
+      <div className="admin-row-actions">
+        {doc.situacao !== 'aprovado' && <button type="button" className="admin-button admin-button-small admin-button-primary" disabled={busy} onClick={() => void review(true)}>Aprovar documento</button>}
+        {doc.situacao !== 'recusado' && !refusing && <button type="button" className="admin-button admin-button-small admin-button-ghost" disabled={busy} onClick={() => setRefusing(true)}>Recusar</button>}
+      </div>
+      {refusing && <form className="contracts-cancel" onSubmit={(event) => { event.preventDefault(); void review(false); }}>
+        <label><span>O que o afiliado precisa corrigir</span><input required minLength={3} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex.: foto cortada, falta o verso" /></label>
+        <button type="submit" className="admin-button admin-button-danger" disabled={busy || reason.trim().length < 3}>Recusar e avisar</button>
+        <button type="button" className="admin-button admin-button-ghost" onClick={() => setRefusing(false)}>Voltar</button>
+      </form>}
+    </>}
+  </div>;
 }
 
 /** Empresa que assina os contratos: dados do contratante e do representante legal, e a assinatura do modelo. */
@@ -83,6 +141,7 @@ function CompanyCard({ notify, onSigned }: { notify: Notify; onSigned: () => voi
         {approval
           ? <><span className="status-chip status-success">Modelo assinado</span><small>{dateTime(approval.em)} · {approval.nome}</small></>
           : <><span className="status-chip status-warning">Assinatura da empresa pendente</span>{data.aprovacaoAnterior && <small>Os dados mudaram depois da última assinatura.</small>}</>}
+        <CertificateChip info={data.certificadoDigital as RecordValue | undefined} />
         <div className="admin-row-actions">
           {!approval && !codeSentTo && <button type="button" className="admin-button admin-button-small admin-button-primary" disabled={busy} onClick={() => void sendCode()}>Assinar como empresa</button>}
           <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setEditing((value) => !value)}>{editing ? 'Fechar' : 'Conferir dados'}</button>
@@ -161,6 +220,7 @@ function DetailDialog({ id, notify, onClose, onChanged }: { id: string; notify: 
         <div><span>Assinatura da empresa</span><strong>{data.empresaAssinadaEm ? dateTime(data.empresaAssinadaEm) : 'Pendente'}</strong>{company && <small>{company.nome}</small>}</div>
         <div className="is-wide"><span>Código de verificação (SHA-256)</span><code>{data.hash}</code></div>
       </div>
+      {data.dados && !data.dados.completo && data.status === 'aguardando' && <p className="form-message form-error">Faltam dados do afiliado: {(data.dados.faltando as RecordValue[]).map((item) => item.rotulo).join(', ')}. Ele completa no app antes de assinar.</p>}
       {signature && <div className="contracts-evidence">
         <h3>Registro da assinatura</h3>
         <dl>
@@ -171,6 +231,7 @@ function DetailDialog({ id, notify, onClose, onChanged }: { id: string; notify: 
           <dt>Fuso e idioma</dt><dd>{[signature.fuso, signature.idioma].filter(Boolean).join(' · ') || '—'}</dd>
         </dl>
       </div>}
+      {data.documento && data.afiliado?.id && <IdentityReview affiliateId={data.afiliado.id} doc={data.documento} notify={notify} onChanged={(next) => { setData({ ...data, documento: next }); onChanged(); }} />}
       {data.status === 'cancelado' && <p className="form-message form-error">Cancelado em {dateTime(data.canceladoEm)}{data.motivoCancelamento ? `: ${data.motivoCancelamento}` : ''}</p>}
       <div className="contracts-events"><h3>Histórico</h3><ol>{(data.eventos as RecordValue[] ?? []).map((event, index) => <li key={index}><time>{dateTime(event.em)}</time><span>{EVENT_TEXT[event.evento] ?? event.evento}{event.detalhe && event.evento !== 'gerado' ? ` ${event.detalhe}` : event.evento === 'gerado' && event.detalhe ? ` (${ORIGIN_TEXT[event.detalhe] ?? event.detalhe})` : ''}{event.ip ? ` · IP ${event.ip}` : ''}</span></li>)}</ol></div>
       <details className="contracts-text"><summary>Ler o texto do contrato</summary><pre>{data.texto}</pre></details>
@@ -210,9 +271,9 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
   useEffect(() => { void load(); }, [tab, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generateMissing() {
-    if (!window.confirm('Gerar o contrato para todos os afiliados aprovados que ainda não têm? Cada um recebe o aviso para assinar.')) return;
+    if (!window.confirm('Gerar o contrato e o aditivo para todos os afiliados aprovados que ainda não têm? Cada um recebe o aviso para assinar.')) return;
     setBusy(true);
-    try { const result = await fetchAdmin('/api/v1/admin/contratos/gerar-pendentes', { method: 'POST' }); notify('success', result.gerados ? `${result.gerados} ${result.gerados === 1 ? 'contrato gerado' : 'contratos gerados'}.` : 'Todos os afiliados já têm contrato.'); await load(); }
+    try { const result = await fetchAdmin('/api/v1/admin/contratos/gerar-pendentes', { method: 'POST' }); notify('success', result.gerados ? `${result.gerados} ${result.gerados === 1 ? 'documento gerado' : 'documentos gerados'}.` : 'Todos os afiliados já têm contrato e aditivo.'); await load(); }
     catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível gerar.'); } finally { setBusy(false); }
   }
 
@@ -222,7 +283,7 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
   const count = (key: Tab) => (key ? resumo[key] ?? 0 : (resumo.aguardando ?? 0) + (resumo.assinado ?? 0) + (resumo.cancelado ?? 0));
   return <section className="admin-section contracts-view">
     <div className="admin-page-heading">
-      <div><h1>Contratos</h1><p className="admin-muted-note">Contratos dos afiliados com assinatura eletrônica.</p></div>
+      <div><h1>Contratos</h1><p className="admin-muted-note">Contrato e aditivo de cada afiliado, com assinatura eletrônica. A empresa assina uma vez o modelo e os dois já saem assinados por ela.</p></div>
       <div className="admin-row-actions"><button type="button" className="admin-button admin-button-primary" onClick={() => setGenerating(true)}>Gerar contrato</button><button type="button" className="admin-button admin-button-ghost" disabled={busy} onClick={() => void generateMissing()}>Gerar para quem não tem</button></div>
     </div>
     <CompanyCard notify={notify} onSigned={() => void load()} />
@@ -236,8 +297,8 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
     </div>
     <div className="admin-panel">
       {loading ? <div className="admin-loading"><span className="admin-spinner" /><p>Carregando…</p></div> : items.length === 0 ? <div className="admin-empty"><strong>Nenhum contrato aqui.</strong></div> :
-        <div className="admin-table-scroll"><table className="admin-table" style={{ minWidth: 900 }}>
-          <thead><tr><th>Número</th><th>Afiliado</th><th>Documento</th><th>Situação</th><th>Gerado</th><th>Assinado</th><th>Ações</th></tr></thead>
+        <div className="admin-table-scroll"><table className="admin-table" style={{ minWidth: 1000 }}>
+          <thead><tr><th>Número</th><th>Afiliado</th><th>Documento</th><th>Situação</th><th>Gerado</th><th>Assinado</th><th>Identidade</th><th>Ações</th></tr></thead>
           <tbody>{items.map((item) => <tr key={item.id}>
             <td data-label="Número" className="td-nowrap"><code>{item.numero}</code></td>
             <td data-label="Afiliado"><strong>{item.afiliado?.nome}</strong><small>{item.afiliado?.codigo}{item.afiliado?.email ? ` · ${item.afiliado.email}` : ''}</small></td>
@@ -245,6 +306,7 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
             <td data-label="Situação"><span className={STATUS_CLASS[item.status] ?? 'status-chip'}>{STATUS_TEXT[item.status] ?? item.status}</span>{item.status !== 'cancelado' && !item.empresaAssinadaEm && <small>empresa pendente</small>}</td>
             <td data-label="Gerado" className="td-nowrap">{dateOnly(item.criadoEm)}</td>
             <td data-label="Assinado" className="td-nowrap">{item.assinadoEm ? dateTime(item.assinadoEm) : '—'}</td>
+            <td data-label="Identidade">{item.documento ? <span className={DOC_CLASS[item.documento.situacao] ?? 'status-chip'}>{item.documento.rotulo}</span> : '—'}</td>
             <td data-label="Ações"><div className="admin-row-actions"><button type="button" className="admin-button admin-button-small" onClick={() => setOpenId(item.id)}>Ver</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => void openPdf(item.id, notify)}>PDF</button></div></td>
           </tr>)}</tbody>
         </table></div>}

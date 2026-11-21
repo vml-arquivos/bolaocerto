@@ -61,6 +61,12 @@ export type AffiliateParty = {
   endereco: string | null;
   codigoAfiliado: string;
   comissaoPct: string | null;
+  /** Dados preenchidos pelo afiliado antes de assinar (opcionais nos contratos antigos). */
+  rg?: string | null;
+  rgOrgao?: string | null;
+  nacionalidade?: string | null;
+  estadoCivil?: string | null;
+  profissao?: string | null;
 };
 
 export type ContractInput = { kind: ContractKind; numero: string; company: CompanyData; affiliate: AffiliateParty; date: Date; mainContract?: { numero: string; data: Date } | null };
@@ -119,10 +125,14 @@ function companyQualification(c: CompanyData, alias: string): string {
 }
 
 function affiliateQualification(a: AffiliateParty): string {
-  const birth = a.dataNascimento ? `, nascido(a) em ${shortDate(a.dataNascimento)}` : '';
+  // Data de nascimento é só data (gravada à meia-noite UTC): lida em UTC para não voltar um dia.
+  const birthDate = a.dataNascimento ? new Date(a.dataNascimento) : null;
+  const birth = birthDate && !Number.isNaN(birthDate.getTime()) ? `, nascido(a) em ${String(birthDate.getUTCDate()).padStart(2, '0')}/${String(birthDate.getUTCMonth() + 1).padStart(2, '0')}/${birthDate.getUTCFullYear()}` : '';
   const address = a.endereco ? `residente e domiciliado(a) em ${a.endereco}` : 'com endereço informado em seu cadastro na plataforma';
   const phone = formatPhone(a.telefone);
-  return `${a.nome.toUpperCase()}, inscrito(a) no CPF sob o nº ${formatCpf(a.cpf)}${birth}, maior e capaz, ${address}, com endereço eletrônico ${a.email}${phone ? ` e telefone ${phone}` : ''}, identificado(a) na plataforma pelo código de afiliado ${a.codigoAfiliado}, doravante denominado(a) simplesmente AFILIADO`;
+  const personal = [a.nacionalidade, a.estadoCivil, a.profissao].map((item) => item?.trim()).filter(Boolean).map((item) => `, ${item!.toLowerCase()}`).join('');
+  const rg = a.rg?.trim() ? `, portador(a) da cédula de identidade nº ${a.rg.trim()}${a.rgOrgao?.trim() ? ` ${a.rgOrgao.trim().toUpperCase()}` : ''}` : '';
+  return `${a.nome.toUpperCase()}${personal}${rg}, inscrito(a) no CPF sob o nº ${formatCpf(a.cpf)}${birth}, maior e capaz, ${address}, com endereço eletrônico ${a.email}${phone ? ` e telefone ${phone}` : ''}, identificado(a) na plataforma pelo código de afiliado ${a.codigoAfiliado}, doravante denominado(a) simplesmente AFILIADO`;
 }
 
 function signatureBlock(c: CompanyData, a: AffiliateParty, alias: string): string {
