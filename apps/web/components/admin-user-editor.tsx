@@ -1,7 +1,7 @@
 'use client';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
-import { AdminModal } from './admin-attachments';
+import { AdminDrawer } from './admin-drawer';
 import { useIsSuperAdmin } from './staff-gate';
 import { startViewAs } from '../lib/view-as';
 import { AccessPanel } from './admin-access-panel';
@@ -68,7 +68,7 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       await onDone(); onClose();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao alterar acesso.'); } finally { setBusy(false); }
   }
-  return <AdminModal title="Usuário, equipe e acessos" onClose={() => { if (!busy) onClose(); }}>
+  return <AdminDrawer title="Conta e acessos" onClose={() => { if (!busy) onClose(); }}>
     {message && <p role="alert" ref={messageRef} className="notice admin-editor-message">{message}</p>}
     {!user && !message && <p>Carregando cadastro…</p>}
     {user && <><p><strong>{roleLabels[savedRole] ?? savedRole}</strong> · {user.desativadoEm ? 'Acesso removido' : 'Conta ativa'} · {user._count.cotasCompradas} participações · {user._count.boloesCriados} bolões criados</p>
@@ -94,5 +94,5 @@ export function AdminUserEditor({ id, onClose, onDone }: { id: string; onClose: 
       <button className="admin-button admin-button-danger" disabled={busy} onClick={() => void action('delete')}>Excluir conta</button>
       
     </>}
-  </AdminModal>;
+  </AdminDrawer>;
 }

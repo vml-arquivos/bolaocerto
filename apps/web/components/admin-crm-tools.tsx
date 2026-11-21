@@ -5,6 +5,7 @@ import { api, brl, chip, dateOnly, dateTime, Empty, ExportBar, Kpi, label, modal
 import { AttachmentsPanel } from './admin-attachments';
 import { useSearchParams } from 'next/navigation';
 import { PersonCard, PersonList } from './admin-views/person-card';
+import { AdminDrawer } from './admin-drawer';
 
 /* -------------------------------------------------------------------------- */
 /* CRM de clientes                                                         */
@@ -80,13 +81,13 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
 
   const totals = overview?.totais ?? {};
   const criteria = overview?.criterios ?? {};
-  const open = (id: string) => { setSelected(id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const open = (id: string) => setSelected(id);
 
   const affiliateName = affiliates.find((item) => item.id === affiliate)?.nome;
   return <div className="crm-page">
     <div className="admin-page-heading"><div><h1>Clientes (cotistas)</h1></div></div>
 
-    {selected && <BettorDetail id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
+    {selected && <BettorDetail key={selected} id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
 
     <div className="admin-kpi-grid">
       <Kpi label="Clientes cadastrados" value={totals.cadastrados ?? 0} hint={`${totals.compradores ?? 0} já compraram`} tone="blue" />
@@ -135,6 +136,7 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
       {loading && <div className="admin-spinner" aria-label="Carregando" />}
       <PersonList label="Clientes">{(list?.items ?? []).map((row: Rec) => <PersonCard
         key={row.id}
+        selected={selected === row.id}
         name={row.nome}
         subtitle={<>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</>}
         status={<StageChip etapa={row.etapa} nome={row.etapaNome} />}
@@ -146,7 +148,7 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
           { label: 'Pendente', value: row.valorPendente > 0 ? brl(row.valorPendente) : '—', hint: row.reservasVencidas > 0 ? `${row.reservasVencidas} vencida(s)` : undefined },
         ]}
         footer={row.proximaAcao ? <small>{row.proximaAcao}</small> : undefined}
-        actions={<><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => onEditUser(row.id)}>Editar / excluir</button>}</>}
+        actions={<><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => { setSelected(null); onEditUser(row.id); }}>Editar / excluir</button>}</>}
       />)}</PersonList>
       {!loading && !(list?.items ?? []).length && <Empty text="Nenhum cliente encontrado" />}
       {(list?.paginas ?? 1) > 1 && <div className="admin-row-actions" style={{ marginTop: 14 }}><button className="admin-button admin-button-small admin-button-ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span className="admin-help" style={{ margin: 0 }}>Página {list?.pagina} de {list?.paginas} · {list?.total} clientes</span><button className="admin-button admin-button-small admin-button-ghost" disabled={page >= (list?.paginas ?? 1)} onClick={() => setPage((value) => value + 1)}>Próxima →</button></div>}
@@ -195,9 +197,9 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
     } catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível salvar.'); } finally { setBusy(false); }
   }
 
-  if (!data) return <Panel title="Abrindo ficha…"><div className="admin-spinner" aria-label="Carregando" /></Panel>;
+  if (!data) return <AdminDrawer title="Abrindo ficha…" onClose={onClose}><div className="admin-spinner" aria-label="Carregando" /></AdminDrawer>;
   const profile = data.perfil ?? {}; const metrics = data.metricas ?? {};
-  return <Panel title={profile.nome} description={`${profile.email}${profile.telefone ? ` · ${profile.telefone}` : ''} · CPF ${profile.cpf}${profile.cidade ? ` · ${profile.cidade}/${profile.uf ?? ''}` : ''}`} action={<button className="admin-button admin-button-small admin-button-ghost" onClick={onClose}>Fechar ficha</button>}>
+  return <AdminDrawer title={profile.nome} subtitle={`${profile.email}${profile.telefone ? ` · ${profile.telefone}` : ''} · CPF ${profile.cpf}${profile.cidade ? ` · ${profile.cidade}/${profile.uf ?? ''}` : ''}`} onClose={onClose}>
     <div className="admin-kpi-grid">
       <Kpi label="Nível" value={metrics.nivelNome ?? '—'} hint={(metrics.segmentoNomes ?? []).join(' · ')} tone="violet" />
       <Kpi label="Total investido" value={brl(metrics.totalGasto)} hint={`${metrics.compras ?? 0} compra(s) · ticket ${brl(metrics.ticketMedio)}`} tone="green" />
@@ -235,7 +237,7 @@ function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose:
         <Table minWidth={420}><thead><tr><th>Data</th><th>Bolão</th><th>Qtd.</th><th>Valor</th><th>Situação</th></tr></thead><tbody>{(data.historico ?? []).map((row: Rec) => <tr key={row.id}><td className="td-date">{dateTime(row.criadoEm)}</td><td>{modalityNames[row.modalidade] ?? row.modalidade} #{row.concurso}</td><td>{row.quantidade}</td><td className="td-nowrap">{brl(row.valor)}</td><td><span className={chip(row.status)}>{label(row.status)}</span></td></tr>)}</tbody></Table>
       </div>
     </div>
-  </Panel>;
+  </AdminDrawer>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -261,7 +263,7 @@ export function PoolControlView({ notify }: { notify: Notify }) {
 
   return <>
     <div className="admin-page-heading"><div><h1>Acompanhar bolão</h1></div></div>
-    {selected && <PoolDetail id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
+    {selected && <PoolDetail key={selected} id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
     <div className="admin-kpi-grid admin-kpi-grid-four">
       <Kpi label="Bolões" value={pools.length} tone="blue" />
       <Kpi label="Cotas pagas" value={totals.pagas} hint={`${totals.aguardando} aguardando pagamento`} tone="green" />
@@ -270,7 +272,7 @@ export function PoolControlView({ notify }: { notify: Notify }) {
     </div>
     <Panel title="Bolões e ocupação das cotas" action={<ExportBar path="/api/v1/admin/relatorios/boloes" id="controle-cotas" onError={(text) => notify('error', text)} />}>
       {loading && <div className="admin-spinner" aria-label="Carregando" />}
-      <Table minWidth={1200}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Situação</th><th>Ocupação</th><th>Pagas</th><th>Aguardando</th><th>Livres</th><th>Participantes</th><th>A receber</th><th>Receita</th><th></th></tr></thead><tbody>{pools.map((pool) => <tr key={pool.id}><td><strong>{modalityNames[pool.modalidade] ?? pool.modalidade} #{pool.concurso}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td className="td-date">{dateTime(pool.sorteio)}</td><td><span className={chip(pool.status)}>{label(pool.status)}</span> <ReleaseBadge release={pool.gatilhoLiberacao === null ? null : { condicional: true, liberado: pool.liberado, gatilho: pool.gatilhoLiberacao }} /></td><td style={{ minWidth: 130 }}>{pool.percentualVendido === null ? 'Ilimitadas' : <><Progress value={pool.percentualVendido} tone={pool.percentualVendido >= 100 ? 'green' : 'blue'} /><small>{pool.percentualVendido}% de {pool.totalCotas}</small></>}</td><td><strong>{pool.cotasPagas}</strong></td><td>{pool.cotasAguardando}</td><td>{pool.cotasLivres === null ? '∞' : pool.cotasLivres}</td><td>{pool.participantes}</td><td className="td-nowrap">{brl(pool.aReceber)}</td><td><strong>{brl(pool.receita)}</strong></td><td><button className="admin-button admin-button-small" onClick={() => { setSelected(pool.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Abrir</button></td></tr>)}</tbody></Table>
+      <Table minWidth={1200}><thead><tr><th>Bolão</th><th>Sorteio</th><th>Situação</th><th>Ocupação</th><th>Pagas</th><th>Aguardando</th><th>Livres</th><th>Participantes</th><th>A receber</th><th>Receita</th><th></th></tr></thead><tbody>{pools.map((pool) => <tr key={pool.id}><td><strong>{modalityNames[pool.modalidade] ?? pool.modalidade} #{pool.concurso}</strong><small>{pool.grupo} · {brl(pool.valorCota)}/cota</small></td><td className="td-date">{dateTime(pool.sorteio)}</td><td><span className={chip(pool.status)}>{label(pool.status)}</span> <ReleaseBadge release={pool.gatilhoLiberacao === null ? null : { condicional: true, liberado: pool.liberado, gatilho: pool.gatilhoLiberacao }} /></td><td style={{ minWidth: 130 }}>{pool.percentualVendido === null ? 'Ilimitadas' : <><Progress value={pool.percentualVendido} tone={pool.percentualVendido >= 100 ? 'green' : 'blue'} /><small>{pool.percentualVendido}% de {pool.totalCotas}</small></>}</td><td><strong>{pool.cotasPagas}</strong></td><td>{pool.cotasAguardando}</td><td>{pool.cotasLivres === null ? '∞' : pool.cotasLivres}</td><td>{pool.participantes}</td><td className="td-nowrap">{brl(pool.aReceber)}</td><td><strong>{brl(pool.receita)}</strong></td><td><button className="admin-button admin-button-small" onClick={() => setSelected(pool.id)}>Abrir</button></td></tr>)}</tbody></Table>
       {!loading && !pools.length && <Empty text="Nenhum bolão cadastrado" />}
     </Panel>
   </>;
@@ -294,7 +296,7 @@ function PoolDetail({ id, onClose, onChanged, notify }: { id: string; onClose: (
     catch (failure) { notify('error', failure instanceof Error ? failure.message : 'Não foi possível liberar.'); } finally { setBusy(false); }
   }
 
-  if (!data) return <Panel title="Abrindo bolão…"><div className="admin-spinner" aria-label="Carregando" /></Panel>;
+  if (!data) return <AdminDrawer title="Abrindo bolão…" onClose={onClose}><div className="admin-spinner" aria-label="Carregando" /></AdminDrawer>;
   const summary = data.resumo ?? {}; const gate = data.liberacao ?? {};
   const rows: Rec[] = (data.linhas ?? []).filter((row: Rec) => {
     if (filter === 'pagas') return row.statusPagamento === 'confirmado';
@@ -302,7 +304,7 @@ function PoolDetail({ id, onClose, onChanged, notify }: { id: string; onClose: (
     if (filter === 'canceladas') return ['cancelada', 'estornada'].includes(String(row.statusCota));
     return true;
   });
-  return <Panel title={`${modalityNames[summary.modalidade] ?? summary.modalidade} · concurso ${summary.concurso}`} description={`${summary.grupo} · sorteio ${dateTime(summary.sorteio)} · cota ${brl(summary.valorCota)} · taxa de administração ${summary.taxaAdministracaoPct}%`} action={<div className="admin-row-actions"><ExportBar path={`/api/v1/admin/relatorios/boloes/${id}`} id={`bolao-${id.slice(0, 8)}`} small={false} onError={(text) => notify('error', text)} /><button className="admin-button admin-button-ghost" onClick={onClose}>Fechar</button></div>}>
+  return <AdminDrawer title={`${modalityNames[summary.modalidade] ?? summary.modalidade} · concurso ${summary.concurso}`} subtitle={`${summary.grupo} · sorteio ${dateTime(summary.sorteio)} · cota ${brl(summary.valorCota)} · taxa de administração ${summary.taxaAdministracaoPct}%`} onClose={onClose} actions={<ExportBar path={`/api/v1/admin/relatorios/boloes/${id}`} id={`bolao-${id.slice(0, 8)}`} small={false} onError={(text) => notify('error', text)} />}>
     {gate.condicional && <div className={`admin-toast ${gate.liberado ? 'admin-toast-success' : 'admin-toast-error'}`} role="status" style={{ position: 'static', marginBottom: 14 }}><strong>{gate.liberado ? 'Cotas liberadas' : 'Bolão condicional: cotas bloqueadas'}</strong> — {gate.mensagem} {!gate.liberado && <><Progress value={gate.progressoPct} tone="amber" /><button className="admin-button admin-button-small" style={{ marginTop: 8 }} disabled={busy} onClick={() => void release()}>Liberar cotas agora (manual)</button></>}</div>}
     <div className="admin-kpi-grid">
       <Kpi label="Cotas pagas" value={summary.cotasPagas ?? 0} hint={summary.totalCotas ? `de ${summary.totalCotas} · ${summary.percentualVendido ?? 0}% vendido` : 'cotas ilimitadas'} tone="green" />
@@ -317,5 +319,5 @@ function PoolDetail({ id, onClose, onChanged, notify }: { id: string; onClose: (
     <h3 className="admin-subtitle">Comprovantes e jogos registrados</h3>
     <AttachmentsPanel poolId={id} notify={notify} />
     
-  </Panel>;
+  </AdminDrawer>;
 }

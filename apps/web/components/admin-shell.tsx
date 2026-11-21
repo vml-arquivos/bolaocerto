@@ -27,7 +27,7 @@ const groups = [
     ],
   },
   {
-    label: 'Comunidade',
+    label: 'Usuários',
     items: [
       ['crm', 'Clientes (cotistas)', 'CR'],
       ['afiliados', 'Afiliados', 'AF'],
@@ -42,7 +42,7 @@ const groups = [
     items: [
       ['vitrine', 'Página inicial', 'PI'],
       ['blog', 'Blog e SEO', 'BG'],
-      ['usuarios', 'Usuários e acessos', 'US'],
+      ['usuarios', 'Equipe e acessos', 'EQ'],
       ['documentos', 'Documentos', 'DC'],
       ['funil', 'Funil de conversão', 'FC'],
       ['conexoes', 'Integrações', 'CX'],

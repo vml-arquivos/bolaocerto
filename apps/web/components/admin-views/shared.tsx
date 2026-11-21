@@ -39,6 +39,7 @@ export type AdminCtx = {
   setPoolFor: (value: RecordValue | null) => void;
   setAttachFor: (value: { pool: RecordValue; share?: RecordValue } | null) => void;
   setSelectedUser: (value: string | null) => void;
+  selectedUser?: string | null;
   setToast: (value: ToastState) => void;
   load: (quiet?: boolean) => Promise<void>;
   execute: (path: string, options: RequestInit, success: string) => Promise<void>;

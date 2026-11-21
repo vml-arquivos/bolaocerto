@@ -11,9 +11,9 @@ import { PersonCard, PersonList } from './person-card';
 const ROLE_NAMES: Record<string, string> = { admin: 'Administrador', operacao: 'Operação', afiliado: 'Afiliado', cotista: 'Cliente (cotista)' };
 
 export function UsersView({ ctx }: { ctx: AdminCtx }) {
-  const { items, roleTab, setRoleTab, setSelectedUser, setToast, load } = ctx;
+  const { items, roleTab, setRoleTab, setSelectedUser, selectedUser, setToast, load } = ctx;
   return <>
-    <SectionHeading title="Usuários e acessos" />
+    <SectionHeading title="Equipe e acessos" />
     {ctx.superAdmin && <details className="admin-rules-shortcut"><summary>Regras dos afiliados: níveis e trava da comissão máxima</summary><AffiliateRulesPanel /></details>}
     <div className="admin-chip-row people-tabs" role="tablist" aria-label="Tipo de conta">{([['equipe', 'Equipe do sistema'], ['afiliado', 'Afiliados'], ['cotista', 'Clientes (cotistas)'], ['todos', 'Todos']] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={roleTab === key} className={`admin-chip-button${roleTab === key ? ' is-current' : ''}`} onClick={() => setRoleTab(key)}>{label}</button>)}</div>
     <div className="admin-management-grid people-tools">
@@ -24,6 +24,7 @@ export function UsersView({ ctx }: { ctx: AdminCtx }) {
     <Panel title={`Contas cadastradas${items.length ? ` · ${items.length}` : ''}`}>
       <PersonList label="Contas cadastradas">{items.map((item) => <PersonCard
         key={item.id}
+        selected={selectedUser === item.id}
         tone={item.desativadoEm ? 'muted' : undefined}
         name={item.nome}
         subtitle={item.email}

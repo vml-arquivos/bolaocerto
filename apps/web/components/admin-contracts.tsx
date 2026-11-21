@@ -1,6 +1,7 @@
 'use client';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AdminModal } from './admin-attachments';
+import { AdminDrawer } from './admin-drawer';
 import { dateOnly, dateTime, fetchAdmin } from './admin-views/shared';
 import type { RecordValue } from './admin-views/shared';
 import { deviceInfo, mapLink } from '../lib/device-info';
@@ -150,7 +151,7 @@ function DetailDialog({ id, notify, onClose, onChanged }: { id: string; notify: 
   const signature = (data?.assinatura ?? null) as RecordValue | null;
   const company = (data?.empresaAssinatura ?? null) as RecordValue | null;
   const map = signature ? mapLink(signature.latitude, signature.longitude) : null;
-  return <AdminModal title={data ? `${data.titulo} · ${data.numero}` : 'Contrato'} onClose={onClose}>
+  return <AdminDrawer title={data ? data.titulo : 'Contrato'} subtitle={data?.numero} onClose={onClose}>
     {!data ? <p>Carregando…</p> : <div className="contracts-detail">
       <div className="contracts-detail-grid">
         <div><span>Situação</span><strong><span className={STATUS_CLASS[data.status] ?? 'status-chip'}>{STATUS_TEXT[data.status] ?? data.status}</span></strong></div>
@@ -184,7 +185,7 @@ function DetailDialog({ id, notify, onClose, onChanged }: { id: string; notify: 
         <button type="button" className="admin-button admin-button-ghost" onClick={() => setCancelling(false)}>Voltar</button>
       </form>}
     </div>}
-  </AdminModal>;
+  </AdminDrawer>;
 }
 
 /** Tela "Contratos": contratos dos afiliados, gerados no cadastro ou pelo painel, com a assinatura de cada parte. */

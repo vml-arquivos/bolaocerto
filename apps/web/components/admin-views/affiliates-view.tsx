@@ -19,7 +19,7 @@ function ContractChip({ item }: { item: RecordValue }) {
 }
 
 export function AffiliatesView({ ctx }: { ctx: AdminCtx }) {
-  const { items, affiliateOptions, setSelectedUser, setToast, load, execute } = ctx;
+  const { items, affiliateOptions, setSelectedUser, selectedUser, setToast, load, execute } = ctx;
   return <>
     <SectionHeading title="Afiliados" action={<Link href="/admin?view=convites" className="admin-button admin-button-ghost admin-button-small">Convites emitidos</Link>} />
     <div className="admin-management-grid people-tools">
@@ -32,6 +32,7 @@ export function AffiliatesView({ ctx }: { ctx: AdminCtx }) {
         const clients = Number(ind.clientes ?? ind.usuariosIndicados ?? 0);
         return <PersonCard
           key={item.id}
+          selected={Boolean(selectedUser) && selectedUser === item.usuario?.id}
           name={item.usuario?.nome ?? 'Afiliado'}
           subtitle={item.usuario?.email}
           status={<span className={statusClass(item.statusAprovacao)}>{statusLabel(item.statusAprovacao)}</span>}

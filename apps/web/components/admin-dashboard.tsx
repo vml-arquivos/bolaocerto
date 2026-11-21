@@ -220,7 +220,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     view, items, payload, kpis, chart, chartMax, dashboard, period, setPeriod, busy, superAdmin,
     contestScope, setContestScope, contestMonth, setContestMonth, page, setPage, showPoolForm, setShowPoolForm, editingPool, setEditingPool,
     contests, groupId, affiliateOptions, selectedCommissions, setSelectedCommissions, roleTab, setRoleTab, statusFilter, setStatusFilter,
-    groupMembers, setGroupMembers, gamesTab, setGamesTab, setPoolFor, setAttachFor, setSelectedUser, setToast,
+    groupMembers, setGroupMembers, gamesTab, setGamesTab, setPoolFor, setAttachFor, setSelectedUser, selectedUser, setToast,
     load, execute, notify, syncContests, importHistory,
   };
 
