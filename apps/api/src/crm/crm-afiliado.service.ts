@@ -42,7 +42,7 @@ export class AffiliateCrmService {
   }
 
   private publicRow(row: BettorRow & { nota: string | null }) {
-    const { cpf: _cpf, afiliadoOrigem: _origin, papel: _role, email, ...rest } = row;
+    const { cpf: _cpf, afiliadoOrigem: _origin, afiliadoNome: _originName, papel: _role, email, ...rest } = row;
     return { ...rest, email: maskEmail(email) };
   }
 

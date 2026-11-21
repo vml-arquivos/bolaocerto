@@ -27,11 +27,11 @@ test('menu enxuto: atalhos no topo, três grupos e usuários e acessos em Admini
   assert.ok(top.includes("'visao-geral'") && top.includes("'relatorios'"));
   const groupsSource = shell.slice(shell.indexOf('const groups'), shell.indexOf('const hubItems'));
   const labels = [...groupsSource.matchAll(/label: '([^']+)'/g)].map((match) => match[1]);
-  assert.deepEqual(labels, ['Jogos e vendas', 'Pessoas', 'Administração']);
+  assert.deepEqual(labels, ['Jogos e vendas', 'Comunidade', 'Administração']);
   const admin = groupsSource.slice(groupsSource.indexOf("label: 'Administração'"));
   for (const key of ['vitrine', 'usuarios', 'documentos', 'funil', 'conexoes', 'auditoria', 'configuracoes']) assert.ok(admin.includes(`'${key}'`), `${key} deve ficar em Administração`);
-  const people = groupsSource.slice(groupsSource.indexOf("label: 'Pessoas'"), groupsSource.indexOf("label: 'Administração'"));
-  assert.ok(!people.includes("'usuarios'"), 'usuários e acessos saiu de Pessoas');
+  const people = groupsSource.slice(groupsSource.indexOf("label: 'Comunidade'"), groupsSource.indexOf("label: 'Administração'"));
+  assert.ok(!people.includes("'usuarios'"), 'usuários e acessos saiu de Comunidade');
 });
 
 test('rodapé do menu é compacto: instalar app discreto e sem repetir "Voltar ao site"', () => {

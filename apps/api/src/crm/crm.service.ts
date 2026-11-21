@@ -14,7 +14,7 @@ const PAID: StatusCota[] = [StatusCota.paga, StatusCota.registrada, StatusCota.a
 
 export interface BettorRow {
   id: string; nome: string; cpf: string; email: string; telefone: string | null; cidade: string | null; uf: string | null; papel: string; cadastradoEm: Date;
-  afiliadoOrigem: string | null; etiquetas: string[]; proximoContatoEm: Date | null;
+  afiliadoOrigem: string | null; afiliadoNome?: string | null; etiquetas: string[]; proximoContatoEm: Date | null;
   etapa: Etapa; etapaNome: string; proximaAcao: string;
   nivel: Nivel; nivelNome: string; segmentos: Segmento[]; segmentoNomes: string[];
   totalGasto: number; cotasPagas: number; compras: number; boloesDistintos: number; ticketMedio: number; primeiraCompraEm: Date | null; ultimaCompraEm: Date | null; diasSemComprar: number | null;
@@ -78,7 +78,7 @@ export class CrmService {
       this.prisma.usuario.findMany({
         // Clientes = só quem compra (cotistas) e ainda tem acesso. Afiliados e equipe têm as próprias telas.
         where: { papel: 'cotista', desativadoEm: null, ...(opts.userWhere ?? {}) },
-        select: { id: true, nome: true, cpf: true, email: true, telefone: true, enderecoCidade: true, enderecoUf: true, papel: true, criadoEm: true, indicadoPorAfiliado: { select: { codigoAfiliado: true } }, crmPerfil: { select: { etiquetas: true, proximoContatoEm: true } } },
+        select: { id: true, nome: true, cpf: true, email: true, telefone: true, enderecoCidade: true, enderecoUf: true, papel: true, criadoEm: true, indicadoPorAfiliado: { select: { codigoAfiliado: true, usuario: { select: { nome: true } } } }, crmPerfil: { select: { etiquetas: true, proximoContatoEm: true } } },
       }),
     ]);
     return users.map((user) => {
@@ -91,7 +91,7 @@ export class CrmService {
         etapa, etapaNome: ETAPA_LABELS[etapa], proximaAcao: ETAPA_ACOES[etapa],
         id: user.id, nome: user.nome, cpf: full ? formatCpf(user.cpf) : maskCpf(user.cpf), email: user.email, telefone: user.telefone,
         cidade: user.enderecoCidade, uf: user.enderecoUf, papel: user.papel, cadastradoEm: user.criadoEm,
-        afiliadoOrigem: opts.hideAdminProfile ? null : user.indicadoPorAfiliado?.codigoAfiliado ?? null, etiquetas: tags, proximoContatoEm: opts.hideAdminProfile ? null : user.crmPerfil?.proximoContatoEm ?? null,
+        afiliadoOrigem: opts.hideAdminProfile ? null : user.indicadoPorAfiliado?.codigoAfiliado ?? null, afiliadoNome: opts.hideAdminProfile ? null : user.indicadoPorAfiliado?.usuario?.nome ?? null, etiquetas: tags, proximoContatoEm: opts.hideAdminProfile ? null : user.crmPerfil?.proximoContatoEm ?? null,
         nivel, nivelNome: LEVEL_LABELS[nivel], segmentos, segmentoNomes: segmentos.map((segment) => SEGMENT_LABELS[segment]),
         totalGasto: metric.totalGasto, cotasPagas: metric.cotasPagas, compras: metric.compras, boloesDistintos: metric.boloesDistintos,
         ticketMedio: metric.compras ? round2(metric.totalGasto / metric.compras) : 0,
@@ -144,7 +144,10 @@ export class CrmService {
 
   async list(query: CrmListQueryDto, admin: AuthUser): Promise<{ items: BettorRow[]; total: number; pagina: number; paginas: number } | ReportFile> {
     const exporting = query.formato && query.formato !== 'json';
-    const rows = this.filtered(await this.rows(true), query);
+    const scope: Prisma.UsuarioWhereInput | undefined = query.afiliadoId
+      ? { OR: [{ indicadoPorAfiliadoId: query.afiliadoId }, { gruposMembro: { some: { grupo: { afiliadoId: query.afiliadoId } } } }, { cotasCompradas: { some: { afiliadoReferenciaId: query.afiliadoId } } }] }
+      : undefined;
+    const rows = this.filtered(await this.rows(true, scope ? { userWhere: scope } : {}), query);
     if (!exporting) {
       const pageSize = query.porPagina ?? 25;
       const page = Math.max(query.pagina ?? 1, 1);

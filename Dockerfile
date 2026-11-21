@@ -90,5 +90,6 @@ COPY docker/production-entrypoint.sh /usr/local/bin/bl-production-entrypoint
 RUN chmod +x /usr/local/bin/bl-production-entrypoint
 
 EXPOSE 3000
-HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 CMD curl -fsS http://127.0.0.1:3001/api/v1/health >/dev/null || exit 1
+# A partida faz migracoes, dados iniciais e sobe API, worker e site; em servidor pequeno, logo depois do build, isso passa de 2 minutos.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=240s --retries=12 CMD curl -fsS http://127.0.0.1:3001/api/v1/health >/dev/null || exit 1
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/bl-production-entrypoint"]

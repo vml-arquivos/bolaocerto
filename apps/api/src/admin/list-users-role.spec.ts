@@ -35,10 +35,10 @@ describe('Lista de usuários por tipo de pessoa', () => {
       await service.listUsers({} as any, DONO);
       expect(prisma.usuario.findMany.mock.calls[0][0].where.AND).toEqual([{}]);
     });
-    it('administrador comum só vê níveis abaixo e a própria conta', async () => {
+    it('administrador comum vê todas as contas do mesmo nível e abaixo, menos a conta principal', async () => {
       const { service, prisma } = setup();
       await service.listUsers({} as any, OUTRO_ADMIN);
-      expect(prisma.usuario.findMany.mock.calls[0][0].where.AND).toEqual([{ OR: [{ id: 'adm2' }, { papel: { in: ['cotista', 'operacao'] } }, { papel: 'afiliado', afiliado: { aprovadoPor: 'adm2' } }] }]);
+      expect(prisma.usuario.findMany.mock.calls[0][0].where.AND).toEqual([{ NOT: { email: { equals: 'dono@exemplo.com', mode: 'insensitive' } } }]);
     });
   });
 });

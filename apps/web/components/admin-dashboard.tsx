@@ -43,9 +43,10 @@ import { FinanceView } from './admin-views/finance-view';
 import { AdminHubTabs } from './admin-hub-tabs';
 import { WalletAdminView } from './admin-wallet';
 import { PromotionsAdminView } from './admin-promotions';
+import { ContractsAdminView } from './admin-contracts';
 
 // Telas que buscam os próprios dados (ou não precisam de lista): o painel não faz a busca genérica para elas.
-const selfLoadingViews = new Set(['ranking', 'relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'blog', 'documentos', 'funil', 'depoimentos', 'comissoes']);
+const selfLoadingViews = new Set(['contratos', 'ranking', 'relatorios', 'financeiro', 'notas-fiscais', 'carteira', 'cupons', 'conexoes', 'integ-nfse', 'integ-pagamentos', 'integ-caixa', 'crm', 'controle', 'comunicados', 'configuracoes', 'vitrine', 'blog', 'documentos', 'funil', 'depoimentos', 'comissoes']);
 const viewsWithTables = new Set(['concursos', 'boloes', 'jogos', 'cotas', 'recebimentos', 'pagamentos', 'afiliados', 'repasses', 'usuarios', 'operacao', 'comprovantes', 'lotericas', 'auditoria', 'grupos', 'convites']);
 
 const MONTH_LABELS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -239,6 +240,7 @@ function AdminDashboardContent({ testMode }: { testMode: boolean }) {
     if (view === 'vitrine') return <VitrineView notify={notify} />;
     if (view === 'blog') return <BlogAdminView notify={notify} />;
     if (view === 'depoimentos') return <TestimonialsAdminView notify={notify} />;
+    if (view === 'contratos') return <ContractsAdminView notify={notify} />;
     if (view === 'ranking') return <AffiliateRanking />;
     if (view === 'controle') return <PoolControlView notify={notify} />;
     if (view === 'recebimentos' || view === 'pagamentos') return <PaymentsView ctx={ctx} />;

@@ -94,6 +94,8 @@ const ROUTES: RouteRule[] = [
   R('admin/funil', ['funil'], ['funil']),
   R('admin/depoimentos', ['depoimentos'], ['depoimentos']),
   R('admin/documentos', ['documentos'], ['documentos']),
+  R('admin/contratos', ['afiliados', 'documentos'], ['afiliados', 'documentos']),
+  R('admin/contratos-empresa', ['afiliados', 'documentos'], ['documentos']),
   R('admin/conexoes', ['conexoes'], ['conexoes']),
   R('admin/pagamentos', ['conexoes'], ['conexoes']),
   R('admin/auditoria', ['auditoria'], ['auditoria']),

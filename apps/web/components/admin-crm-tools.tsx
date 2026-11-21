@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, brl, chip, dateOnly, dateTime, Empty, ExportBar, Kpi, label, modalityNames, Notify, Panel, Progress, Rec, ReleaseBadge, Table } from './admin-ui';
 import { AttachmentsPanel } from './admin-attachments';
+import { useSearchParams } from 'next/navigation';
+import { PersonCard, PersonList } from './admin-views/person-card';
 
 /* -------------------------------------------------------------------------- */
 /* CRM de clientes                                                         */
@@ -47,15 +49,23 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
+  const urlParams = useSearchParams();
+  const [affiliate, setAffiliate] = useState(() => urlParams?.get('afiliado') ?? '');
+  const [affiliates, setAffiliates] = useState<Rec[]>([]);
+  useEffect(() => { const fromUrl = urlParams?.get('afiliado') ?? ''; setAffiliate(fromUrl); setPage(1); }, [urlParams]);
+  useEffect(() => {
+    void api('/api/v1/admin/afiliados?page=1&pageSize=100&status=aprovado').then((data: Rec) => setAffiliates((data.items ?? []).map((item: Rec) => ({ id: item.id, nome: item.usuario?.nome ?? item.codigoAfiliado, codigo: item.codigoAfiliado })).sort((a: Rec, b: Rec) => String(a.nome).localeCompare(String(b.nome), 'pt-BR')))).catch(() => setAffiliates([]));
+  }, []);
 
   const params = useCallback(() => {
     const entries: Record<string, string> = { ordenar: order };
+    if (affiliate) entries.afiliadoId = affiliate;
     if (segment) entries.segmento = segment;
     if (level) entries.nivel = level;
     if (stage) entries.etapa = stage;
     if (term) entries.busca = term;
     return entries;
-  }, [segment, level, stage, order, term]);
+  }, [segment, level, stage, order, term, affiliate]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,8 +82,9 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
   const criteria = overview?.criterios ?? {};
   const open = (id: string) => { setSelected(id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  return <>
-    <div className="admin-page-heading"><div><h1>Clientes</h1></div></div>
+  const affiliateName = affiliates.find((item) => item.id === affiliate)?.nome;
+  return <div className="crm-page">
+    <div className="admin-page-heading"><div><h1>Clientes (cotistas)</h1></div></div>
 
     {selected && <BettorDetail id={selected} onClose={() => setSelected(null)} onChanged={() => void load()} notify={notify} />}
 
@@ -96,7 +107,11 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
 
     <div className="admin-two-col">
       <Panel title="Maiores clientes">
-        <Table minWidth={460}><thead><tr><th>#</th><th>Cliente</th><th>Nível</th><th>Investido</th><th>Cotas</th></tr></thead><tbody>{(overview?.maioresApostadores ?? []).map((row: Rec, index: number) => <tr key={row.id}><td>{index + 1}</td><td><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button><small>{row.boloesDistintos} bolão(ões) · última compra {dateOnly(row.ultimaCompraEm)}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td></tr>)}</tbody></Table>
+        <ol className="crm-rank-list">{(overview?.maioresApostadores ?? []).map((row: Rec, index: number) => <li key={row.id}>
+          <span className="crm-rank-pos">{index + 1}</span>
+          <div className="crm-rank-who"><button className="admin-link-button" onClick={() => open(row.id)}>{row.nome}</button><small>{row.cotasPagas} {row.cotasPagas === 1 ? 'cota' : 'cotas'} · {row.boloesDistintos} {row.boloesDistintos === 1 ? 'bolão' : 'bolões'} · última compra {dateOnly(row.ultimaCompraEm)}</small></div>
+          <div className="crm-rank-value"><strong>{brl(row.totalGasto)}</strong><LevelChip nivel={row.nivel} nome={row.nivelNome} /></div>
+        </li>)}</ol>
         {!(overview?.maioresApostadores ?? []).length && <Empty text="Ainda não há compras pagas" />}
       </Panel>
       <Panel title="Para reativar">
@@ -107,20 +122,36 @@ export function CrmView({ notify, onEditUser, refreshKey = 0 }: { notify: Notify
     </div>
 
     <Panel title="Todos os clientes" action={<ExportBar path="/api/v1/admin/crm/apostadores" params={params()} id="clientes" onError={(text) => notify('error', text)} />}>
+      {affiliate && <p className="admin-help crm-affiliate-note">Clientes de <strong>{affiliateName ?? 'afiliado selecionado'}</strong>: indicados, quem comprou pelo afiliado e quem está nos grupos dele. <button type="button" className="admin-link-button" onClick={() => { setAffiliate(''); setPage(1); }}>Ver todos</button></p>}
       {stage && <p className="admin-help">Filtrando pela etapa do funil. <button type="button" className="admin-link-button" onClick={() => { setStage(''); setPage(1); }}>Limpar filtro</button></p>}
       <div className="admin-chip-row" role="tablist" aria-label="Segmentos">{SEGMENTS.map(([key, title]) => { const count = key ? (overview?.segmentos ?? []).find((item: Rec) => item.chave === key)?.clientes : totals.cadastrados; return <button key={key || 'todos'} role="tab" aria-selected={segment === key} className={`admin-chip-button ${segment === key ? 'is-current' : ''}`} onClick={() => { setSegment(key); setPage(1); }}>{title}<strong>{count ?? 0}</strong></button>; })}</div>
-      <form className="admin-toolbar-filters" style={{ marginBottom: 14 }} onSubmit={(event: FormEvent) => { event.preventDefault(); setTerm(search.trim()); setPage(1); }}>
-        <label className="admin-field"><span>Buscar</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome, e-mail, CPF ou etiqueta" /></label>
+      <form className="admin-toolbar-filters crm-filters" style={{ marginBottom: 14 }} onSubmit={(event: FormEvent) => { event.preventDefault(); setTerm(search.trim()); setPage(1); }}>
+        <label className="admin-field crm-filter-search"><span>Buscar</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome, e-mail, CPF ou etiqueta" /></label>
         <label className="admin-field"><span>Nível</span><select value={level} onChange={(event) => { setLevel(event.target.value); setPage(1); }}><option value="">Todos</option><option value="diamante">Diamante</option><option value="ouro">Ouro</option><option value="prata">Prata</option><option value="bronze">Bronze</option></select></label>
+        <label className="admin-field"><span>Afiliado</span><select value={affiliate} onChange={(event) => { setAffiliate(event.target.value); setPage(1); }}><option value="">Todos</option>{affiliates.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}{affiliate && !affiliates.some((item) => item.id === affiliate) && <option value={affiliate}>Afiliado selecionado</option>}</select></label>
         <label className="admin-field"><span>Ordenar por</span><select value={order} onChange={(event) => { setOrder(event.target.value); setPage(1); }}><option value="gasto">Maior investimento</option><option value="cotas">Mais cotas</option><option value="boloes">Mais bolões</option><option value="ultima">Compra mais recente</option><option value="nome">Nome (A–Z)</option></select></label>
         <button className="admin-button admin-button-primary" type="submit">Buscar</button>
       </form>
       {loading && <div className="admin-spinner" aria-label="Carregando" />}
-      <Table minWidth={1320}><thead><tr><th>Cliente</th><th>Etapa do funil</th><th>Nível</th><th>Segmentos</th><th>Investido</th><th>Cotas</th><th>Bolões</th><th>Ticket médio</th><th>Última compra</th><th>Pendente</th><th>Ficha</th></tr></thead><tbody>{(list?.items ?? []).map((row: Rec) => <tr key={row.id}><td><strong>{row.nome}</strong><small>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</small></td><td><StageChip etapa={row.etapa} nome={row.etapaNome} /><small>{row.proximaAcao}</small></td><td><LevelChip nivel={row.nivel} nome={row.nivelNome} /></td><td>{(row.segmentoNomes ?? []).join(' · ') || '—'}{(row.etiquetas ?? []).length > 0 && <small>#{row.etiquetas.join(' #')}</small>}</td><td><strong>{brl(row.totalGasto)}</strong></td><td>{row.cotasPagas}</td><td>{row.boloesDistintos}</td><td className="td-nowrap">{row.compras ? brl(row.ticketMedio) : '—'}</td><td>{row.ultimaCompraEm ? <>{dateOnly(row.ultimaCompraEm)}<small>há {row.diasSemComprar} dia(s)</small></> : '—'}</td><td>{row.valorPendente > 0 ? <><strong>{brl(row.valorPendente)}</strong>{row.reservasVencidas > 0 && <small>{row.reservasVencidas} vencida(s)</small>}</> : '—'}</td><td><div className="admin-row-actions"><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => onEditUser(row.id)}>Editar / excluir</button>}</div></td></tr>)}</tbody></Table>
+      <PersonList label="Clientes">{(list?.items ?? []).map((row: Rec) => <PersonCard
+        key={row.id}
+        name={row.nome}
+        subtitle={<>{row.email}{row.telefone ? ` · ${row.telefone}` : ''}</>}
+        status={<StageChip etapa={row.etapa} nome={row.etapaNome} />}
+        tags={<><LevelChip nivel={row.nivel} nome={row.nivelNome} />{(row.segmentoNomes ?? []).map((name: string) => <span key={name} className="status-chip">{name}</span>)}{row.afiliadoNome || row.afiliadoOrigem ? <span className="status-chip status-info">Afiliado: {row.afiliadoNome ?? row.afiliadoOrigem}</span> : <span className="status-chip">Sem afiliado</span>}{(row.etiquetas ?? []).length > 0 && <small className="pc-hashtags">#{row.etiquetas.join(' #')}</small>}</>}
+        stats={[
+          { label: 'Investido', value: brl(row.totalGasto), hint: row.compras ? `ticket ${brl(row.ticketMedio)}` : undefined },
+          { label: 'Cotas', value: row.cotasPagas ?? 0, hint: `${row.boloesDistintos ?? 0} ${row.boloesDistintos === 1 ? 'bolão' : 'bolões'}` },
+          { label: 'Última compra', value: row.ultimaCompraEm ? dateOnly(row.ultimaCompraEm) : '—', hint: row.ultimaCompraEm ? `há ${row.diasSemComprar} dia(s)` : undefined },
+          { label: 'Pendente', value: row.valorPendente > 0 ? brl(row.valorPendente) : '—', hint: row.reservasVencidas > 0 ? `${row.reservasVencidas} vencida(s)` : undefined },
+        ]}
+        footer={row.proximaAcao ? <small>{row.proximaAcao}</small> : undefined}
+        actions={<><button className="admin-button admin-button-small admin-button-ghost" onClick={() => open(row.id)}>Abrir ficha</button>{onEditUser && <button className="admin-button admin-button-small admin-button-ghost" onClick={() => onEditUser(row.id)}>Editar / excluir</button>}</>}
+      />)}</PersonList>
       {!loading && !(list?.items ?? []).length && <Empty text="Nenhum cliente encontrado" />}
       {(list?.paginas ?? 1) > 1 && <div className="admin-row-actions" style={{ marginTop: 14 }}><button className="admin-button admin-button-small admin-button-ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span className="admin-help" style={{ margin: 0 }}>Página {list?.pagina} de {list?.paginas} · {list?.total} clientes</span><button className="admin-button admin-button-small admin-button-ghost" disabled={page >= (list?.paginas ?? 1)} onClick={() => setPage((value) => value + 1)}>Próxima →</button></div>}
     </Panel>
-  </>;
+  </div>;
 }
 
 function BettorDetail({ id, onClose, onChanged, notify }: { id: string; onClose: () => void; onChanged: () => void; notify: Notify }) {

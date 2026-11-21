@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { ViewAsBanner } from './admin-view-as';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 import { ThemeToggle } from './theme-toggle';
@@ -26,10 +27,11 @@ const groups = [
     ],
   },
   {
-    label: 'Pessoas',
+    label: 'Comunidade',
     items: [
-      ['crm', 'Clientes', 'CR'],
+      ['crm', 'Clientes (cotistas)', 'CR'],
       ['afiliados', 'Afiliados', 'AF'],
+      ['contratos', 'Contratos', 'CT'],
       ['ranking', 'Ranking de vendas', 'RK'],
       ['grupos', 'Grupos', 'GR'],
       ['depoimentos', 'Depoimentos', 'DP'],
@@ -207,7 +209,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
             <button type="button" className="admin-topbar-logout" onClick={() => void logout()}>Sair</button>
           </div>
         </header>
-        <main className="admin-main" id="admin-main-content"><PushPrompt audience="equipe" />{children}</main>
+        <main className="admin-main" id="admin-main-content"><ViewAsBanner /><PushPrompt audience="equipe" />{children}</main>
       </section>
     </div>
   );

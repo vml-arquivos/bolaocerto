@@ -9,6 +9,8 @@ export class CrmListQueryDto {
   @IsOptional() @IsIn(SEGMENTS) segmento?: (typeof SEGMENTS)[number];
   @IsOptional() @IsIn(['diamante', 'ouro', 'prata', 'bronze']) nivel?: string;
   @IsOptional() @IsIn(ETAPAS_FUNIL) etapa?: (typeof ETAPAS_FUNIL)[number];
+  /** Só os clientes (cotistas) deste afiliado: indicados por ele, quem comprou por ele e quem está nos grupos dele. */
+  @IsOptional() @IsUUID() afiliadoId?: string;
   @IsOptional() @IsIn(['gasto', 'cotas', 'ultima', 'boloes', 'nome']) ordenar?: 'gasto' | 'cotas' | 'ultima' | 'boloes' | 'nome';
   @IsOptional() @Transform(({ value }) => (value === undefined ? undefined : Number(value))) @IsInt() @Min(1) pagina?: number;
   @IsOptional() @Transform(({ value }) => (value === undefined ? undefined : Number(value))) @IsInt() @Min(1) @Max(100) porPagina?: number;

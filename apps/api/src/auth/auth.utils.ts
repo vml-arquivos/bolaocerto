@@ -4,6 +4,8 @@ export interface AuthUser {
   id: string;
   email: string;
   papel: 'cotista' | 'afiliado' | 'admin' | 'operacao';
+  /** Preenchido quando a conta principal está vendo o painel como esta pessoa (modo só leitura). */
+  verComoPor?: string;
 }
 
 export function normalizeCpf(value: string): string {

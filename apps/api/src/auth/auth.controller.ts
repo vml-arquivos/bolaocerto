@@ -67,7 +67,7 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() user: AuthUser) {
-    return { ...(await this.auth.profile(user.id)), sessaoOciosaMin: this.auth.idleMinutes(user.papel) };
+    return { ...(await this.auth.profile(user.id)), sessaoOciosaMin: this.auth.idleMinutes(user.papel), ...(user.verComoPor ? { verComo: true } : {}) };
   }
 
   @Post('logout')

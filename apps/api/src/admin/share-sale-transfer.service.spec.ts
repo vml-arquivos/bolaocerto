@@ -77,10 +77,7 @@ describe('Transferir a venda de uma cota', () => {
     await expect(setup({ target: { id: 'af-new', statusAprovacao: 'pendente' } }).service.transfer('c1', { afiliadoId: 'af-new' }, principal)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('administrador comum só mexe entre os afiliados que ele trouxe', async () => {
-    await expect(setup().service.transfer('c1', { afiliadoId: 'af-new' }, comum)).rejects.toBeInstanceOf(ForbiddenException);
-    const mine = { afiliadoReferencia: { id: 'af-old', aprovadoPor: 'a2', codigoAfiliado: 'OLD', usuarioId: 'u-old', usuario: { nome: 'Antigo' } } };
-    await expect(setup({ share: mine }).service.transfer('c1', { afiliadoId: 'af-new' }, comum)).rejects.toThrow(/afiliados que você trouxe/);
-    await expect(setup({ share: mine, target: { id: 'af-new', statusAprovacao: 'aprovado', aprovadoPor: 'a2', comissaoPadraoPct: D(10), codigoAfiliado: 'NEW', usuarioId: 'u-new', usuario: { nome: 'Novo' } } }).service.transfer('c1', { afiliadoId: 'af-new' }, comum)).resolves.toMatchObject({ valorComissao: '0.80' });
+  it('administrador comum também passa a venda entre quaisquer afiliados', async () => {
+    await expect(setup().service.transfer('c1', { afiliadoId: 'af-new' }, comum)).resolves.toBeDefined();
   });
 });

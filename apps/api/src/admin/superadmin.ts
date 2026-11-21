@@ -41,12 +41,11 @@ type AffiliateLookup = { afiliado: { findUnique: (args: { where: { usuarioId: st
 const NOT_YOUR_AFFILIATE = 'Este afiliado foi trazido por outro administrador. Só quem o cadastrou (ou a conta principal) pode ver e alterar.';
 
 /**
- * Afiliado "é" do administrador que o trouxe (cadastrou, aprovou ou mandou o link). Administrador comum só vê e mexe
- * nos próprios afiliados; o superadmin vê todos. Quem não é administrador não passa por esta regra.
+ * Afiliados: todo administrador vê e cuida de todos os afiliados (contas de nível abaixo do dele).
+ * A conta principal (superadmin) continua invisível para os demais e é a única que libera funções.
  */
-export function ownsAffiliate(actor: Actor, aprovadoPor: string | null | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
-  if (actor.papel !== 'admin' || isSuperAdmin(actor, env)) return true;
-  return Boolean(actor.id) && aprovadoPor === actor.id;
+export function ownsAffiliate(actor: Actor, _aprovadoPor?: string | null, _env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(actor);
 }
 
 export function assertOwnsAffiliate(actor: Actor, aprovadoPor: string | null | undefined, env: NodeJS.ProcessEnv = process.env): void {
@@ -54,8 +53,16 @@ export function assertOwnsAffiliate(actor: Actor, aprovadoPor: string | null | u
 }
 
 /** Conta de afiliado de outro administrador: o administrador comum não abre nem altera (vale para editar, papel, senha, acesso). */
-export async function assertCanSeeAccount(db: AffiliateLookup, actor: Actor, target: { id: string; papel?: string | null }, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function assertCanSeeAccount(db: AffiliateLookup, actor: Actor, target: { id: string; papel?: string | null; email?: string | null }, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  if (target.papel === 'admin' && isSuperAdmin(target, env) && !isSuperAdmin(actor, env) && actor.id !== target.id) throw new ForbiddenException('Você não tem permissão sobre uma conta de nível igual ou superior ao seu.');
   if (target.papel !== 'afiliado' || actor.papel !== 'admin' || isSuperAdmin(actor, env) || (actor.id && actor.id === target.id)) return;
   const affiliate = await db.afiliado.findUnique({ where: { usuarioId: target.id }, select: { aprovadoPor: true } });
   assertOwnsAffiliate(actor, affiliate?.aprovadoPor ?? null, env);
+}
+
+/** Filtro de busca que esconde a conta principal de quem não é ela. */
+export function hideSuperAdminWhere(actor: Actor, env: NodeJS.ProcessEnv = process.env): { NOT: { email: { equals: string; mode: 'insensitive' } } } | Record<string, never> {
+  const main = (env.ADMIN_BOOTSTRAP_EMAIL ?? '').trim().toLowerCase();
+  if (!main || isSuperAdmin(actor, env)) return {};
+  return { NOT: { email: { equals: main, mode: 'insensitive' } } };
 }

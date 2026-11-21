@@ -30,6 +30,7 @@ import { ConferidorModule } from './conferidor/conferidor.module';
 import { ModalityAlertsModule } from './alerts/modality-alerts.module';
 import { WalletModule } from './wallet/wallet.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { ContractsModule } from './contracts/contracts.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -63,6 +64,7 @@ import { HealthController } from './health.controller';
     ModalityAlertsModule,
     WalletModule,
     PromotionsModule,
+    ContractsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

@@ -91,6 +91,8 @@ export class SharesService {
       else if (affiliate && affiliate.usuarioId !== user.id) await joinAffiliateGroup(tx, affiliate.id, user.id);
       // Compra direta (sem afiliado) num bolão do BL: a pessoa entra no grupo oficial do bolão.
       else if (!affiliate && pool.grupo?.tipo === 'oficial') await joinGroup(tx, pool.grupo.id, user.id);
+      // Quem compra pelo afiliado passa a ser cliente dele (se ainda não tinha um afiliado de origem).
+      if (referenceAffiliateId) await tx.usuario?.updateMany?.({ where: { id: user.id, papel: 'cotista', indicadoPorAfiliadoId: null }, data: { indicadoPorAfiliadoId: referenceAffiliateId } });
       // Cupom: o código digitado ou o automático a que a pessoa tem direito. O desconto sai da taxa; o custo dos jogos não muda.
       const baseAmounts = amountsForPool(pool, dto.quantidade, 0);
       const coupon = dto.cupom?.trim() || autoCoupon ? await resolveCoupon(tx, { userId: user.id, code: dto.cupom, grossCents: couponCents(baseAmounts.gross), feeCents: couponCents(baseAmounts.adminFee), minPayableCents: minPayableCents(process.env.CORA_MIN_AMOUNT) }) : null;

@@ -5,7 +5,7 @@ import { assertCommissionCeiling, effectiveLimit, LEVEL_NAMES, levelKey, normali
 import { assertTicketMatchesPool } from '../pools/ticket-match';
 import { effectiveSaleWindow } from '../pools/sales-rules';
 import { forgetAccess } from '../access/access.service';
-import { assertCanGrantRole, assertCanManage, assertCanSeeAccount, assertOwnsAffiliate, isSuperAdmin } from './superadmin';
+import { assertCanGrantRole, assertCanManage, assertCanSeeAccount, assertOwnsAffiliate, hideSuperAdminWhere, isSuperAdmin } from './superadmin';
 import { lockAdminActor } from './admin-users.service';
 import { evaluateReleaseGate } from '../pools/release-gate';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
@@ -399,11 +399,33 @@ export class AdminService {
     return { items: items.map((payment) => ({ ...payment, valorBruto: payment.valorBruto.toFixed(2), valorTaxaAdmin: payment.valorTaxaAdmin.toFixed(2), valorComissaoAfiliado: payment.valorComissaoAfiliado.toFixed(2), valorCustoBilhete: payment.valorCustoBilhete.toFixed(2) })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
+  /** Quantos cotistas cada afiliado tem: indicados pelo link, quem comprou cota por ele e membros dos grupos dele (sem repetir). */
+  private async affiliateClientCounts(affiliates: Array<{ id: string; usuarioId: string }>): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (!affiliates.length) return out;
+    const ids = affiliates.map((affiliate) => affiliate.id);
+    try {
+      const [referred, buyers, members] = await Promise.all([
+        this.prisma.usuario.findMany({ where: { indicadoPorAfiliadoId: { in: ids }, papel: 'cotista' }, select: { id: true, indicadoPorAfiliadoId: true } }),
+        this.prisma.cota.findMany({ where: { afiliadoReferenciaId: { in: ids }, status: { notIn: [StatusCota.cancelada, StatusCota.estornada] }, comprador: { papel: 'cotista' } }, select: { afiliadoReferenciaId: true, compradorId: true }, distinct: ['afiliadoReferenciaId', 'compradorId'] }),
+        this.prisma.grupoMembro.findMany({ where: { grupo: { afiliadoId: { in: ids } }, usuario: { papel: 'cotista' } }, select: { usuarioId: true, grupo: { select: { afiliadoId: true } } } }),
+      ]);
+      const sets = new Map<string, Set<string>>(ids.map((id) => [id, new Set<string>()]));
+      for (const row of referred) if (row.indicadoPorAfiliadoId) sets.get(row.indicadoPorAfiliadoId)?.add(row.id);
+      for (const row of buyers) if (row.afiliadoReferenciaId) sets.get(row.afiliadoReferenciaId)?.add(row.compradorId);
+      for (const row of members) if (row.grupo.afiliadoId) sets.get(row.grupo.afiliadoId)?.add(row.usuarioId);
+      for (const [id, set] of sets) out.set(id, set.size);
+    } catch {
+      // Sem os dados auxiliares (ex.: testes), fica a contagem de indicados.
+    }
+    return out;
+  }
+
   async listAffiliates(query: AdminListQueryDto = {}, actor?: AuthUser) {
     const { page, pageSize, skip, take } = this.pagination(query);
     // Sem filtro, quem deixou de ser afiliado (inativo) não aparece; continua visível com o filtro "Inativo".
-    // Administrador comum só vê os afiliados que ele trouxe (cadastrou, aprovou ou mandou o link); o superadmin vê todos.
-    const where: Prisma.AfiliadoWhereInput = { ...(actor && actor.papel === 'admin' && !isSuperAdmin(actor) ? { aprovadoPor: actor.id } : {}), ...(query.status ? { statusAprovacao: query.status } : { statusAprovacao: { not: 'inativo' } }), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }, { usuario: { email: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
+    // Todo administrador vê todos os afiliados.
+    const where: Prisma.AfiliadoWhereInput = { ...(query.status ? { statusAprovacao: query.status } : { statusAprovacao: { not: 'inativo' } }), ...(query.busca ? { OR: [{ codigoAfiliado: { contains: query.busca, mode: 'insensitive' } }, { usuario: { nome: { contains: query.busca, mode: 'insensitive' } } }, { usuario: { email: { contains: query.busca, mode: 'insensitive' } } }] } : {}) };
     const [items, total] = await Promise.all([
       this.prisma.afiliado.findMany({ where, include: { usuario: { select: { id: true, nome: true, email: true, papel: true } }, parentAfiliado: { include: { usuario: { select: { id: true, nome: true, email: true } } } }, comissoes: { select: { valor: true, status: true } }, _count: { select: { cotasReferenciadas: true, indicados: true, usuariosIndicados: true, grupos: true } } }, orderBy: [{ usuario: { nome: 'asc' } }, { criadoEm: 'desc' }], skip, take }),
       this.prisma.afiliado.count({ where }),
@@ -415,8 +437,13 @@ export class AdminService {
     // Nível de cada afiliado (Bronze, Prata, Ouro, Diamante) e limite manual autorizado, para a lista do painel.
     const levelRows = items.length ? await this.prisma.configuracaoSistema?.findMany?.({ where: { chave: { in: items.map((affiliate) => levelKey(affiliate.id)) } } }).catch(() => []) ?? [] : [];
     const rules = await readRules(this.prisma);
+    // Clientes (cotistas) de cada afiliado: indicados pelo link, quem comprou cota pelo afiliado e quem está nos grupos dele.
+    const clientCount = await this.affiliateClientCounts(items.map((affiliate) => ({ id: affiliate.id, usuarioId: affiliate.usuarioId })));
+    // Contrato assinado eletronicamente (o mais recente que não foi cancelado).
+    const contractRows = items.length ? await this.prisma.contrato?.findMany?.({ where: { afiliadoId: { in: items.map((affiliate) => affiliate.id) }, tipo: 'afiliado', status: { in: ['aguardando', 'assinado'] } }, select: { afiliadoId: true, status: true, numero: true, assinadoEm: true, criadoEm: true }, orderBy: { criadoEm: 'desc' } }).catch(() => []) ?? [] : [];
+    const contractOf = (id: string) => { const rows = contractRows.filter((row) => row.afiliadoId === id); const row = rows.find((item) => item.status === 'assinado') ?? rows[0]; return row ? { status: row.status, numero: row.numero, assinadoEm: row.assinadoEm } : null; };
     const levelOf = (id: string) => { const row = levelRows.find((item) => item.chave === levelKey(id)); let raw: unknown = null; try { raw = row ? JSON.parse(row.valor) : null; } catch { raw = null; } const level = normalizeLevel(raw); const limit = effectiveLimit(rules, level); return { nivel: level.nivel, nomeNivel: LEVEL_NAMES[level.nivel], manual: level.manual, maxCotas: limit.maxCotas, maxValorCota: limit.maxValorCota, origem: limit.origem }; };
-    return { items: items.map((affiliate) => ({ ...affiliate, nivel: levelOf(affiliate.id), contratoAceitoEm: acceptedAt(affiliate.usuarioId), comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
+    return { items: items.map((affiliate) => ({ ...affiliate, nivel: levelOf(affiliate.id), contratoAceitoEm: acceptedAt(affiliate.usuarioId), contrato: contractOf(affiliate.id), comissaoPadraoPct: affiliate.comissaoPadraoPct.toFixed(2), comissoes: undefined, indicadores: { cotas: affiliate._count.cotasReferenciadas, indicados: affiliate._count.indicados, usuariosIndicados: affiliate._count.usuariosIndicados, clientes: clientCount.get(affiliate.id) ?? affiliate._count.usuariosIndicados, grupos: affiliate._count.grupos, pendente: affiliate.comissoes.filter((row) => row.status === StatusComissao.pendente).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2), paga: affiliate.comissoes.filter((row) => row.status === StatusComissao.paga).reduce((sum, row) => sum + Number(row.valor), 0).toFixed(2) } })), pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) } };
   }
 
   async listCommissions(query: AdminListQueryDto = {}) {
@@ -758,8 +785,8 @@ export class AdminService {
     const { page, pageSize, skip, take } = this.pagination(query);
     const search: Prisma.UsuarioWhereInput = query.busca ? { OR: [{ nome: { contains: query.busca, mode: 'insensitive' } }, { email: { contains: query.busca, mode: 'insensitive' } }, { cpf: { contains: query.busca } }] } : {};
     const roleFilter: Prisma.UsuarioWhereInput = query.papel === 'equipe' ? { papel: { in: ['admin', 'operacao'] } } : query.papel ? { papel: query.papel as PapelUsuario } : {};
-    // Só aparecem contas de nível menor que o do ator (e a própria): um administrador comum não vê o superadmin nem outros administradores.
-    const visibility: Prisma.UsuarioWhereInput = isSuperAdmin(actor) ? {} : { OR: [{ id: actor.id }, { papel: { in: ['cotista', 'operacao'] } }, { papel: 'afiliado', afiliado: { aprovadoPor: actor.id } }] };
+    // Administrador vê todas as contas do mesmo nível e abaixo; a conta principal (superadmin) não aparece para os demais.
+    const visibility: Prisma.UsuarioWhereInput = hideSuperAdminWhere(actor);
     const where: Prisma.UsuarioWhereInput = { AND: [visibility], ...search, ...roleFilter, ...(query.status === 'inativo' ? { desativadoEm: { not: null } } : query.status === 'todos' ? {} : { desativadoEm: null }) };
     const [items, total] = await Promise.all([
       this.prisma.usuario.findMany({ where, select: { id: true, nome: true, cpf: true, email: true, telefone: true, papel: true, statusKyc: true, desativadoEm: true, criadoEm: true, afiliado: { select: { id: true, codigoAfiliado: true, statusAprovacao: true, parentAfiliadoId: true } }, _count: { select: { cotasCompradas: true, auditorias: true } } }, orderBy: [{ nome: 'asc' }, { criadoEm: 'desc' }], skip, take }),

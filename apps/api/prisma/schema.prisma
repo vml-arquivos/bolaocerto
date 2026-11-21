@@ -280,6 +280,7 @@ model Afiliado {
   boloesRecebidos      BolaoAfiliado[]
   distribuicoesAlvo    DistribuicaoBolao[]
   comissoes            Comissao[]
+  contratos            Contrato[]
 
   @@index([parentAfiliadoId])
   @@map("afiliados")
@@ -987,4 +988,44 @@ model CashbackCampanha {
   criador                 Usuario  @relation("campanha_criador", fields: [criadoPor], references: [id])
 
   @@map("cashback_campanhas")
+}
+
+/// Contrato do afiliado (e termos aditivos) com assinatura eletrônica por código enviado ao e-mail.
+/// O texto fica congelado na geração; o hash SHA-256 identifica exatamente o que foi assinado.
+model Contrato {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numero             String    @unique @db.VarChar(40)
+  tipo               String    @db.VarChar(30)
+  status             String    @default("aguardando") @db.VarChar(20)
+  titulo             String    @db.VarChar(160)
+  texto              String
+  hash               String    @db.VarChar(64)
+  versaoModelo       String    @map("versao_modelo") @db.VarChar(40)
+  partes             Json
+  origem             String    @default("painel") @db.VarChar(20)
+  afiliadoId         String?   @map("afiliado_id") @db.Uuid
+  usuarioId          String?   @map("usuario_id") @db.Uuid
+  criadoPorId        String?   @map("criado_por_id") @db.Uuid
+  codigoHash         String?   @map("codigo_hash") @db.VarChar(64)
+  codigoExpiraEm     DateTime? @map("codigo_expira_em")
+  codigoTentativas   Int       @default(0) @map("codigo_tentativas")
+  codigoEnviadoEm    DateTime? @map("codigo_enviado_em")
+  codigoEnvios       Int       @default(0) @map("codigo_envios")
+  assinadoEm         DateTime? @map("assinado_em")
+  assinatura         Json?
+  empresaHash        String    @map("empresa_hash") @db.VarChar(64)
+  empresaAssinadaEm  DateTime? @map("empresa_assinada_em")
+  empresaAssinatura  Json?     @map("empresa_assinatura")
+  eventos            Json      @default("[]")
+  canceladoEm        DateTime? @map("cancelado_em")
+  canceladoPorId     String?   @map("cancelado_por_id") @db.Uuid
+  motivoCancelamento String?   @map("motivo_cancelamento") @db.VarChar(300)
+  criadoEm           DateTime  @default(now()) @map("criado_em")
+  atualizadoEm       DateTime  @default(now()) @updatedAt @map("atualizado_em")
+  afiliado           Afiliado? @relation(fields: [afiliadoId], references: [id], onDelete: SetNull)
+
+  @@index([afiliadoId, tipo])
+  @@index([status, criadoEm])
+  @@index([empresaHash])
+  @@map("contratos")
 }

@@ -7,7 +7,7 @@ import { AuthUser } from '../auth/auth.utils';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { SuperAdminGuard } from '../auth/superadmin.guard';
-import { assertOwnsAffiliate, isSuperAdmin } from '../admin/superadmin';
+import { assertOwnsAffiliate } from '../admin/superadmin';
 import { buildRanking, RANKING_PERIODS, RankingPeriod, rankingStart } from './affiliate-ranking';
 import { AuditService } from '../common/audit.service';
 import { PrismaService } from '../common/prisma.service';
@@ -93,7 +93,7 @@ export class AffiliateRulesController {
    */
   @Get('admin/afiliados-ranking') @Roles('admin')
   async ranking(@Query('periodo') periodo: string | undefined, @CurrentUser() user: AuthUser) {
-    return computeRanking(this.prisma, periodo, isSuperAdmin(user) ? {} : { aprovadoPor: user.id });
+    return computeRanking(this.prisma, periodo, {});
   }
 
   /** O próprio afiliado vê o nível e os limites para criar bolões. */
