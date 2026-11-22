@@ -1,14 +1,14 @@
 import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { Request, Response } from 'express';
 import { AuthUser } from '../auth/auth.utils';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { isSuperAdmin } from '../admin/superadmin';
-import { CONTRACT_KINDS, type ContractKind } from './contract-templates';
+import { CONTRACT_KINDS, type BonusTable, type ContractKind } from './contract-templates';
 import { ContractsService, type SignatureMeta } from './contracts.service';
 import { DOC_SIDES, IdentityDocumentService, type DocSide } from './identity-document';
 
@@ -97,6 +97,8 @@ export class CompanyDto {
   @IsOptional() @IsString() @MaxLength(60) cidade?: string;
   @IsOptional() @IsString() @MaxLength(60) foro?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(365) prazoAvisoDias?: number;
+  /** Tabela de comissões do aditivo (conferida no serviço). */
+  @IsOptional() @IsObject() bonificacao?: BonusTable;
 }
 
 export class CompanySignDto {
@@ -197,6 +199,9 @@ export class ContractsController {
 
   @Post('admin/contratos/gerar-pendentes') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
   generateMissing(@CurrentUser() user: AuthUser) { return this.contracts.generateMissing(user); }
+
+  @Get('admin/contratos-empresa/modelo/:tipo/pdf') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
+  async modelPdf(@Param('tipo') kind: string, @Res({ passthrough: true }) response: Response) { return sendPdf(await this.contracts.modelPreview(kind as ContractKind), response, true); }
 
   @Get('admin/contratos/documento/:afiliadoId/:lado') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin')
   async documentFile(@Param('afiliadoId', ParseUUIDPipe) afiliadoId: string, @Param('lado') side: string, @Query('baixar') download: string | undefined, @Res({ passthrough: true }) response: Response) { return sendDocument(await this.documents.file(afiliadoId, docSide(side)), response, download !== '1'); }

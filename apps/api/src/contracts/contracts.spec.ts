@@ -345,3 +345,47 @@ describe('certificado digital da contratante (e-CNPJ A1)', () => {
     expect(await icpInfo({ ...env, CONTRATO_CERTIFICADO_SENHA: 'x' } as NodeJS.ProcessEnv)).toMatchObject({ configurado: true, erro: 'Senha do certificado incorreta.' });
   }, 30000);
 });
+
+describe('tabela de comissões do aditivo e papel timbrado', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const t = require('./contract-templates');
+  const party = { nome: 'Maria da Silva', cpf: '52998224725', email: 'm@x.com', telefone: '61999998888', dataNascimento: new Date('1990-05-10'), endereco: 'Rua A', codigoAfiliado: 'BLX', comissaoPct: '20.00' };
+  const text = (company: unknown) => t.buildContractText({ kind: 'aditivo-bonificacao', numero: 'BLA-1', company, affiliate: party, date: new Date('2026-11-21T12:00:00Z'), mainContract: { numero: 'BLC-1', data: new Date('2026-11-21T12:00:00Z') } });
+
+  it('com a tabela padrão, o texto e a assinatura do modelo não mudam', () => {
+    const base = t.sanitizeCompany({});
+    const withDefault = t.sanitizeCompany({ bonificacao: t.DEFAULT_BONUS });
+    expect(withDefault.bonificacao).toBeUndefined();
+    expect(t.companyHash(withDefault)).toBe(t.companyHash(base));
+    expect(text(base)).toContain('BRONZE — de 1 até 20 bolões — 20%\nPRATA — de 21 até 40 bolões — 25%\nOURO — de 41 até 80 bolões — 30%\nDIAMANTE — de 81 bolões em diante — 35%');
+    expect(text(base)).toContain('Ao atingir a quantidade de 20 (vinte) bolões');
+  });
+
+  it('tabela nova entra no texto, muda a assinatura do modelo e recusa limites fora de ordem', () => {
+    const table = { faixas: [{ ate: 10, pct: 15 }, { ate: 30, pct: 22.5 }, { ate: 60, pct: 30 }, { ate: null, pct: 40 }], extraPct: 45 };
+    const company = t.sanitizeCompany({ bonificacao: table });
+    const out = text(company);
+    expect(out).toContain('BRONZE — de 1 até 10 bolões — 15%\nPRATA — de 11 até 30 bolões — 22,5%\nOURO — de 31 até 60 bolões — 30%\nDIAMANTE — de 61 bolões em diante — 40%');
+    expect(out).toContain('bonificação extraordinária de até 45%');
+    expect(out).toContain('categoria BRONZE, fazendo jus à bonificação de 15%');
+    expect(out).toContain('Ao atingir a quantidade de 10 (dez) bolões fechados e devidamente validados, o AFILIADO será automaticamente promovido à categoria PRATA, passando a receber bonificação de 22,5%');
+    expect(t.companyHash(company)).not.toBe(t.companyHash(t.sanitizeCompany({})));
+    expect(t.sanitizeBonus({ faixas: [{ ate: 40, pct: 15 }, { ate: 30, pct: 22 }, { ate: 60, pct: 30 }, { ate: null, pct: 40 }], extraPct: 45 })).toEqual(t.DEFAULT_BONUS);
+  });
+
+  it('o painel recusa tabela inválida e mantém a tabela atual quando salva só os dados da empresa', async () => {
+    const store: Record<string, string> = {};
+    const prisma: any = { configuracaoSistema: { findUnique: jest.fn(async ({ where }: any) => (store[where.chave] ? { chave: where.chave, valor: store[where.chave] } : null)), upsert: jest.fn(async ({ where, create, update }: any) => { store[where.chave] = (update ?? create).valor; return {}; }) } };
+    const service = new ContractsService(prisma, { record: jest.fn() } as any, { publicUrl: () => 'https://bolaolivre.com', send: jest.fn(async () => true) } as any, { forAffiliate: jest.fn(async () => null) } as any);
+    const admin = { id: 'adm', email: 'a@x.com', papel: 'admin' } as any;
+    await expect(service.saveCompany(admin, { bonificacao: { faixas: [{ ate: 50, pct: 10 }, { ate: 20, pct: 20 }, { ate: 80, pct: 30 }, { ate: null, pct: 35 }], extraPct: 40 } } as any)).rejects.toThrow('Confira a tabela');
+    const table = { faixas: [{ ate: 10, pct: 15 }, { ate: 30, pct: 22 }, { ate: 60, pct: 30 }, { ate: null, pct: 40 }], extraPct: 45 };
+    await service.saveCompany(admin, { bonificacao: table } as any);
+    const saved = await service.saveCompany(admin, { razaoSocial: 'SORTE TECH SERVIÇOS DIGITAIS LTDA' } as any);
+    expect(saved.dados.bonificacao?.faixas[0]).toMatchObject({ ate: 10, pct: 15 });
+    const preview = await service.modelPreview('aditivo-bonificacao');
+    expect(preview.filename).toBe('modelo-aditivo-bonificacao.pdf');
+    expect(preview.buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    await expect(service.modelPreview('outro' as any)).rejects.toThrow('Modelo inválido');
+  }, 20000);
+});

@@ -30,7 +30,38 @@ export type CompanyData = {
   cidade: string;
   foro: string;
   prazoAvisoDias: number;
+  /** Tabela do aditivo (bolões e percentuais). Fica fora da lista de campos para não mudar a assinatura já feita quando é a padrão. */
+  bonificacao?: BonusTable;
 };
+
+/** Níveis do aditivo: até quantos bolões vale cada nível e o percentual. O último nível não tem limite. */
+export type BonusTable = { faixas: Array<{ nome: string; ate: number | null; pct: number }>; extraPct: number };
+export const DEFAULT_BONUS: BonusTable = {
+  faixas: [{ nome: 'BRONZE', ate: 20, pct: 20 }, { nome: 'PRATA', ate: 40, pct: 25 }, { nome: 'OURO', ate: 80, pct: 30 }, { nome: 'DIAMANTE', ate: null, pct: 35 }],
+  extraPct: 40,
+};
+const pctText = (value: number) => `${Number(value.toFixed(2)).toLocaleString('pt-BR')}%`;
+
+/** Lê e confere a tabela (limites crescentes, percentuais entre 0 e 100). Inválida → padrão. */
+export function sanitizeBonus(raw: unknown): BonusTable {
+  if (!raw || typeof raw !== 'object') return DEFAULT_BONUS;
+  const value = raw as { faixas?: unknown; extraPct?: unknown };
+  const list = Array.isArray(value.faixas) ? value.faixas : [];
+  if (list.length !== DEFAULT_BONUS.faixas.length) return DEFAULT_BONUS;
+  const faixas = DEFAULT_BONUS.faixas.map((base, index) => {
+    const row = (list[index] ?? {}) as { ate?: unknown; pct?: unknown };
+    const last = index === DEFAULT_BONUS.faixas.length - 1;
+    return { nome: base.nome, ate: last ? null : Math.trunc(Number(row.ate)), pct: Math.round(Number(row.pct) * 100) / 100 };
+  });
+  const extraPct = Math.round(Number(value.extraPct) * 100) / 100;
+  const okLimits = faixas.every((row, index) => row.ate === null || (Number.isFinite(row.ate) && row.ate >= 1 && row.ate <= 9999 && (index === 0 || row.ate > (faixas[index - 1]!.ate ?? 0))));
+  const okPct = faixas.every((row) => Number.isFinite(row.pct) && row.pct >= 0 && row.pct <= 100) && Number.isFinite(extraPct) && extraPct >= 0 && extraPct <= 100;
+  return okLimits && okPct ? { faixas, extraPct } : DEFAULT_BONUS;
+}
+
+export function isDefaultBonus(table: BonusTable | undefined): boolean {
+  return !table || JSON.stringify(sanitizeBonus(table)) === JSON.stringify(DEFAULT_BONUS);
+}
 
 /** Dados conferidos no Contrato Social (JUCIS-DF nº 53203684617, 13/02/2026) e no documento do administrador. */
 export const DEFAULT_COMPANY: CompanyData = {
@@ -113,7 +144,9 @@ export function formatPhone(phone: string | null): string | null {
 /** Hash dos dados da empresa + versão do modelo: a aprovação do representante vale para os contratos com este mesmo hash. */
 export function companyHash(company: CompanyData): string {
   const ordered = Object.fromEntries(Object.keys(DEFAULT_COMPANY).map((key) => [key, company[key as keyof CompanyData]]));
-  return createHash('sha256').update(`${CONTRACT_TEMPLATE_VERSION}|${JSON.stringify(ordered)}`, 'utf8').digest('hex');
+  // A tabela do aditivo só entra na conta quando muda (a assinatura do modelo padrão continua valendo).
+  const bonus = isDefaultBonus(company.bonificacao) ? '' : `|bonus:${JSON.stringify(sanitizeBonus(company.bonificacao))}`;
+  return createHash('sha256').update(`${CONTRACT_TEMPLATE_VERSION}|${JSON.stringify(ordered)}${bonus}`, 'utf8').digest('hex');
 }
 
 export function textHash(texto: string): string {
@@ -247,10 +280,21 @@ ${c.cidade}, ${longDate(date)}.
 ${signatureBlock(c, a, 'BL')}`;
 }
 
+/** Linhas da tabela: "BRONZE — de 1 até 20 bolões — 20%". */
+export function bonusRows(table: BonusTable): string {
+  let start = 1;
+  return table.faixas.map((row) => {
+    const line = row.ate === null ? `${row.nome} — de ${start} bolões em diante — ${pctText(row.pct)}` : `${row.nome} — de ${start} até ${row.ate} bolões — ${pctText(row.pct)}`;
+    start = (row.ate ?? start) + 1;
+    return line;
+  }).join('\n');
+}
+
 export function bonusAddendumText(input: ContractInput): string {
   const { company: c, affiliate: a, numero, date, mainContract } = input;
   const main = mainContract ? `Contrato de Parceria Comercial e Afiliação nº ${mainContract.numero}, de ${shortDate(mainContract.data)}` : 'Contrato de Parceria Comercial e Afiliação';
   const brand = 'BL – BOLÃO LIVRE';
+  const bonus = sanitizeBonus(c.bonificacao);
   return `PRIMEIRO TERMO ADITIVO AO CONTRATO DE AFILIADO
 PROGRAMA DE BONIFICAÇÃO E DESEMPENHO COMERCIAL ${brand}
 Termo Aditivo nº ${numero}
@@ -288,20 +332,17 @@ IV – DIAMANTE.
 3.2. Cada nível corresponderá a um percentual de bonificação sobre a base de remuneração comercial estabelecida pela CONTRATANTE para cada bolão fechado e validado.
 
 3.3. Fica estabelecida a seguinte tabela de bonificação:
-BRONZE — de 1 até 20 bolões — 20%
-PRATA — de 21 até 40 bolões — 25%
-OURO — de 41 até 80 bolões — 30%
-DIAMANTE — de 81 bolões em diante — 35%
+${bonusRows(bonus)}
 
-3.4. A CONTRATANTE poderá instituir campanhas especiais de desempenho para os afiliados classificados no nível DIAMANTE, podendo estabelecer bonificação extraordinária de até 40%, mediante comunicação e regulamentação específica.
+3.4. A CONTRATANTE poderá instituir campanhas especiais de desempenho para os afiliados classificados no nível DIAMANTE, podendo estabelecer bonificação extraordinária de até ${pctText(bonus.extraPct)}, mediante comunicação e regulamentação específica.
 
 3.5. Os percentuais estabelecidos neste instrumento representam os valores de bonificação devidos ao AFILIADO, não incidindo automaticamente sobre o valor integral das apostas ou cotas dos participantes, mas sobre a base de remuneração comercial previamente definida e informada pela CONTRATANTE.
 
 CLÁUSULA QUARTA – DA PROGRESSÃO AUTOMÁTICA DE CATEGORIA
 
-4.1. O AFILIADO iniciará sua participação no programa na categoria BRONZE, fazendo jus à bonificação de 20%.
+4.1. O AFILIADO iniciará sua participação no programa na categoria BRONZE, fazendo jus à bonificação de ${pctText(bonus.faixas[0]!.pct)}.
 
-4.2. Ao atingir a quantidade de 20 (vinte) bolões fechados e devidamente validados, o AFILIADO será automaticamente promovido à categoria PRATA, passando a receber bonificação de 25%.
+4.2. Ao atingir a quantidade de ${bonus.faixas[0]!.ate} (${numberInWords(bonus.faixas[0]!.ate ?? 0)}) bolões fechados e devidamente validados, o AFILIADO será automaticamente promovido à categoria PRATA, passando a receber bonificação de ${pctText(bonus.faixas[1]!.pct)}.
 
 4.3. A progressão para os níveis OURO e DIAMANTE ocorrerá conforme o atingimento das respectivas metas estabelecidas na Cláusula Terceira.
 
@@ -430,8 +471,9 @@ export function buildContractText(input: ContractInput): string {
 
 /** Normaliza e valida os dados da empresa vindos do painel (campos vazios voltam ao padrão). */
 export function sanitizeCompany(raw: Partial<CompanyData> | null | undefined): CompanyData {
-  const out = { ...DEFAULT_COMPANY };
+  const out: CompanyData = { ...DEFAULT_COMPANY };
   if (!raw || typeof raw !== 'object') return out;
+  if (raw.bonificacao !== undefined && !isDefaultBonus(raw.bonificacao)) out.bonificacao = sanitizeBonus(raw.bonificacao);
   for (const key of Object.keys(DEFAULT_COMPANY) as Array<keyof CompanyData>) {
     const value = raw[key];
     if (key === 'prazoAvisoDias') {

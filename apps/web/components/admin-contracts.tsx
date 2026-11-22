@@ -5,6 +5,7 @@ import { AdminDrawer } from './admin-drawer';
 import { dateOnly, dateTime, fetchAdmin } from './admin-views/shared';
 import type { RecordValue } from './admin-views/shared';
 import { deviceInfo, mapLink } from '../lib/device-info';
+import { fetchPdf, PdfPreview } from './pdf-preview';
 
 type Notify = (type: 'success' | 'error', text: string) => void;
 type Tab = 'aguardando' | 'assinado' | 'cancelado' | '';
@@ -22,30 +23,6 @@ const COMPANY_FIELDS: ReadonlyArray<readonly [key: string, label: string, wide?:
   ['representanteNome', 'Representante legal', true], ['representanteCargo', 'Cargo'], ['representanteCpf', 'CPF do representante'], ['representanteRg', 'RG do representante'],
   ['representanteNacionalidade', 'Nacionalidade'], ['representanteEstadoCivil', 'Estado civil'], ['representanteProfissao', 'Profissão'], ['cidade', 'Cidade do contrato'], ['foro', 'Foro'], ['prazoAvisoDias', 'Aviso prévio para rescisão (dias)'],
 ];
-
-async function openPdf(id: string, notify: Notify) {
-  try {
-    const response = await fetch(`/api/v1/admin/contratos/${id}/pdf`, { credentials: 'include', cache: 'no-store' });
-    if (!response.ok) throw new Error('Não foi possível gerar o PDF.');
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const name = response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? 'contrato.pdf';
-    const link = document.createElement('a');
-    link.href = url; link.download = name; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível gerar o PDF.'); }
-}
-
-/** Situação do certificado digital (e-CNPJ) que assina os PDFs. Nada sigiloso aparece aqui. */
-function CertificateChip({ info }: { info: RecordValue | undefined }) {
-  if (!info) return null;
-  if (!info.configurado) return <small title="Opcional: com o e-CNPJ A1 configurado no servidor, todo PDF sai assinado digitalmente pela empresa.">Certificado digital (e-CNPJ): não configurado</small>;
-  if (info.erro) return <span className="status-chip status-danger">Certificado digital: {info.erro}</span>;
-  return <>
-    <span className={`status-chip ${info.vencido ? 'status-danger' : 'status-success'}`}>{info.vencido ? 'Certificado digital vencido' : 'PDFs com certificado digital'}</span>
-    <small>{info.titular}{info.validoAte ? ` · válido até ${dateOnly(info.validoAte)}` : ''}</small>
-  </>;
-}
 
 /** Documento de identidade do afiliado: ver frente e verso, o que a leitura encontrou, aprovar ou recusar. */
 export function IdentityReview({ affiliateId, doc, notify, onChanged }: { affiliateId: string; doc: RecordValue; notify: Notify; onChanged: (next: RecordValue) => void }) {
@@ -93,24 +70,87 @@ export function IdentityReview({ affiliateId, doc, notify, onChanged }: { affili
 }
 
 /** Empresa que assina os contratos: dados do contratante e do representante legal, e a assinatura do modelo. */
-function CompanyCard({ notify, onSigned }: { notify: Notify; onSigned: () => void }) {
-  const [data, setData] = useState<RecordValue | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<RecordValue>({});
-  const [busy, setBusy] = useState(false);
-  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const load = useCallback(async () => { const result = await fetchAdmin('/api/v1/admin/contratos-empresa'); setData(result); setForm(result.dados); }, []);
-  useEffect(() => { void load().catch((error) => notify('error', error.message)); }, [load, notify]);
+const LEVEL_NAMES = ['Bronze', 'Prata', 'Ouro', 'Diamante'];
+const DEFAULT_TABLE = { faixas: [{ nome: 'BRONZE', ate: 20, pct: 20 }, { nome: 'PRATA', ate: 40, pct: 25 }, { nome: 'OURO', ate: 80, pct: 30 }, { nome: 'DIAMANTE', ate: null, pct: 35 }], extraPct: 40 };
+const pct = (value: unknown) => `${Number(value ?? 0).toLocaleString('pt-BR')}%`;
 
+/** Faixas "1 a 20 bolões" a partir dos limites. */
+function ranges(table: RecordValue): Array<{ nome: string; faixa: string; pct: number }> {
+  let start = 1;
+  return (table.faixas as RecordValue[]).map((row, index) => {
+    const faixa = row.ate === null || row.ate === undefined || index === 3 ? `${start}+ bolões` : `${start} a ${row.ate} bolões`;
+    start = Number(row.ate ?? start) + 1;
+    return { nome: LEVEL_NAMES[index] ?? row.nome, faixa, pct: Number(row.pct) };
+  });
+}
+
+/** Dados da empresa que aparecem nos contratos (editar aqui pede nova assinatura do modelo). */
+function CompanyDrawer({ data, notify, onClose, onSaved }: { data: RecordValue; notify: Notify; onClose: () => void; onSaved: (next: RecordValue) => void }) {
+  const [form, setForm] = useState<RecordValue>(data.dados);
+  const [busy, setBusy] = useState(false);
   async function save(event: FormEvent) {
     event.preventDefault(); setBusy(true);
     try {
-      const result = await fetchAdmin('/api/v1/admin/contratos-empresa', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...form, prazoAvisoDias: Number(form.prazoAvisoDias) || 30 }) });
-      setData(result); setForm(result.dados); setEditing(false);
-      notify('success', result.aprovacao ? 'Dados salvos.' : 'Dados salvos. Assine de novo o modelo para os próximos contratos.');
+      const { bonificacao: _b, ...rest } = form;
+      const result = await fetchAdmin('/api/v1/admin/contratos-empresa', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...rest, prazoAvisoDias: Number(form.prazoAvisoDias) || 30 }) });
+      notify('success', result.aprovacao ? 'Dados salvos.' : 'Dados salvos. Assine o modelo de novo.');
+      onSaved(result);
     } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível salvar.'); } finally { setBusy(false); }
   }
+  return <AdminDrawer title="Dados da empresa" subtitle="Saem no contrato e no rodapé do PDF" onClose={onClose}>
+    <form className="contracts-company-form" onSubmit={save}>
+      {COMPANY_FIELDS.map(([key, label, wide]) => <label key={key} className={wide ? 'is-wide' : undefined}><span>{label}</span><input type={key === 'prazoAvisoDias' ? 'number' : 'text'} min={key === 'prazoAvisoDias' ? 1 : undefined} max={key === 'prazoAvisoDias' ? 365 : undefined} value={form[key] ?? ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>)}
+      <p className="admin-muted-note is-wide">Mudou algum dado? A empresa assina o modelo de novo.</p>
+      <div className="contracts-company-actions"><button type="submit" className="admin-button admin-button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar'}</button><button type="button" className="admin-button admin-button-ghost" onClick={onClose}>Cancelar</button></div>
+    </form>
+  </AdminDrawer>;
+}
+
+/** Comissões do aditivo: até quantos bolões vale cada nível e o percentual. O texto do aditivo é preenchido com estes números. */
+function BonusDrawer({ data, notify, onClose, onSaved }: { data: RecordValue; notify: Notify; onClose: () => void; onSaved: (next: RecordValue) => void }) {
+  const current = (data.dados?.bonificacao ?? DEFAULT_TABLE) as RecordValue;
+  const [rows, setRows] = useState<Array<{ ate: string; pct: string }>>((current.faixas as RecordValue[]).map((row) => ({ ate: row.ate === null || row.ate === undefined ? '' : String(row.ate), pct: String(row.pct) })));
+  const [extra, setExtra] = useState(String(current.extraPct ?? 40));
+  const [busy, setBusy] = useState(false);
+  const table = { faixas: rows.map((row, index) => ({ nome: DEFAULT_TABLE.faixas[index]!.nome, ate: index === 3 ? null : Number(row.ate), pct: Number(String(row.pct).replace(',', '.')) })), extraPct: Number(String(extra).replace(',', '.')) };
+  const valid = table.faixas.every((row, index) => (index === 3 || (Number.isInteger(row.ate) && (row.ate ?? 0) >= 1 && (index === 0 || (row.ate ?? 0) > (table.faixas[index - 1]!.ate ?? 0)))) && Number.isFinite(row.pct) && row.pct >= 0 && row.pct <= 100) && Number.isFinite(table.extraPct) && table.extraPct >= 0 && table.extraPct <= 100;
+  async function save(event: FormEvent) {
+    event.preventDefault(); if (!valid) return; setBusy(true);
+    try {
+      const result = await fetchAdmin('/api/v1/admin/contratos-empresa', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...data.dados, bonificacao: table }) });
+      notify('success', result.aprovacao ? 'Comissões salvas.' : 'Comissões salvas. Assine o modelo de novo para valer nos próximos aditivos.');
+      onSaved(result);
+    } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível salvar.'); } finally { setBusy(false); }
+  }
+  return <AdminDrawer title="Comissões do aditivo" subtitle="O aditivo sai preenchido com esta tabela" onClose={onClose}>
+    <form className="bonus-form" onSubmit={save}>
+      <div className="bonus-grid" role="table" aria-label="Níveis">
+        <div className="bonus-row bonus-head" role="row"><span>Nível</span><span>Até quantos bolões</span><span>Comissão (%)</span></div>
+        {rows.map((row, index) => <div className="bonus-row" role="row" key={index}>
+          <strong>{LEVEL_NAMES[index]}</strong>
+          {index === 3 ? <span className="bonus-auto">{(table.faixas[2]!.ate ?? 0) + 1} ou mais</span> : <input inputMode="numeric" aria-label={`Até quantos bolões no nível ${LEVEL_NAMES[index]}`} value={row.ate} onChange={(event) => setRows(rows.map((item, i) => i === index ? { ...item, ate: event.target.value.replace(/\D/g, '').slice(0, 4) } : item))} />}
+          <input inputMode="decimal" aria-label={`Comissão do nível ${LEVEL_NAMES[index]}`} value={row.pct} onChange={(event) => setRows(rows.map((item, i) => i === index ? { ...item, pct: event.target.value.replace(/[^\d,.]/g, '').slice(0, 6) } : item))} />
+        </div>)}
+        <div className="bonus-row" role="row"><strong>Campanha Diamante</strong><span className="bonus-auto">bônus máximo</span><input inputMode="decimal" aria-label="Bônus máximo de campanha" value={extra} onChange={(event) => setExtra(event.target.value.replace(/[^\d,.]/g, '').slice(0, 6))} /></div>
+      </div>
+      {valid ? <ul className="bonus-preview">{ranges(table as unknown as RecordValue).map((row) => <li key={row.nome}><strong>{row.nome}</strong><span>{row.faixa}</span><b>{pct(row.pct)}</b></li>)}</ul>
+        : <p className="form-message form-error">Os limites precisam crescer (ex.: 20, 40, 80) e as comissões ficar entre 0 e 100.</p>}
+      <p className="admin-muted-note">Mudou a tabela? A empresa assina o modelo de novo. Aditivos já assinados continuam como estão.</p>
+      <div className="contracts-company-actions"><button type="submit" className="admin-button admin-button-primary" disabled={busy || !valid}>{busy ? 'Salvando…' : 'Salvar comissões'}</button><button type="button" className="admin-button admin-button-ghost" onClick={() => setRows(DEFAULT_TABLE.faixas.map((row) => ({ ate: row.ate === null ? '' : String(row.ate), pct: String(row.pct) })))}>Voltar ao padrão</button></div>
+    </form>
+  </AdminDrawer>;
+}
+
+/** Topo da tela: assinatura da empresa, certificado digital e os dois modelos (contrato e aditivo). */
+function ContractsSetup({ notify, onSigned, onPreview }: { notify: Notify; onSigned: () => void; onPreview: (kind: 'afiliado' | 'aditivo-bonificacao') => void }) {
+  const [data, setData] = useState<RecordValue | null>(null);
+  const [drawer, setDrawer] = useState<'' | 'empresa' | 'comissoes'>('');
+  const [busy, setBusy] = useState(false);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const load = useCallback(async () => setData(await fetchAdmin('/api/v1/admin/contratos-empresa')), []);
+  useEffect(() => { void load().catch((error) => notify('error', error.message)); }, [load, notify]);
+
   async function sendCode() {
     setBusy(true);
     try { const result = await fetchAdmin('/api/v1/admin/contratos-empresa/codigo', { method: 'POST' }); setCodeSentTo(result.email); setCode(''); notify('success', `Código enviado para ${result.email}.`); }
@@ -127,37 +167,55 @@ function CompanyCard({ notify, onSigned }: { notify: Notify; onSigned: () => voi
     } catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível assinar.'); } finally { setBusy(false); }
   }
 
-  if (!data) return <section className="admin-panel contracts-company"><p>Carregando…</p></section>;
+  if (!data) return <section className="admin-panel contracts-setup"><p>Carregando…</p></section>;
   const d = data.dados as RecordValue;
   const approval = data.aprovacao as RecordValue | null;
-  return <section className="admin-panel contracts-company" aria-label="Empresa que assina">
-    <div className="contracts-company-head">
-      <div>
-        <h2>Empresa que assina</h2>
-        <p><strong>{d.razaoSocial}</strong> · CNPJ {d.cnpj}</p>
-        <p>Representante: <strong>{d.representanteNome}</strong> ({d.representanteCargo}) · CPF {d.representanteCpf} · RG {d.representanteRg}</p>
+  const cert = (data.certificadoDigital ?? {}) as RecordValue;
+  const certOk = cert.configurado && !cert.erro && !cert.vencido;
+  const table = ranges((d.bonificacao ?? DEFAULT_TABLE) as RecordValue);
+  const saved = (next: RecordValue) => { setData(next); setDrawer(''); };
+  return <>
+    <section className="admin-panel contracts-setup" aria-label="Assinatura da empresa">
+      <div className="setup-company">
+        <div className="setup-id"><strong>{d.razaoSocial}</strong><small>CNPJ {d.cnpj} · {d.representanteNome}</small></div>
+        <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setDrawer('empresa')}>Dados da empresa</button>
       </div>
-      <div className="contracts-company-sign">
-        {approval
-          ? <><span className="status-chip status-success">Modelo assinado</span><small>{dateTime(approval.em)} · {approval.nome}</small></>
-          : <><span className="status-chip status-warning">Assinatura da empresa pendente</span>{data.aprovacaoAnterior && <small>Os dados mudaram depois da última assinatura.</small>}</>}
-        <CertificateChip info={data.certificadoDigital as RecordValue | undefined} />
-        <div className="admin-row-actions">
-          {!approval && !codeSentTo && <button type="button" className="admin-button admin-button-small admin-button-primary" disabled={busy} onClick={() => void sendCode()}>Assinar como empresa</button>}
-          <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setEditing((value) => !value)}>{editing ? 'Fechar' : 'Conferir dados'}</button>
-        </div>
-      </div>
+      <ul className="setup-checks">
+        <li className={approval ? 'is-ok' : 'is-warn'}>
+          <span className="setup-icon" aria-hidden="true">{approval ? '✓' : '!'}</span>
+          <div><strong>{approval ? 'Assinado pela empresa' : 'Falta a empresa assinar'}</strong><small>{approval ? `${dateOnly(approval.em)} · ${String(approval.nome ?? '').split(' ')[0]}` : 'Uma vez só, com código no e-mail'}</small></div>
+          {!approval && !codeSentTo && <button type="button" className="admin-button admin-button-small admin-button-primary" disabled={busy} onClick={() => void sendCode()}>Assinar</button>}
+        </li>
+        <li className={certOk ? 'is-ok' : cert.configurado ? 'is-bad' : 'is-off'}>
+          <span className="setup-icon" aria-hidden="true">{certOk ? '✓' : cert.configurado ? '!' : '–'}</span>
+          <div><strong>{certOk ? 'Certificado digital ativo' : cert.erro ? 'Certificado com problema' : cert.vencido ? 'Certificado vencido' : 'Sem certificado digital'}</strong><small>{certOk ? `Todo PDF sai assinado · até ${dateOnly(cert.validoAte)}` : cert.erro ?? (cert.vencido ? 'Renove o e-CNPJ' : 'Opcional')}</small></div>
+        </li>
+        <li className="is-ok">
+          <span className="setup-icon" aria-hidden="true">✓</span>
+          <div><strong>Preenchimento automático</strong><small>Com os dados de cada afiliado</small></div>
+        </li>
+      </ul>
+      {codeSentTo && !approval && <form className="contracts-code-form" onSubmit={sign}>
+        <label><span>Código enviado para {codeSentTo}</span><input inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" /></label>
+        <button type="submit" className="admin-button admin-button-primary" disabled={busy || code.length !== 6}>{busy ? 'Assinando…' : 'Confirmar'}</button>
+        <button type="button" className="admin-button admin-button-ghost" disabled={busy} onClick={() => void sendCode()}>Reenviar</button>
+      </form>}
+    </section>
+    <div className="contracts-models">
+      <article className="admin-panel model-card">
+        <header><span className="model-tag">1</span><div><h3>Contrato de afiliado</h3><small>Comissão: a definida para cada afiliado</small></div></header>
+        <p className="model-line">Dados do afiliado, da empresa, comissão, LGPD, rescisão e assinatura eletrônica.</p>
+        <div className="model-actions"><button type="button" className="admin-button admin-button-small admin-button-primary" onClick={() => onPreview('afiliado')}>Ver como fica</button></div>
+      </article>
+      <article className="admin-panel model-card">
+        <header><span className="model-tag">2</span><div><h3>Termo aditivo</h3><small>Comissão por bolões fechados</small></div></header>
+        <ul className="model-levels">{table.map((row) => <li key={row.nome}><strong>{row.nome}</strong><span>{row.faixa}</span><b>{pct(row.pct)}</b></li>)}</ul>
+        <div className="model-actions"><button type="button" className="admin-button admin-button-small admin-button-primary" onClick={() => onPreview('aditivo-bonificacao')}>Ver como fica</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setDrawer('comissoes')}>Editar comissões</button></div>
+      </article>
     </div>
-    {codeSentTo && !approval && <form className="contracts-code-form" onSubmit={sign}>
-      <label><span>Código enviado para {codeSentTo}</span><input inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" /></label>
-      <button type="submit" className="admin-button admin-button-primary" disabled={busy || code.length !== 6}>{busy ? 'Assinando…' : 'Confirmar assinatura'}</button>
-      <button type="button" className="admin-button admin-button-ghost" disabled={busy} onClick={() => void sendCode()}>Reenviar código</button>
-    </form>}
-    {editing && <form className="contracts-company-form" onSubmit={save}>
-      {COMPANY_FIELDS.map(([key, label, wide]) => <label key={key} className={wide ? 'is-wide' : undefined}><span>{label}</span><input type={key === 'prazoAvisoDias' ? 'number' : 'text'} min={key === 'prazoAvisoDias' ? 1 : undefined} max={key === 'prazoAvisoDias' ? 365 : undefined} value={form[key] ?? ''} onChange={(event) => setForm({ ...form, [key]: event.target.value })} /></label>)}
-      <div className="contracts-company-actions"><button type="submit" className="admin-button admin-button-primary" disabled={busy}>Salvar dados</button><button type="button" className="admin-button admin-button-ghost" onClick={() => { setForm(d); setEditing(false); }}>Cancelar</button></div>
-    </form>}
-  </section>;
+    {drawer === 'empresa' && <CompanyDrawer data={data} notify={notify} onClose={() => setDrawer('')} onSaved={saved} />}
+    {drawer === 'comissoes' && <BonusDrawer data={data} notify={notify} onClose={() => setDrawer('')} onSaved={saved} />}
+  </>;
 }
 
 function GenerateDialog({ notify, onClose, onDone }: { notify: Notify; onClose: () => void; onDone: () => void }) {
@@ -190,7 +248,7 @@ function GenerateDialog({ notify, onClose, onDone }: { notify: Notify; onClose: 
   </AdminModal>;
 }
 
-function DetailDialog({ id, notify, onClose, onChanged }: { id: string; notify: Notify; onClose: () => void; onChanged: () => void }) {
+function DetailDialog({ id, notify, onClose, onChanged, onPdf }: { id: string; notify: Notify; onClose: () => void; onChanged: () => void; onPdf: (id: string, numero: string) => void }) {
   const [data, setData] = useState<RecordValue | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
@@ -236,7 +294,7 @@ function DetailDialog({ id, notify, onClose, onChanged }: { id: string; notify: 
       <div className="contracts-events"><h3>Histórico</h3><ol>{(data.eventos as RecordValue[] ?? []).map((event, index) => <li key={index}><time>{dateTime(event.em)}</time><span>{EVENT_TEXT[event.evento] ?? event.evento}{event.detalhe && event.evento !== 'gerado' ? ` ${event.detalhe}` : event.evento === 'gerado' && event.detalhe ? ` (${ORIGIN_TEXT[event.detalhe] ?? event.detalhe})` : ''}{event.ip ? ` · IP ${event.ip}` : ''}</span></li>)}</ol></div>
       <details className="contracts-text"><summary>Ler o texto do contrato</summary><pre>{data.texto}</pre></details>
       <div className="admin-row-actions contracts-detail-actions">
-        <button type="button" className="admin-button admin-button-primary" onClick={() => void openPdf(id, notify)}>Baixar PDF</button>
+        <button type="button" className="admin-button admin-button-primary" onClick={() => onPdf(id, data.numero)}>Ver PDF</button>
         {data.status === 'aguardando' && <button type="button" className="admin-button" disabled={busy} onClick={() => void remind()}>Lembrar afiliado</button>}
         {data.status !== 'cancelado' && !cancelling && <button type="button" className="admin-button admin-button-ghost" onClick={() => setCancelling(true)}>Cancelar contrato</button>}
       </div>
@@ -259,6 +317,8 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
   const [generating, setGenerating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ title: string; filename: string; path: string } | null>(null);
+  const openPdfPreview = (contractId: string, numero: string) => setPreview({ title: numero, filename: `${numero}.pdf`, path: `/api/v1/admin/contratos/${contractId}/pdf` });
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -283,10 +343,11 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
   const count = (key: Tab) => (key ? resumo[key] ?? 0 : (resumo.aguardando ?? 0) + (resumo.assinado ?? 0) + (resumo.cancelado ?? 0));
   return <section className="admin-section contracts-view">
     <div className="admin-page-heading">
-      <div><h1>Contratos</h1><p className="admin-muted-note">Contrato e aditivo de cada afiliado, com assinatura eletrônica. A empresa assina uma vez o modelo e os dois já saem assinados por ela.</p></div>
+      <div><h1>Contratos</h1><p className="admin-muted-note">Cada afiliado recebe o contrato e o aditivo já preenchidos e assinados pela empresa. Ele só assina.</p></div>
       <div className="admin-row-actions"><button type="button" className="admin-button admin-button-primary" onClick={() => setGenerating(true)}>Gerar contrato</button><button type="button" className="admin-button admin-button-ghost" disabled={busy} onClick={() => void generateMissing()}>Gerar para quem não tem</button></div>
     </div>
-    <CompanyCard notify={notify} onSigned={() => void load()} />
+    <ContractsSetup notify={notify} onSigned={() => void load()} onPreview={(kind) => setPreview({ title: kind === 'afiliado' ? 'Modelo do contrato' : 'Modelo do aditivo', filename: `modelo-${kind}.pdf`, path: `/api/v1/admin/contratos-empresa/modelo/${kind}/pdf` })} />
+    <h2 className="contracts-list-title">Contratos dos afiliados</h2>
     <nav className="pool-status-tabs report-tabs comm-tabs" aria-label="Situação dos contratos">
       {TABS.map(([key, label]) => <button key={key || 'todos'} type="button" className={`report-tab ${tab === key ? 'is-current' : ''}`} aria-pressed={tab === key} onClick={() => { setTab(key); setPage(1); }}>{label}<span className="pool-tab-count">{count(key)}</span></button>)}
     </nav>
@@ -307,12 +368,13 @@ export function ContractsAdminView({ notify }: { notify: Notify }) {
             <td data-label="Gerado" className="td-nowrap">{dateOnly(item.criadoEm)}</td>
             <td data-label="Assinado" className="td-nowrap">{item.assinadoEm ? dateTime(item.assinadoEm) : '—'}</td>
             <td data-label="Identidade">{item.documento ? <span className={DOC_CLASS[item.documento.situacao] ?? 'status-chip'}>{item.documento.rotulo}</span> : '—'}</td>
-            <td data-label="Ações"><div className="admin-row-actions"><button type="button" className="admin-button admin-button-small" onClick={() => setOpenId(item.id)}>Ver</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => void openPdf(item.id, notify)}>PDF</button></div></td>
+            <td data-label="Ações"><div className="admin-row-actions"><button type="button" className="admin-button admin-button-small" onClick={() => setOpenId(item.id)}>Ver</button><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => openPdfPreview(item.id, item.numero)}>PDF</button></div></td>
           </tr>)}</tbody>
         </table></div>}
       {pages > 1 && <div className="contracts-pagination"><button type="button" className="admin-button admin-button-small" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</button><span>Página {page} de {pages}</span><button type="button" className="admin-button admin-button-small" disabled={page >= pages} onClick={() => setPage(page + 1)}>Próxima</button></div>}
     </div>
     {generating && <GenerateDialog notify={notify} onClose={() => setGenerating(false)} onDone={() => { setGenerating(false); setTab('aguardando'); setPage(1); void load(); }} />}
-    {openId && <DetailDialog id={openId} notify={notify} onClose={() => setOpenId(null)} onChanged={() => void load()} />}
+    {openId && <DetailDialog id={openId} notify={notify} onClose={() => setOpenId(null)} onChanged={() => void load()} onPdf={openPdfPreview} />}
+    {preview && <PdfPreview title={preview.title} filename={preview.filename} load={() => fetchPdf(preview.path)} onClose={() => setPreview(null)} />}
   </section>;
 }

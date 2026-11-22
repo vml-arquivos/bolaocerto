@@ -11,7 +11,8 @@ import { ESTADOS_CIVIS, FIELD_LABELS, missingFields, readExtra, rgIssuer, UFS, t
 import { icpEnabled, icpInfo, signPdfWithCompanyCertificate } from './contract-icp';
 import { documentSituation, IdentityDocumentService, readDoc, SITUATION_LABELS } from './identity-document';
 import {
-  buildContractText, companyHash, CONTRACT_TEMPLATE_VERSION, CONTRACT_TITLES, formatCpf, longDate, sanitizeCompany, textHash,
+  buildContractText, companyHash, CONTRACT_TEMPLATE_VERSION, CONTRACT_TITLES, DEFAULT_BONUS, DEFAULT_COMPANY, formatCpf, longDate, sanitizeBonus, sanitizeCompany, textHash,
+  type BonusTable,
   type AffiliateParty, type CompanyData, type ContractKind,
 } from './contract-templates';
 
@@ -136,7 +137,14 @@ export class ContractsService {
 
   async saveCompany(actor: AuthUser, raw: Partial<CompanyData>) {
     const before = await this.company();
-    const dados = sanitizeCompany(raw);
+    // Tabela do aditivo: sem envio, fica a atual; com envio, precisa ser válida.
+    if (raw.bonificacao !== undefined) {
+      const table = sanitizeBonus(raw.bonificacao);
+      if (JSON.stringify(table) === JSON.stringify(DEFAULT_BONUS) && JSON.stringify({ faixas: (raw.bonificacao as BonusTable).faixas?.map((row, index) => ({ nome: DEFAULT_BONUS.faixas[index]?.nome, ate: index === 3 ? null : Number(row.ate), pct: Number(row.pct) })), extraPct: Number((raw.bonificacao as BonusTable).extraPct) }) !== JSON.stringify(DEFAULT_BONUS)) {
+        throw new BadRequestException('Confira a tabela de comissões: os limites de bolões precisam crescer e os percentuais ficar entre 0 e 100.');
+      }
+    }
+    const dados = sanitizeCompany({ ...raw, bonificacao: raw.bonificacao ?? before.dados.bonificacao });
     const stored = await this.readJson<{ aprovacao?: CompanyApproval | null }>(COMPANY_KEY);
     await this.writeJson(COMPANY_KEY, { dados, aprovacao: stored?.aprovacao ?? null });
     await this.audit.record(this.prisma, { entidade: 'contrato', entidadeId: actor.id, evento: 'contrato.empresa_atualizada', atorId: actor.id, payloadAntes: before.dados as unknown as Prisma.InputJsonValue, payloadDepois: dados as unknown as Prisma.InputJsonValue });
@@ -534,7 +542,12 @@ export class ContractsService {
       const events = [...((row.eventos as ContractEvent[] | null) ?? []), { em: new Date().toISOString(), evento: 'dados_atualizados', detalhe: 'texto refeito com os dados completados pelo afiliado' }];
       const updated = await this.prisma.contrato.updateMany({
         where: { id: row.id, status: 'aguardando' },
-        data: { texto, hash, partes: { ...((row.partes as Record<string, unknown> | null) ?? {}), afiliado: { ...party, dataNascimento: party.dataNascimento?.toISOString() ?? null, afiliadoId } } as unknown as Prisma.InputJsonValue, codigoHash: null, codigoExpiraEm: null, eventos: events as unknown as Prisma.InputJsonValue },
+        // O texto novo usa os dados atuais da empresa: a assinatura da empresa passa a ser a do modelo atual (ou fica pendente).
+        data: {
+          texto, hash, partes: { ...((row.partes as Record<string, unknown> | null) ?? {}), empresa: company.dados, afiliado: { ...party, dataNascimento: party.dataNascimento?.toISOString() ?? null, afiliadoId } } as unknown as Prisma.InputJsonValue,
+          empresaHash: company.hash, empresaAssinadaEm: company.aprovacao ? new Date(company.aprovacao.em) : null, empresaAssinatura: company.aprovacao ? company.aprovacao as unknown as Prisma.InputJsonValue : Prisma.DbNull,
+          codigoHash: null, codigoExpiraEm: null, eventos: events as unknown as Prisma.InputJsonValue,
+        },
       });
       changed += updated.count;
     }
@@ -695,12 +708,41 @@ export class ContractsService {
 
   // ---------- PDF e verificação ----------
 
+  /** Papel timbrado: dados da empresa no rodapé. */
+  private letterhead(company: CompanyData | undefined) {
+    const c = company ?? DEFAULT_COMPANY;
+    return { razaoSocial: c.razaoSocial, cnpj: c.cnpj, endereco: c.endereco, site: this.mail.publicUrl().replace(/^https?:\/\//, '').replace(/\/$/, '') || null };
+  }
+
+  /** Prévia do modelo (contrato ou aditivo) com dados de exemplo, para conferir antes de gerar. Não tem valor de contrato. */
+  async modelPreview(kind: ContractKind) {
+    if (!CONTRACT_TITLES[kind]) throw new BadRequestException('Modelo inválido.');
+    const company = await this.company();
+    const now = new Date();
+    const sample: AffiliateParty = {
+      nome: 'Nome Completo do Afiliado', cpf: '00000000000', email: 'afiliado@email.com', telefone: '61900000000', dataNascimento: new Date('1990-01-01T00:00:00Z'),
+      endereco: 'Rua Exemplo, 100, Bairro, Cidade/UF, CEP 00000-000', codigoAfiliado: 'BL-CODIGO', comissaoPct: '20.00',
+      rg: '0000000', rgOrgao: 'SSP/UF', nacionalidade: 'brasileiro(a)', estadoCivil: 'solteiro(a)', profissao: 'profissão',
+    };
+    const numero = kind === 'afiliado' ? 'BLC-MODELO' : 'BLA-MODELO';
+    const texto = buildContractText({ kind, numero, company: company.dados, affiliate: sample, date: now, mainContract: { numero: 'BLC-MODELO', data: now } });
+    const approval = company.aprovacao;
+    const blocks: CertificateBlock[] = [{ title: 'Prévia do modelo', rows: [
+      ['Situação', 'Modelo para conferência. Os dados do afiliado são de exemplo.'],
+      ['Assinatura da empresa', approval ? `Modelo assinado em ${dateTimeBr(approval.em)} por ${approval.nome}` : 'Pendente: a empresa ainda não assinou este modelo.'],
+      ['Certificado digital', icpEnabled() ? 'Os contratos de verdade saem assinados com o e-CNPJ da empresa.' : 'Não configurado.'],
+    ] }];
+    const buffer = await buildContractPdf({ numero, titulo: CONTRACT_TITLES[kind], texto, hash: textHash(texto), status: 'modelo', blocks, verifyUrl: null, footer: 'Prévia do modelo', letterhead: this.letterhead(company.dados), watermark: 'MODELO' });
+    return { buffer, filename: `modelo-${kind}.pdf` };
+  }
+
   async pdf(id: string) {
     const row = await this.prisma.contrato.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Contrato não encontrado.');
     const partes = (row.partes ?? {}) as { empresa?: CompanyData; afiliado?: AffiliateParty & { cpf: string } };
     const signature = (row.assinatura ?? null) as Record<string, unknown> | null;
-    const company = (row.empresaAssinatura ?? null) as CompanyApproval | null;
+    const rawApproval = row.empresaAssinatura as Record<string, unknown> | null;
+    const company = (rawApproval && typeof rawApproval === 'object' && rawApproval.em ? rawApproval : null) as CompanyApproval | null;
     const events = ((row.eventos as ContractEvent[] | null) ?? []);
     const digital = icpEnabled();
     const idDoc = await this.documents.forAffiliate(row.afiliadoId).catch(() => null);
@@ -727,7 +769,7 @@ export class ContractsService {
       ] },
       { title: 'Histórico', rows: events.map((event) => [dateTimeBr(event.em).replace(' (horário de Brasília)', ''), `${{ gerado: 'Contrato gerado', dados_atualizados: 'Dados do afiliado atualizados',  aviso_enviado: 'Aviso enviado ao afiliado', lembrete_enviado: 'Lembrete enviado', codigo_enviado: 'Código enviado para', codigo_incorreto: 'Código incorreto digitado', assinado: 'Assinado por', empresa_assinou: 'Assinatura da contratante', cancelado: 'Cancelado' }[event.evento] ?? event.evento}${event.detalhe && event.evento !== 'gerado' ? ` ${event.detalhe}` : ''}${event.ip ? ` · IP ${event.ip}` : ''}`] as const) },
     ];
-    const plain = await buildContractPdf({ numero: row.numero, titulo: row.titulo, texto: row.texto, hash: row.hash, status: row.status, blocks, verifyUrl: this.verifyUrl(row.numero, row.hash), footer: `${partes.empresa?.razaoSocial ?? 'BL — Bolão Livre'} · ${longDate(row.criadoEm)}` });
+    const plain = await buildContractPdf({ numero: row.numero, titulo: row.titulo, texto: row.texto, hash: row.hash, status: row.status, blocks, verifyUrl: this.verifyUrl(row.numero, row.hash), footer: longDate(row.criadoEm), letterhead: this.letterhead(partes.empresa) });
     // Com o e-CNPJ configurado, o PDF sai assinado digitalmente pela contratante (ICP-Brasil).
     const { buffer } = digital
       ? await signPdfWithCompanyCertificate(plain, { reason: `Contratante: ${row.titulo} nº ${row.numero}`, location: partes.empresa?.cidade ?? 'Brasil', name: partes.empresa?.razaoSocial ?? 'Contratante' })

@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../lib/client-api';
 import { deviceInfo } from '../lib/device-info';
 import type { IdReading } from '../lib/id-check';
+import { PdfPreview } from './pdf-preview';
 
 type Contract = { id: string; numero: string; tipo: string; titulo: string; status: 'aguardando' | 'assinado' | 'cancelado'; criadoEm: string; assinadoEm: string | null; hash: string; texto: string; empresaAssinadaEm: string | null; codigoEnviadoEm: string | null; codigoValido: boolean };
 type DataValues = Record<string, string>;
@@ -249,6 +250,7 @@ export function AffiliateContract() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
+  const [preview, setPreview] = useState<Contract | null>(null);
   const load = useCallback(async () => { setData(await call<Payload>('/api/v1/afiliados/me/contratos')); }, []);
   useEffect(() => { void load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o contrato.')); }, [load]);
 
@@ -286,12 +288,13 @@ export function AffiliateContract() {
         <summary>{contract.status === 'aguardando' ? 'Ler o documento' : 'Ler o documento assinado'}</summary>
         <pre tabIndex={0}>{contract.texto}</pre>
       </details>
-      <div className="affiliate-row-actions"><button type="button" onClick={() => void downloadPdf(contract.id, setError)}>{contract.status === 'assinado' ? 'Baixar assinado (PDF)' : 'Baixar PDF'}</button></div>
+      <div className="affiliate-row-actions"><button type="button" onClick={() => setPreview(contract)}>Ver como fica impresso</button><button type="button" onClick={() => void downloadPdf(contract.id, setError)}>{contract.status === 'assinado' ? 'Baixar assinado (PDF)' : 'Baixar PDF'}</button></div>
     </section>)}
     {pending.length > 0 && <section className="affiliate-table-card aff-contract">
       <div className="affiliate-card-heading"><div><h2>{pending.length > 1 ? 'Assinar os 2 documentos' : 'Assinar'}</h2><p>{complete ? pending.map((item) => item.titulo).join(' e ') : 'Complete seus dados acima para liberar.'}</p></div></div>
       <SignBox key={pending.map((item) => item.hash).join()} count={pending.length} email={data.email} codeValid={Boolean(data.codigoValido)} disabled={!complete} onSigned={async () => { setDone(pending.length > 1 ? 'Contrato e aditivo assinados. As cópias em PDF foram enviadas para o seu e-mail e ficam aqui.' : 'Documento assinado. A cópia em PDF foi enviada para o seu e-mail e fica aqui.'); setError(''); await load(); }} />
     </section>}
+    {preview && <PdfPreview title={preview.titulo} filename={`${preview.numero}.pdf`} onClose={() => setPreview(null)} load={async () => { const response = await authenticatedFetch(`/api/v1/afiliados/me/contratos/${preview.id}/pdf`, { cache: 'no-store' }); if (!response.ok) throw new Error('Não foi possível abrir o contrato.'); return response.blob(); }} />}
     {data.documento && <IdentityDocument doc={data.documento} data={data.dados} onChange={(next) => setData((current) => current ? { ...current, documento: next } : current)} />}
   </div>;
 }

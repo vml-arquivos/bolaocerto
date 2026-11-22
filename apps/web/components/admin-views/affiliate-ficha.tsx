@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { AdminDrawer } from '../admin-drawer';
 import { IdentityReview } from '../admin-contracts';
+import { fetchPdf, PdfPreview } from '../pdf-preview';
 import { LevelBadge } from '../admin-affiliate-level';
 import { dateOnly, dateTime, fetchAdmin, money, statusClass, statusLabel } from './shared';
 import type { RecordValue } from './shared';
@@ -15,6 +16,7 @@ const COMMISSION_STATUS: Record<string, [string, string]> = { pendente: ['A paga
 /** Ficha completa do afiliado: dados, vendas, clientes, comissões, contratos e documento. */
 export function AffiliateFicha({ id, notify, onClose, onEdit, onChanged }: { id: string; notify: Notify; onClose: () => void; onEdit?: (userId: string) => void; onChanged?: () => void }) {
   const [data, setData] = useState<RecordValue | null>(null);
+  const [preview, setPreview] = useState<{ id: string; numero: string } | null>(null);
   const load = useCallback(async () => {
     try { setData(await fetchAdmin(`/api/v1/admin/afiliados/${id}/ficha`)); }
     catch (error) { notify('error', error instanceof Error ? error.message : 'Não foi possível abrir a ficha.'); onClose(); }
@@ -29,6 +31,7 @@ export function AffiliateFicha({ id, notify, onClose, onEdit, onChanged }: { id:
   const active = contracts.filter((item) => item.status !== 'cancelado');
   const signed = active.filter((item) => item.status === 'assinado').length;
   return <AdminDrawer size="page" title="Ficha do afiliado" subtitle={u.nome} onClose={onClose} actions={onEdit && u.id ? <button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => onEdit(u.id)}>Editar conta</button> : undefined}>
+    {preview && <PdfPreview title={preview.numero} filename={`${preview.numero}.pdf`} load={() => fetchPdf(`/api/v1/admin/contratos/${preview.id}/pdf`)} onClose={() => setPreview(null)} />}
     <div className="ficha">
       <FichaHead
         name={u.nome ?? 'Afiliado'}
@@ -72,7 +75,7 @@ export function AffiliateFicha({ id, notify, onClose, onEdit, onChanged }: { id:
               const [text, cls] = CONTRACT_STATUS[item.status] ?? [item.status, 'status-chip'];
               return <li key={item.id}>
                 <div><strong>{item.tipo === 'afiliado' ? 'Contrato de afiliado' : 'Termo aditivo'}</strong><small>{item.numero} · {item.assinadoEm ? `assinado em ${dateTime(item.assinadoEm)}` : `gerado em ${dateOnly(item.criadoEm)}`}{item.empresaAssinadaEm ? ' · empresa assinou' : ' · falta a empresa'}</small></div>
-                <div className="ficha-right"><span className={cls}>{text}</span><a className="admin-button admin-button-small admin-button-ghost" href={`/api/v1/admin/contratos/${item.id}/pdf?ver=1`} target="_blank" rel="noreferrer">PDF</a></div>
+                <div className="ficha-right"><span className={cls}>{text}</span><button type="button" className="admin-button admin-button-small admin-button-ghost" onClick={() => setPreview({ id: item.id, numero: item.numero })}>Ver PDF</button></div>
               </li>;
             })}</ul> : <FichaEmpty text={data.contratoAceitoEm ? `Aceite do contrato no cadastro em ${dateOnly(data.contratoAceitoEm)}. O contrato para assinar é gerado quando ele abre o app.` : 'Ainda sem contrato. Ele é gerado quando o afiliado abre o app.'} />}
             {contracts.length > 0 && data.contratoAceitoEm && <p className="admin-help" style={{ margin: '8px 0 0' }}>Aceite no cadastro em {dateOnly(data.contratoAceitoEm)}.</p>}
