@@ -10,6 +10,7 @@ import { useCanOpen } from './staff-gate';
 import { PushPrompt } from './push-prompt';
 import { menuTarget } from '../lib/access';
 import { hubOf, viewTitle } from '../lib/admin-nav';
+import { NavIcon } from './admin-nav-icons';
 
 /** Atalhos fixos no topo do menu. */
 const topItems = [
@@ -147,7 +148,7 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
         data-label={label}
         title={collapsed ? label : undefined}
       >
-        <span className="admin-nav-icon" aria-hidden="true">{icon}</span><span>{label}</span>
+        <span className="admin-nav-icon" aria-hidden="true"><NavIcon name={key} fallback={icon} /></span><span>{label}</span>
       </Link>
     );
   }
@@ -177,14 +178,14 @@ export function AdminShell({ children, testMode = false }: { children: ReactNode
           ))}
         </nav>
         <button type="button" className="admin-collapse-toggle" onClick={toggleCollapsed} aria-pressed={collapsed} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}>
-          <span aria-hidden="true">{collapsed ? '»' : '«'}</span><span>{collapsed ? 'Expandir' : 'Recolher menu'}</span>
+          <span aria-hidden="true" className={`admin-collapse-icon${collapsed ? ' is-flipped' : ''}`}><NavIcon name="recolher" /></span><span>{collapsed ? 'Expandir' : 'Recolher menu'}</span>
         </button>
         <div className="admin-sidebar-footer">
           <div className="admin-install"><InstallAppButton label="Instalar como app" hideWhenInstalled className="admin-install-link" /></div>
           <div className="admin-footer-links">
-            <Link href="/minha-conta" className="admin-footer-link"><span>Minha conta</span></Link>
-            <button type="button" className="admin-footer-link admin-footer-logout" onClick={() => void logout()}><span>Sair</span></button>
-            <Link href="/" className="admin-footer-link"><span>Ver o site</span></Link>
+            <Link href="/minha-conta" className="admin-footer-link" title="Minha conta"><NavIcon name="conta" /><span>Minha conta</span></Link>
+            <Link href="/" className="admin-footer-link" title="Ver o site"><NavIcon name="site" /><span>Ver o site</span></Link>
+            <button type="button" className="admin-footer-link admin-footer-logout" title="Sair" onClick={() => void logout()}><NavIcon name="sair" /><span>Sair</span></button>
           </div>
         </div>
       </aside>
