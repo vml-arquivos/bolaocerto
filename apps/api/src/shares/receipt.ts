@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import { round2 } from '../common/brazil-time';
 import { formatDateBr } from '../reports/export.util';
 import { brl, collect, MODALITY_NAMES, PDF_COLORS, PLATFORM_NAME, pdfText, textInMargin } from '../reports/pdf.util';
+import { drawBrandFooter, drawBrandHeader } from '../reports/brand-letterhead';
 
 export { MODALITY_NAMES };
 const METHOD_NAMES: Record<string, string> = { pix: 'Pix', boleto: 'Boleto bancário', cartao: 'Cartão de crédito', pix_automatico: 'Pix Automático', manual: 'Baixa manual (confirmada pela administração)' };
@@ -102,32 +103,37 @@ export function buildReceiptData(share: ReceiptSource, now = new Date()): Receip
 }
 
 /** Recibo em PDF (A4 retrato) com o detalhamento completo do valor pago. */
+/** Onde o conteúdo começa, abaixo do cabeçalho com os logos. */
+const RECEIPT_TOP = 70;
+
 export async function buildReceiptPdf(data: ReceiptData, verifyUrl: string | null): Promise<Buffer> {
-  const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: `Recibo ${data.numero}`, Author: PLATFORM_NAME, Creator: PLATFORM_NAME, Subject: 'Recibo de participação em bolão' } });
+  const doc = new PDFDocument({ size: 'A4', margins: { top: RECEIPT_TOP, bottom: 64, left: 40, right: 40 }, bufferPages: true, info: { Title: `Recibo ${data.numero}`, Author: PLATFORM_NAME, Creator: PLATFORM_NAME, Subject: 'Recibo de participação em bolão' } });
   const done = collect(doc);
   const W = doc.page.width;
   const left = 40;
   const inner = W - 80;
-  const bottomLimit = doc.page.height - 60;
+  const bottomLimit = doc.page.height - 64;
+  // Mesma identidade dos contratos: Bolão Livre e SORTE TECH no topo de cada página, empresa no rodapé.
+  const headerEnd = RECEIPT_TOP;
+  doc.fillColor(PDF_COLORS.brand).font('Helvetica-Bold').fontSize(13);
+  textInMargin(doc, 'RECIBO DE PARTICIPAÇÃO EM BOLÃO', left, headerEnd, { width: 300 });
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(PDF_COLORS.text);
+  textInMargin(doc, `Nº ${data.numero}`, W - left - 220, headerEnd, { width: 220, align: 'right' });
+  doc.font('Helvetica').fontSize(8.5).fillColor(PDF_COLORS.muted);
+  textInMargin(doc, `Emitido em ${formatDateBr(data.emitidoEm)}`, W - left - 220, headerEnd + 14, { width: 220, align: 'right' });
+  doc.font('Helvetica').fontSize(7.5).fillColor(PDF_COLORS.muted);
+  textInMargin(doc, 'CÓDIGO DE VERIFICAÇÃO', left, headerEnd + 18, { width: 140 });
+  doc.font('Courier-Bold').fontSize(11).fillColor(PDF_COLORS.brand);
+  textInMargin(doc, data.codigoVerificacao, left + 100, headerEnd + 16, { width: 200 });
 
-  doc.rect(0, 0, W, 64).fill(PDF_COLORS.brand);
-  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(16);
-  textInMargin(doc, PLATFORM_NAME, left, 16, { width: 260 });
-  doc.font('Helvetica').fontSize(9);
-  textInMargin(doc, 'RECIBO DE PARTICIPAÇÃO EM BOLÃO', left, 38, { width: 300 });
-  doc.font('Helvetica-Bold').fontSize(11);
-  textInMargin(doc, `Nº ${data.numero}`, W - left - 220, 18, { width: 220, align: 'right' });
-  doc.font('Helvetica').fontSize(8.5);
-  textInMargin(doc, `Emitido em ${formatDateBr(data.emitidoEm)}`, W - left - 220, 38, { width: 220, align: 'right' });
-
-  let y = 78;
+  let y = headerEnd + 34;
   doc.save().roundedRect(left, y, inner, 26, 4).fill('#E3F4EA').restore();
   doc.fillColor(PDF_COLORS.accent).font('Helvetica-Bold').fontSize(11);
   textInMargin(doc, `PAGAMENTO CONFIRMADO${data.pagamento.confirmadoEm ? ` em ${formatDateBr(data.pagamento.confirmadoEm)}` : ''}`, left + 12, y + 8, { width: inner - 24 });
   y += 38;
 
   const heading = (title: string) => {
-    if (y + 40 > bottomLimit) { doc.addPage(); y = 50; }
+    if (y + 40 > bottomLimit) { doc.addPage(); y = RECEIPT_TOP; }
     doc.fillColor(PDF_COLORS.brand).font('Helvetica-Bold').fontSize(10.5);
     textInMargin(doc, pdfText(title).toUpperCase(), left, y, { width: inner });
     y += 14;
@@ -223,7 +229,7 @@ export async function buildReceiptPdf(data: ReceiptData, verifyUrl: string | nul
   for (const item of data.explicacoes) {
     doc.font('Helvetica').fontSize(8.5);
     const h = doc.heightOfString(`${item.titulo}: ${item.texto}`, { width: inner });
-    if (y + h + 6 > bottomLimit) { doc.addPage(); y = 50; }
+    if (y + h + 6 > bottomLimit) { doc.addPage(); y = RECEIPT_TOP; }
     doc.fillColor(PDF_COLORS.text).font('Helvetica-Bold').fontSize(8.5);
     doc.text(`${pdfText(item.titulo)}: `, left, y, { width: inner, continued: true, lineBreak: true });
     doc.font('Helvetica').fillColor(PDF_COLORS.text).text(pdfText(item.texto), { width: inner, continued: false });
@@ -240,16 +246,16 @@ export async function buildReceiptPdf(data: ReceiptData, verifyUrl: string | nul
   doc.text(pdfText(data.notaFiscal ? `Nota fiscal de serviço (taxa de administração): ${data.notaFiscal.numero ? `nº ${data.notaFiscal.numero}` : 'em emissão'} — ${data.notaFiscal.status}.` : 'Nota fiscal de serviço: ainda não emitida ou não aplicável a esta participação.'), left, y, { width: inner });
   y = doc.y + 8;
 
-  if (y + 56 > doc.page.height - 46) { doc.addPage(); y = 50; }
-  doc.save().roundedRect(left, y, inner, 52, 4).fillAndStroke(PDF_COLORS.zebra, PDF_COLORS.line).restore();
+  // Código de verificação fica no topo, ao lado do número; aqui só o endereço para conferir.
+  if (y + 14 > bottomLimit) { doc.addPage(); y = RECEIPT_TOP; }
   doc.fillColor(PDF_COLORS.muted).font('Helvetica').fontSize(7.5);
-  textInMargin(doc, 'CÓDIGO DE VERIFICAÇÃO', left + 10, y + 7, { width: 200 });
-  doc.fillColor(PDF_COLORS.brand).font('Courier-Bold').fontSize(14);
-  textInMargin(doc, data.codigoVerificacao, left + 10, y + 19, { width: 220 });
-  doc.fillColor(PDF_COLORS.muted).font('Helvetica').fontSize(7.5);
-  textInMargin(doc, pdfText(verifyUrl ? `Confira a autenticidade em: ${verifyUrl}` : 'Confira a autenticidade com o suporte informando este código.'), left + 240, y + 12, { width: inner - 250 });
-  doc.fillColor(PDF_COLORS.muted).font('Helvetica').fontSize(7);
-  textInMargin(doc, 'Este recibo comprova o pagamento da participação no bolão. Não é bilhete lotérico nem garante prêmio. Prêmios são pagos pela CAIXA.', left, doc.page.height - 38, { width: inner, align: 'center' });
+  textInMargin(doc, pdfText(verifyUrl ? `Confira a autenticidade com o código de verificação em: ${verifyUrl}` : 'Confira a autenticidade com o suporte informando o código de verificação.'), left, y, { width: inner });
+  const range = doc.bufferedPageRange();
+  for (let index = range.start; index < range.start + range.count; index += 1) {
+    doc.switchToPage(index);
+    drawBrandHeader(doc, { left, width: inner, top: 24, size: 'compact' });
+    drawBrandFooter(doc, { left, width: inner, top: doc.page.height - 56, extra: `Recibo nº ${data.numero} · Comprova o pagamento da participação. Não é bilhete lotérico nem garante prêmio; prêmios são pagos pela CAIXA.${range.count > 1 ? ` · Página ${index - range.start + 1} de ${range.count}` : ''}` });
+  }
   doc.end();
   return done;
 }

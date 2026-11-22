@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { setLetterhead } from '../reports/brand-letterhead';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
@@ -87,7 +88,7 @@ function localText(local: Record<string, unknown> | null | undefined): string {
 }
 
 @Injectable()
-export class ContractsService {
+export class ContractsService implements OnModuleInit {
   private readonly logger = new Logger(ContractsService.name);
   private running = false;
 
@@ -147,6 +148,7 @@ export class ContractsService {
     const dados = sanitizeCompany({ ...raw, bonificacao: raw.bonificacao ?? before.dados.bonificacao });
     const stored = await this.readJson<{ aprovacao?: CompanyApproval | null }>(COMPANY_KEY);
     await this.writeJson(COMPANY_KEY, { dados, aprovacao: stored?.aprovacao ?? null });
+    setLetterhead(this.letterhead(dados));
     await this.audit.record(this.prisma, { entidade: 'contrato', entidadeId: actor.id, evento: 'contrato.empresa_atualizada', atorId: actor.id, payloadAntes: before.dados as unknown as Prisma.InputJsonValue, payloadDepois: dados as unknown as Prisma.InputJsonValue });
     return this.company();
   }
@@ -709,6 +711,11 @@ export class ContractsService {
   // ---------- PDF e verificação ----------
 
   /** Papel timbrado: dados da empresa no rodapé. */
+  /** Recibos e relatórios usam o mesmo rodapé da empresa dos contratos. */
+  onModuleInit() {
+    void this.company().then((company) => setLetterhead(this.letterhead(company.dados))).catch(() => undefined);
+  }
+
   private letterhead(company: CompanyData | undefined) {
     const c = company ?? DEFAULT_COMPANY;
     return { razaoSocial: c.razaoSocial, cnpj: c.cnpj, endereco: c.endereco, site: this.mail.publicUrl().replace(/^https?:\/\//, '').replace(/\/$/, '') || null };

@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { PrintArea, printDocument } from './print-letterhead';
 export type LegalDocumentData = { texto: string; hash: string; versao: string; aprovado: boolean; aceitoEm?: string | null };
 export function LegalDocument({ kind }: { kind: string }) {
   const [doc, setDoc] = useState<LegalDocumentData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void fetch(`/api/v1/config/contratos/${kind}`, { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Documento indisponível.'); setDoc(await response.json()); }).catch(e => setError(e.message)); }, [kind]);
-  return <>{error && <p role="alert">{error}</p>}{!doc && !error && <p>Carregando documento…</p>}{doc && <><div className="legal-text">{doc.texto}</div><button className="button button-secondary" onClick={() => window.print()}>Imprimir / salvar PDF</button></>}</>;
+  return <>{error && <p role="alert">{error}</p>}{!doc && !error && <p>Carregando documento…</p>}{doc && <><PrintArea><div className="legal-text">{doc.texto}</div></PrintArea><button className="button button-secondary" onClick={printDocument}>Imprimir / salvar PDF</button></>}</>;
 }
 export function AffiliateContract() {
   const [doc, setDoc] = useState<LegalDocumentData | null>(null);

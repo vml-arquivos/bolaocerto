@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { Column, formatDateBr, Row } from './export.util';
+import { drawBrandFooter, drawBrandHeader } from './brand-letterhead';
 
 /** Paleta e helpers compartilhados pelos relatórios e pelo recibo em PDF. */
 export const PDF_COLORS = {
@@ -53,7 +54,10 @@ export interface PdfSection { title: string; description?: string; columns: Colu
 export interface PdfReport { title: string; subtitle?: string; filters?: string[]; kpis?: PdfKpi[]; sections: PdfSection[]; generatedBy?: string; footerNote?: string }
 
 const MARGIN = 32;
-const FOOTER_H = 26;
+/** Rodapé com a empresa (razão social, CNPJ, endereço) e a numeração. */
+const FOOTER_H = 48;
+/** Onde o conteúdo começa, abaixo do cabeçalho com os logos. */
+const REPORT_TOP = 64;
 
 export function collect(doc: PDFKit.PDFDocument): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -72,14 +76,9 @@ export function textInMargin(doc: PDFKit.PDFDocument, text: string, x: number, y
   doc.page.margins.bottom = bottom;
 }
 
-function drawPageHeader(doc: PDFKit.PDFDocument, report: PdfReport): void {
-  const width = doc.page.width;
-  doc.save().rect(0, 0, width, 30).fill(PDF_COLORS.brand).restore();
-  doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11);
-  textInMargin(doc, PLATFORM_NAME, MARGIN, 10, { width: 260 });
-  doc.font('Helvetica').fontSize(9);
-  textInMargin(doc, pdfText(report.title), width - MARGIN - 420, 11, { width: 420, align: 'right', ellipsis: true });
-  doc.fillColor(PDF_COLORS.text);
+/** Cabeçalho de cada página: a mesma identidade dos contratos e recibos (Bolão Livre e SORTE TECH). */
+function drawPageHeader(doc: PDFKit.PDFDocument, _report: PdfReport): void {
+  drawBrandHeader(doc, { left: MARGIN, width: doc.page.width - MARGIN * 2, top: 16, size: 'compact' });
 }
 
 function drawKpis(doc: PDFKit.PDFDocument, kpis: PdfKpi[], y: number): number {
@@ -152,7 +151,7 @@ function drawTable(doc: PDFKit.PDFDocument, report: PdfReport, section: PdfSecti
     if (y + rowH > limit()) {
       doc.addPage();
       drawPageHeader(doc, report);
-      y = 44;
+      y = REPORT_TOP;
       drawHead();
     }
     if (rowIndex % 2 === 1) doc.save().rect(MARGIN, y, usable, rowH).fill(PDF_COLORS.zebra).restore();
@@ -170,7 +169,7 @@ function drawTable(doc: PDFKit.PDFDocument, report: PdfReport, section: PdfSecti
   });
 
   if (section.totals !== false && section.columns.some((column) => column.sum)) {
-    if (y + rowH + 4 > limit()) { doc.addPage(); drawPageHeader(doc, report); y = 44; }
+    if (y + rowH + 4 > limit()) { doc.addPage(); drawPageHeader(doc, report); y = REPORT_TOP; }
     doc.save().rect(MARGIN, y, usable, rowH + 3).fill(PDF_COLORS.brandSoft).restore();
     let x = MARGIN;
     doc.font('Helvetica-Bold').fontSize(8).fillColor(PDF_COLORS.brand);
@@ -190,7 +189,7 @@ export async function buildPdfReport(report: PdfReport): Promise<Buffer> {
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: MARGIN, bufferPages: true, info: { Title: pdfText(report.title), Author: PLATFORM_NAME, Creator: PLATFORM_NAME, Subject: pdfText(report.subtitle ?? report.title) } });
   const done = collect(doc);
   drawPageHeader(doc, report);
-  let y = 44;
+  let y = REPORT_TOP;
   doc.font('Helvetica-Bold').fontSize(18).fillColor(PDF_COLORS.brand);
   textInMargin(doc, pdfText(report.title), MARGIN, y, { width: doc.page.width - MARGIN * 2 });
   y += 25;
@@ -206,7 +205,7 @@ export async function buildPdfReport(report: PdfReport): Promise<Buffer> {
   if (report.kpis?.length) y = drawKpis(doc, report.kpis, y);
 
   for (const section of report.sections) {
-    if (y + 80 > doc.page.height - FOOTER_H) { doc.addPage(); drawPageHeader(doc, report); y = 44; }
+    if (y + 80 > doc.page.height - FOOTER_H) { doc.addPage(); drawPageHeader(doc, report); y = REPORT_TOP; }
     doc.font('Helvetica-Bold').fontSize(11).fillColor(PDF_COLORS.brand);
     textInMargin(doc, pdfText(section.title), MARGIN, y, { width: doc.page.width - MARGIN * 2 });
     y += 16;
@@ -222,11 +221,8 @@ export async function buildPdfReport(report: PdfReport): Promise<Buffer> {
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);
-    const y2 = doc.page.height - FOOTER_H + 6;
-    doc.save().moveTo(MARGIN, y2 - 4).lineTo(doc.page.width - MARGIN, y2 - 4).lineWidth(0.4).stroke(PDF_COLORS.line).restore();
-    doc.font('Helvetica').fontSize(7.5).fillColor(PDF_COLORS.muted);
-    textInMargin(doc, pdfText(report.footerNote ?? 'Documento gerado automaticamente pela plataforma. Dados confidenciais: uso restrito à administração.'), MARGIN, y2, { width: doc.page.width - MARGIN * 2 - 90 });
-    textInMargin(doc, `Página ${i + 1} de ${range.count}`, doc.page.width - MARGIN - 90, y2, { width: 90, align: 'right' });
+    const note = report.footerNote ?? 'Documento gerado automaticamente pela plataforma. Dados confidenciais: uso restrito à administração.';
+    drawBrandFooter(doc, { left: MARGIN, width: doc.page.width - MARGIN * 2, top: doc.page.height - FOOTER_H + 2, extra: `${note} · Página ${i + 1} de ${range.count}` });
   }
   doc.end();
   return done;

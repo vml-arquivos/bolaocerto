@@ -1,11 +1,8 @@
 import PDFDocument from 'pdfkit';
 import { collect, PDF_COLORS, pdfText, textInMargin } from '../reports/pdf.util';
-import { BL_LOGO_PNG, SORTE_TECH_LOGO_PNG } from './contract-brand';
+import { drawBrandFooter, drawBrandHeader, type Letterhead } from '../reports/brand-letterhead';
 
-/** Dados da empresa para o papel timbrado (rodapé). */
-export type Letterhead = { razaoSocial: string; cnpj: string; endereco?: string | null; site?: string | null };
-
-const LETTERHEAD_BLUE = '#2563EB';
+export type { Letterhead };
 const MARGIN_X = 60;
 const HEADER_TOP = 30;
 const BODY_TOP = 104;
@@ -30,26 +27,11 @@ export type ContractPdfInput = {
   watermark?: string | null;
 };
 
-/** Cabeçalho e rodapé do papel timbrado em uma página já desenhada. */
+/** Cabeçalho e rodapé do papel timbrado (mesma identidade de todos os PDFs). */
 function drawLetterhead(doc: PDFKit.PDFDocument, letterhead: Letterhead, footerLine: string) {
   const width = doc.page.width - MARGIN_X * 2;
-  // Bolão Livre (produto) à esquerda, maior; SORTE TECH (empresa) à direita.
-  doc.image(BL_LOGO_PNG, MARGIN_X, HEADER_TOP + 4, { height: 34 });
-  const stHeight = 26;
-  const stWidth = (720 / 217) * stHeight;
-  doc.font('Helvetica').fontSize(6.5).fillColor(PDF_COLORS.muted);
-  textInMargin(doc, 'UMA PLATAFORMA', doc.page.width - MARGIN_X - stWidth, HEADER_TOP, { width: stWidth, align: 'right', lineBreak: false });
-  doc.image(SORTE_TECH_LOGO_PNG, doc.page.width - MARGIN_X - stWidth, HEADER_TOP + 10, { height: stHeight });
-  doc.save().moveTo(MARGIN_X, HEADER_TOP + 50).lineTo(MARGIN_X + width, HEADER_TOP + 50).lineWidth(1.2).strokeColor(LETTERHEAD_BLUE).stroke().restore();
-
-  const bottom = doc.page.height - 66;
-  doc.save().moveTo(MARGIN_X, bottom).lineTo(MARGIN_X + width, bottom).lineWidth(0.6).strokeColor('#C7D2FE').stroke().restore();
-  doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#0F172A');
-  textInMargin(doc, pdfText(`${letterhead.razaoSocial} · CNPJ ${letterhead.cnpj}`), MARGIN_X, bottom + 7, { width, align: 'center', lineBreak: false });
-  doc.font('Helvetica').fontSize(7).fillColor(PDF_COLORS.muted);
-  if (letterhead.endereco) textInMargin(doc, pdfText(`${letterhead.endereco}${letterhead.site ? ` · ${letterhead.site}` : ''}`), MARGIN_X, bottom + 18, { width, align: 'center', lineBreak: false });
-  doc.font('Helvetica').fontSize(6.8).fillColor(PDF_COLORS.muted);
-  textInMargin(doc, pdfText(footerLine), MARGIN_X, bottom + 30, { width, align: 'center', lineBreak: false });
+  drawBrandHeader(doc, { left: MARGIN_X, width, top: HEADER_TOP });
+  drawBrandFooter(doc, { left: MARGIN_X, width, top: doc.page.height - 66, extra: footerLine, letterhead });
 }
 
 function drawWatermark(doc: PDFKit.PDFDocument, text: string) {
